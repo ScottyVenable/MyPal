@@ -1,6 +1,8 @@
 const API_BASE = 'http://localhost:3001/api';
 let backendHealthy = false;
 let authToken = localStorage.getItem('mypal_token') || null;
+let latestMemoryTotal = 0;
+let multiplierDirty = false;
 
 window.addEventListener('error', (event) => {
   const message = event?.error?.stack || event?.message || 'Unknown error';
@@ -43,6 +45,20 @@ function setMultiplierDisplay(value) {
   if (!label) return;
   const numeric = Math.max(1, Math.min(250, Number(value) || 1));
   label.textContent = `${numeric}x`;
+}
+
+function updateBrainSummary({ nodeCount = 0, edgeCount = 0, memoriesTotal = latestMemoryTotal } = {}) {
+  const summary = $('#brain-summary');
+  if (!summary) return;
+  summary.textContent = `Nodes: ${nodeCount} · Links: ${edgeCount} · Memories: ${memoriesTotal}`;
+}
+
+function formatTimestamp(ts) {
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return '';
+  const day = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `${day} · ${time}`;
 }
 
 function switchTab(name) {
@@ -146,8 +162,17 @@ function renderStats(s) {
   $('#stat-cp').textContent = s.cp;
   $('#stat-vocab').textContent = s.vocabSize;
   const multiplier = s.settings?.xpMultiplier ?? 1;
-  $('#xp-multiplier').value = multiplier;
-  setMultiplierDisplay(multiplier);
+  const multiplierInput = $('#xp-multiplier');
+  if (!multiplierDirty && multiplierInput) {
+    multiplierInput.value = multiplier;
+  }
+  if (!multiplierDirty) {
+    setMultiplierDisplay(multiplier);
+  }
+  if (typeof s.memoryCount === 'number') {
+    latestMemoryTotal = s.memoryCount;
+    updateBrainSummary({ memoriesTotal: latestMemoryTotal });
+  }
   if (document.getElementById('api-provider')) {
     $('#api-provider').value = s.settings?.apiProvider || 'local';
   }
@@ -199,22 +224,97 @@ async function fetchBrain() {
   return res.json();
 }
 
+async function fetchMemories(limit = 20) {
+  const res = await apiFetch(`/memories?limit=${limit}`);
+  if (!res.ok) throw new Error('memories fetch failed');
+  return res.json();
+}
+
 function renderBrain(data) {
   const container = document.getElementById('brain-graph');
   if (!container || typeof vis === 'undefined' || !vis.Network) return;
   const nodes = new vis.DataSet(data.nodes.map(n => ({ id: n.id, label: n.label, value: n.value })));
   const edges = new vis.DataSet(data.links.map(e => ({ from: e.from, to: e.to, value: e.value })));
+  updateBrainSummary({ nodeCount: nodes.length, edgeCount: edges.length });
+
+  if (!nodes.length) {
+    container.innerHTML = '<div class="graph-empty">Teach Pal new ideas to grow this graph.</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+
   const options = {
     nodes: {
       shape: 'dot',
       scaling: { min: 4, max: 24 },
-      color: { background: '#2a306b', border: '#9ab4ff', highlight: { background: '#3240a8', border: '#dfe3ff' } },
+      color: {
+        background: '#2a306b',
+        border: '#9ab4ff',
+        highlight: { background: '#3240a8', border: '#dfe3ff' }
+      },
       font: { color: '#dfe3ff' }
     },
     edges: { color: { color: '#2a306b', highlight: '#9ab4ff' } },
     physics: { stabilization: true }
   };
   new vis.Network(container, { nodes, edges }, options);
+}
+
+function renderMemories(payload) {
+  const container = document.getElementById('memory-list');
+  if (!container) return;
+  const memories = payload?.memories || [];
+  latestMemoryTotal = payload?.total ?? latestMemoryTotal;
+  updateBrainSummary({ memoriesTotal: latestMemoryTotal });
+
+  if (!memories.length) {
+    container.innerHTML = '<p class="memory-empty">No memories yet — start chatting to create them.</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+  memories.forEach((memory) => {
+    const item = document.createElement('article');
+    item.className = 'memory-item';
+
+    const header = document.createElement('header');
+    const when = document.createElement('span');
+    when.textContent = formatTimestamp(memory.ts);
+    const sentiment = document.createElement('span');
+    const sentimentClass = memory.sentiment ? `sentiment-${memory.sentiment}` : 'sentiment-neutral';
+    sentiment.className = sentimentClass;
+    sentiment.textContent = memory.sentiment || 'neutral';
+    header.appendChild(when);
+    header.appendChild(sentiment);
+
+    const text = document.createElement('div');
+    text.className = 'text';
+    text.textContent = `You: ${memory.userText || ''}\nPal: ${memory.palText || ''}`.trim();
+
+    const keywords = document.createElement('div');
+    keywords.className = 'keywords';
+    if (memory.keywords?.length) {
+      keywords.textContent = `Keywords: ${memory.keywords.join(', ')}`;
+    } else {
+      keywords.textContent = 'Keywords: —';
+    }
+
+    item.appendChild(header);
+    item.appendChild(text);
+    item.appendChild(keywords);
+    container.appendChild(item);
+  });
+}
+
+async function loadBrainInsights() {
+  try {
+    const [graph, memories] = await Promise.all([fetchBrain(), fetchMemories()]);
+    renderBrain(graph);
+    renderMemories(memories);
+  } catch (err) {
+    console.error('Failed to load brain insights', err);
+  }
 }
 
 function wireTabs() {
@@ -252,6 +352,7 @@ function wireSettings() {
     const authRequired = !!$('#auth-required').checked;
     await saveSettings(mult, provider, keyRaw ? keyRaw : undefined, telemetry, authRequired);
     if (keyRaw) $('#api-key').value = '';
+    multiplierDirty = false;
     await refreshStats();
   });
   $('#reset-pal').addEventListener('click', async () => {
@@ -261,13 +362,18 @@ function wireSettings() {
     if (word !== 'RESET') return;
     await doReset();
     $('#chat-window').innerHTML = '';
+    multiplierDirty = false;
     await refreshStats();
   });
   $('#export-memory').addEventListener('click', doExport);
 
-  const multiplierInput = $('#xp-multiplier');
-  multiplierInput?.addEventListener('input', (e) => {
+  const multiplierInputEl = $('#xp-multiplier');
+  multiplierInputEl?.addEventListener('input', (e) => {
+    multiplierDirty = true;
     setMultiplierDisplay(e.target.value);
+  });
+  multiplierInputEl?.addEventListener('change', () => {
+    multiplierDirty = true;
   });
 }
 
@@ -278,7 +384,7 @@ async function init() {
   await checkHealth();
   if (backendHealthy) {
     await refreshStats();
-    try { const brain = await fetchBrain(); renderBrain(brain); } catch {}
+    await loadBrainInsights();
   } else {
     showStatusModal();
   }
@@ -289,7 +395,7 @@ async function init() {
     if (ok) {
       hideStatusModal();
       await refreshStats();
-      try { const brain = await fetchBrain(); renderBrain(brain); } catch {}
+      await loadBrainInsights();
     }
   });
   dismiss?.addEventListener('click', hideStatusModal);
@@ -310,8 +416,7 @@ async function init() {
   updateDevPanel();
   const refreshBrainBtn = document.getElementById('refresh-brain');
   refreshBrainBtn?.addEventListener('click', async () => {
-    const data = await fetchBrain();
-    renderBrain(data);
+    await loadBrainInsights();
   });
 
   // Auth controls in dev panel

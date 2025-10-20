@@ -16,6 +16,18 @@ function ensureDir(dir) {
   }
 }
 
+function openLogStream(filePath, label) {
+  try {
+    ensureDir(path.dirname(filePath));
+    const stream = fs.createWriteStream(filePath, { flags: 'a' });
+    stream.write(`\n==== ${new Date().toISOString()} ${label} ====\n`);
+    return stream;
+  } catch (err) {
+    console.warn(`Failed to open ${label} log at ${filePath}`, err);
+    return null;
+  }
+}
+
 function shutdownBackend(signal = 'SIGTERM') {
   if (backendProcess && !backendProcess.killed) {
     try {
@@ -70,14 +82,63 @@ async function startBackend(rootDir) {
 
   return new Promise((resolve, reject) => {
     let settled = false;
+    let outStream = null;
+    let errStream = null;
+
+    let devLogDir = null;
+    try {
+      const candidate = path.resolve(rootDir, '..', 'Developer Files');
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        devLogDir = candidate;
+      }
+    } catch (_) {}
+
+    const outPath = devLogDir ? path.join(devLogDir, 'server_out.txt') : path.join(logsDir, 'server_out.log');
+    const errPath = devLogDir ? path.join(devLogDir, 'server_err.txt') : path.join(logsDir, 'server_err.log');
+
+    outStream = openLogStream(outPath, 'stdout');
+    errStream = openLogStream(errPath, 'stderr');
+
+    const logHint = devLogDir
+      ? `\n\nReview logs:\n${outPath}\n${errPath}`
+      : `\n\nReview logs in ${logsDir}`;
+
+    const closeStreams = () => {
+      [outStream, errStream].forEach((stream) => {
+        if (!stream) return;
+        try {
+          stream.end('\n');
+        } catch (_) {}
+      });
+      outStream = null;
+      errStream = null;
+    };
+
+    const writeSafe = (stream, chunk) => {
+      if (!stream) return;
+      try {
+        stream.write(chunk);
+      } catch (_) {}
+    };
 
     backendProcess = spawn(process.execPath, [backendEntry], {
       cwd: backendDir,
       env,
-      stdio: 'inherit'
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    backendProcess.stdout?.on('data', (chunk) => {
+      writeSafe(process.stdout, chunk);
+      writeSafe(outStream, chunk);
+    });
+
+    backendProcess.stderr?.on('data', (chunk) => {
+      writeSafe(process.stderr, chunk);
+      writeSafe(errStream || outStream, chunk);
     });
 
     backendProcess.once('error', (err) => {
+      closeStreams();
       if (!settled) {
         settled = true;
         reject(err);
@@ -87,9 +148,10 @@ async function startBackend(rootDir) {
     backendProcess.once('exit', (code, signal) => {
       backendReady = false;
       backendProcess = null;
+      closeStreams();
       if (quitting) return;
       const reason = signal ? `signal ${signal}` : `exit code ${code}`;
-      const message = `The MyPal backend stopped unexpectedly (${reason}).`;
+      const message = `The MyPal backend stopped unexpectedly (${reason}).${logHint}`;
       dialog.showErrorBox('Backend exited', message);
       if (!settled) {
         settled = true;
@@ -110,10 +172,11 @@ async function startBackend(rootDir) {
         resolve();
       }
     }).catch((err) => {
+      const message = `Backend failed to become ready: ${err && err.message ? err.message : err}`;
       shutdownBackend();
       if (!settled) {
         settled = true;
-        reject(err);
+        reject(new Error(`${message}${logHint}`));
       }
     });
   });

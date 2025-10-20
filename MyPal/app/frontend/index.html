@@ -74,8 +74,30 @@
     <section id="tab-brain" class="tab">
       <div class="brain-toolbar">
         <button id="refresh-brain" type="button">Refresh Graph</button>
+        <span id="brain-summary">Nodes: 0 · Links: 0 · Memories: 0</span>
       </div>
-      <div id="brain-graph"></div>
+      <div class="brain-layout">
+        <div class="brain-graph-card">
+          <div id="brain-graph"></div>
+        </div>
+        <aside class="brain-sidebar">
+          <div class="brain-info">
+            <h3>How to read this graph</h3>
+            <p id="brain-description">Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.</p>
+            <ul>
+              <li><strong>Size</strong>: frequency of the word.</li>
+              <li><strong>Color</strong>: interaction recency.</li>
+              <li><strong>Edges</strong>: shared context strength.</li>
+            </ul>
+          </div>
+          <div class="brain-memories">
+            <div class="brain-memories-header">
+              <h3>Recent Memories</h3>
+            </div>
+            <div id="memory-list" class="memory-list"></div>
+          </div>
+        </aside>
+      </div>
     </section>
   </main>
 

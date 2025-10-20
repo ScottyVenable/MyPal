@@ -100,8 +100,16 @@ test('chat endpoint returns constrained reply and updates stats', async () => {
   assert.ok(typeof body.reply === 'string', 'chat response should include reply');
   assert.notEqual(body.reply.trim().length, 0, 'reply should not be empty');
   assert.ok(['primitive_phrase', 'single_word', 'free'].includes(body.kind), 'chat response should include utterance kind');
+  assert.ok(typeof body.memoryCount === 'number', 'chat response should include memory count');
 
   const statsAfter = await fetch(`${API}/stats`).then((r) => r.json());
   assert.equal(statsAfter.level >= statsBefore.level, true, 'level should stay same or increase');
   assert.equal(statsAfter.xp > statsBefore.xp, true, 'XP should increase after chat');
+  assert.equal(typeof statsAfter.memoryCount, 'number', 'stats should include memory count');
+
+  const memRes = await fetch(`${API}/memories?limit=5`);
+  assert.equal(memRes.ok, true, 'memories endpoint should respond OK');
+  const memBody = await memRes.json();
+  assert.ok(Array.isArray(memBody.memories), 'memories payload should include list');
+  assert.equal(memBody.memories.length > 0, true, 'memories list should contain at least one entry');
 });

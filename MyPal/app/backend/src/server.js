@@ -37,6 +37,7 @@ function createStream(file) {
 
 const consoleStream = createStream(consoleLogPath);
 const errorStream = createStream(errorLogPath);
+let logsClosed = false;
 
 const formatArgs = (args) => args.map((arg) => typeof arg === 'string' ? arg : util.inspect(arg, { depth: null })).join(' ');
 
@@ -78,6 +79,8 @@ console.error = (...args) => {
 };
 
 function closeLogStreams() {
+  if (logsClosed) return;
+  logsClosed = true;
   [consoleStream, errorStream].forEach((stream) => {
     if (!stream) return;
     try { stream.end(); } catch {}
@@ -85,12 +88,6 @@ function closeLogStreams() {
 }
 
 process.once('exit', closeLogStreams);
-['SIGINT', 'SIGTERM'].forEach((signal) => {
-  process.once(signal, () => {
-    closeLogStreams();
-    process.exit(0);
-  });
-});
 function logAccess(line) {
   try {
     fs.appendFileSync(accessLogPath, line + '\n');
@@ -102,6 +99,8 @@ function logTelemetry(enabled, event) {
 }
 
 const MAX_VOCAB_SIZE = 500;
+const MAX_MEMORIES = 500;
+const MAX_CHAT_LOG_ENTRIES = 1000;
 
 const defaultState = {
   level: 0,
@@ -109,7 +108,7 @@ const defaultState = {
   cp: 0,
   settings: { xpMultiplier: 1, apiProvider: 'local', apiKeyMask: null },
   personality: { curious: 10, logical: 10, social: 10, agreeable: 10, cautious: 10 },
-  vocabulary: [], // quick cache of words
+  vocabulary: [], // quick cache of top learned words
 };
 
 const files = {
@@ -229,6 +228,19 @@ function generatePrimitivePhrase() {
   return earlyPhrases[Math.floor(Math.random() * earlyPhrases.length)];
 }
 
+const positiveWords = ['good', 'great', 'love', 'like', 'happy', 'fun', 'yay', 'nice', 'awesome', 'calm'];
+const negativeWords = ['bad', 'sad', 'angry', 'mad', 'hate', 'tired', 'hurt', 'scared', 'sorry', 'cry'];
+
+function analyzeSentiment(text) {
+  const tokens = tokenizeMessage(text);
+  let score = 0;
+  for (const token of tokens) {
+    if (positiveWords.includes(token)) score += 1;
+    if (negativeWords.includes(token)) score -= 1;
+  }
+  return score > 1 ? 'positive' : score < -1 ? 'negative' : 'neutral';
+}
+
 function tokenizeMessage(text) {
   return (String(text || '').toLowerCase().match(/[a-z]{2,}/g) || []).slice(0, 40);
 }
@@ -295,6 +307,22 @@ function composeLearnedPhrase(vocabulary = [], fallback = '') {
     return `I remember ${primary}.`;
   }
   return fallback || generatePrimitivePhrase();
+}
+
+function buildMemoryEntry({ state, userText, palText, gainedXp }) {
+  const combined = `${userText} ${palText}`.trim();
+  const keywords = Array.from(new Set(tokenizeMessage(combined))).slice(0, 6);
+  return {
+    id: nanoid(),
+    ts: Date.now(),
+    userText,
+    palText,
+    level: state.level,
+    xpAfter: state.xp,
+    xpGained: gainedXp,
+    sentiment: analyzeSentiment(combined),
+    keywords,
+  };
 }
 
 function constrainResponse(input, state, vocabulary) {
@@ -369,7 +397,7 @@ function withAuth(req, res, next) {
 app.use(withAuth);
 
 app.get('/api/stats', (req, res) => {
-  const { state, vocabulary } = getCollections();
+  const { state, vocabulary, memories } = getCollections();
   res.json({
     level: state.level,
     xp: state.xp,
@@ -377,6 +405,7 @@ app.get('/api/stats', (req, res) => {
     settings: state.settings,
     personality: state.personality,
     vocabSize: vocabulary.length,
+    memoryCount: memories.length,
   });
 });
 
@@ -452,7 +481,7 @@ app.post('/api/chat', (req, res) => {
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
 
   const collections = getCollections();
-  const { state, vocabulary, chatLog } = collections;
+  const { state, vocabulary, chatLog, memories } = collections;
 
   // Update personality heuristics from user input
   updatePersonalityFromInteraction(state, message);
@@ -470,10 +499,17 @@ app.post('/api/chat', (req, res) => {
   const userMsg = { id: nanoid(), role: 'user', text: message, ts: Date.now() };
   const palMsg = { id: nanoid(), role: 'pal', text: constrained.output, kind: constrained.utterance_type, ts: Date.now() };
   chatLog.push(userMsg, palMsg);
+  if (chatLog.length > MAX_CHAT_LOG_ENTRIES) {
+    chatLog.splice(0, chatLog.length - MAX_CHAT_LOG_ENTRIES);
+  }
 
   // Learn from pal's own utterance to reinforce known vocabulary
   const palWords = tokenizeMessage(constrained.output);
   learnVocabulary(vocabulary, palWords, 'pal', constrained.output);
+
+  const memory = buildMemoryEntry({ state, userText: message, palText: constrained.output, gainedXp: gained });
+  memories.push(memory);
+  if (memories.length > MAX_MEMORIES) memories.splice(0, memories.length - MAX_MEMORIES);
 
   const summarized = [...vocabulary]
     .sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastSeen || 0) - (a.lastSeen || 0))
@@ -481,9 +517,9 @@ app.post('/api/chat', (req, res) => {
     .map((entry) => entry.word);
   state.vocabulary = summarized;
 
-  saveCollections({ ...collections, chatLog, state, vocabulary });
+  saveCollections({ ...collections, chatLog, state, vocabulary, memories });
 
-  res.json({ reply: palMsg.text, kind: constrained.utterance_type, xpGained: gained, level: state.level });
+  res.json({ reply: palMsg.text, kind: constrained.utterance_type, xpGained: gained, level: state.level, memoryCount: memories.length });
 });
 
 app.post('/api/reinforce', (req, res) => {
@@ -629,5 +665,59 @@ app.get('/api/brain', (req, res) => {
   res.json({ nodes, links });
 });
 
+app.get('/api/memories', (req, res) => {
+  const { memories } = getCollections();
+  const limit = Math.max(1, Math.min(Number(req.query.limit) || 20, 200));
+  const items = memories.slice(-limit).reverse();
+  res.json({ memories: items, total: memories.length });
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`MyPal backend listening on http://localhost:${PORT}`));
+let server = null;
+
+function finalizeShutdown(code = 0) {
+  closeLogStreams();
+  process.exit(code);
+}
+
+let shuttingDown = false;
+function gracefulShutdown(reason = 'signal') {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.info(`Graceful shutdown triggered by ${reason}`);
+
+  const timeout = setTimeout(() => {
+    console.warn('Shutdown timed out; forcing exit');
+    finalizeShutdown(1);
+  }, 5000);
+  timeout.unref();
+
+  if (server && server.listening) {
+    server.close((err) => {
+      if (err) {
+        console.error('Error while closing HTTP server', err);
+        return finalizeShutdown(1);
+      }
+      finalizeShutdown(0);
+    });
+    return;
+  }
+
+  finalizeShutdown(0);
+}
+
+['SIGINT', 'SIGTERM'].forEach((signal) => {
+  process.once(signal, () => gracefulShutdown(signal));
+});
+
+process.once('uncaughtException', (err) => {
+  console.error('Uncaught exception', err);
+  gracefulShutdown('uncaughtException');
+});
+
+process.once('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection', reason);
+  gracefulShutdown('unhandledRejection');
+});
+
+server = app.listen(PORT, () => console.log(`MyPal backend listening on http://localhost:${PORT}`));
