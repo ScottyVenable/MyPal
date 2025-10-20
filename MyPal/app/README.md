@@ -15,6 +15,8 @@ cd <project-root>\app\backend
 npm install
 ```
 
+> **Note:** `<project-root>` refers to the `MyPal` folder in the repository (for example `C:\path\to\repo\MyPal\MyPal`).
+
 If you see EBADF/EPERM errors (common on synced folders like Google Drive), copy the backend folder to a local, unsynced path (e.g., `C:\dev\mypal\backend`) and run `npm install` there, then run `npm start`. Alternatively, pause Drive sync during install.
 
 2) Start backend

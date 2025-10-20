@@ -8,13 +8,15 @@ This Electron-based launcher starts the MyPal backend and opens the existing SPA
 - Windows 10/11 (packaged `.exe` target)
 
 ## Development run
+> **Note:** `<pal-root>` refers to the `MyPal` folder inside the repository (for example `C:\path\to\repo\MyPal\MyPal`).
+
 ```powershell
 # First, install backend dependencies
-cd <project-root>\app\backend
+cd <pal-root>\app\backend
 npm install
 
 # Then run the launcher
-cd <project-root>\launcher
+cd <pal-root>\launcher
 npm install
 npm run dev
 ```
@@ -23,11 +25,11 @@ This boots the backend (using the dependencies you installed in `app/backend`) a
 ## Building the Windows installer
 ```powershell
 # Ensure backend dependencies are installed
-cd <project-root>\app\backend
+cd <pal-root>\app\backend
 npm install
 
 # Build the installer
-cd <project-root>\launcher
+cd <pal-root>\launcher
 npm install
 npm run dist
 ```

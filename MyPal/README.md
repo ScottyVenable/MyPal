@@ -6,6 +6,8 @@
 
 **MyPal** (internally "Pal") is an ambitious, privacy-first AI companion application that simulates human cognitive and linguistic development through conversational interaction. Unlike traditional chatbots that rely on vast pre-existing datasets, MyPal starts as a digital *tabula rasa*—a blank slate—and learns exclusively from its interactions with you, the user.
 
+> **Repository layout:** The Git repository root now contains two sibling directories. This README lives inside `MyPal/` (the folder that is pushed to GitHub). Developer-only assets live in `Developer Files/`, which is ignored by git. Unless stated otherwise, all relative paths and commands below assume you are in this `MyPal/` directory; use `<pal-root>` to represent its absolute path (for example `C:\path\to\repo\MyPal\MyPal`).
+
 ---
 
 ## 🎯 Project Vision
@@ -73,11 +75,11 @@ For detailed architecture and implementation specs, see:
 **Development Mode:**
 ```powershell
 # 1. Install backend dependencies (one-time)
-cd <project-root>\app\backend
+cd <pal-root>\app\backend
 npm install
 
 # 2. Run the launcher
-cd <project-root>\launcher
+cd <pal-root>\launcher
 npm install
 npm run dev
 ```
@@ -85,7 +87,7 @@ npm run dev
 **Production Installer:**
 ```powershell
 # Build Windows installer (.exe)
-cd <project-root>\launcher
+cd <pal-root>\launcher
 npm run dist
 ```
 
@@ -97,7 +99,7 @@ See **[`launcher/README.md`](launcher/README.md)** for detailed launcher documen
 
 **1. Start the backend:**
 ```powershell
-cd <project-root>\app\backend
+cd <pal-root>\app\backend
 npm install
 npm start
 # Server: http://localhost:3001
@@ -182,40 +184,21 @@ See **[`docs/updates/V1.0_ROADMAP.md`](docs/updates/V1.0_ROADMAP.md)** for compl
 
 ### Project Structure
 ```
-MyPal/
-├── app/                          # Application runtime
-│   ├── backend/                  # Express server + API
-│   │   ├── src/server.js        # Main entry point
-│   │   ├── data/*.json          # Persistent storage
-│   │   └── package.json         # Dependencies
-│   ├── frontend/                # SPA client
-│   │   ├── index.html           # UI structure
-│   │   ├── app.js               # Client logic
-│   │   └── styles.css           # Styling
-│   └── README.md                # App-specific docs
-├── launcher/                    # Electron desktop launcher
-│   ├── main.js                  # Main process
-│   ├── preload.js               # Security boundary
-│   ├── package.json             # Build configuration
-│   └── README.md                # Launcher docs
-├── docs/                        # Public documentation
-│   ├── ai/AI_PLAN.md           # AI integration plan
-│   ├── design/                  # Design documents
-│   │   ├── APP_DESIGN.md       # Complete system spec
-│   │   ├── ON_DEVICE_LLM_PLAN.md
-│   │   └── PLUGIN_SYSTEM.md
-│   └── updates/                 # Milestones & roadmaps
-│       ├── MILESTONES.md
-│       ├── V1.0_ROADMAP.md
-│       ├── RELEASE_PLAN.md
-│       └── FIRST_RELEASE_GUIDE.md
-├── dev/                         # Private development files (not in git)
-│   ├── builds/                  # Build artifacts
-│   ├── config/                  # Dev configs
-│   ├── tests/                   # Test files
-│   └── notes/                   # Private notes
-├── logs/                        # Application logs
-└── README.md                    # This file
+Repository root/
+├── MyPal/                       # Public project (pushed to GitHub)
+│   ├── app/                     # Application runtime
+│   │   ├── backend/
+│   │   └── frontend/
+│   ├── launcher/                # Electron desktop launcher
+│   ├── docs/                    # Design docs, plans, roadmaps
+│   ├── README.md                # Project overview (this file lives here)
+│   └── REORGANIZATION_SUMMARY.md
+├── Developer Files/             # Local-only assets (ignored by git)
+│   ├── dev/                     # Private development workspace
+│   ├── logs/                    # Local logs and run artifacts
+│   ├── server_err.txt
+│   └── server_out.txt
+└── .github/                     # GitHub workflows and metadata
 ```
 
 ### Key Documentation
@@ -242,11 +225,11 @@ MyPal/
 **Install dependencies:**
 ```powershell
 # Backend
-cd app\backend
+cd <pal-root>\app\backend
 npm install
 
 # Launcher
-cd launcher
+cd <pal-root>\launcher
 npm install
 ```
 
@@ -255,7 +238,7 @@ npm install
 **Running tests:**
 ```powershell
 # Unit tests (when available in v0.2+)
-cd app\backend
+cd <pal-root>\app\backend
 npm test
 ```
 
@@ -299,11 +282,11 @@ See planned legal documents:
 **Backend won't start:**
 - Check that port 3001 is available: `netstat -ano | findstr :3001`
 - Verify Node.js version: `node --version` (must be 18+)
-- Check logs: `app/backend/logs/` or `%APPDATA%/MyPal/logs/`
+- Check logs under `Developer Files\logs\` or `%APPDATA%/MyPal/logs/`
 
 **Launcher crashes on startup:**
-- Ensure backend dependencies are installed: `cd app/backend && npm install`
-- Check `server_err.txt` and `server_out.txt` in project root for backend error logs
+- Ensure backend dependencies are installed: `cd <pal-root>\app\backend && npm install`
+- Review `Developer Files\server_err.txt` and `Developer Files\server_out.txt` for backend error logs
 
 **Pal's responses seem incorrect:**
 - Each developmental stage has strict constraints. Level 0-1 = babble only. Level 2-3 = single words only.
