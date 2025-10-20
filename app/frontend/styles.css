@@ -37,6 +37,7 @@ main { padding: 16px; }
 .settings input { width: 80px; padding: 6px; border-radius: 6px; border: 1px solid #2a306b; background: #0f1331; color: #e6e8f0; }
 .settings select { padding: 6px; border-radius: 6px; border: 1px solid #2a306b; background: #0f1331; color: #e6e8f0; }
 .settings label { display: flex; align-items: center; gap: 6px; }
+.settings label input[type="checkbox"] { width: auto; }
 .settings button { padding: 8px 12px; border-radius: 6px; background: #20316b; color: #dfe3ff; border: 1px solid #2a306b; cursor: pointer; }
 .settings .danger { background: #6b2034; }
 
@@ -44,6 +45,10 @@ main { padding: 16px; }
 .stat-box { background: #121634; border: 1px solid #2a306b; border-radius: 8px; padding: 8px; text-align: center; }
 
 .brain-placeholder { height: 400px; background: #121634; border: 1px dashed #2a306b; border-radius: 8px; display: flex; align-items: center; justify-content: center; opacity: 0.8; }
+
+#brain-graph { height: 420px; background: #121634; border: 1px solid #2a306b; border-radius: 8px; }
+.brain-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+.brain-toolbar button { padding: 8px 12px; border-radius: 6px; background: #20316b; color: #dfe3ff; border: 1px solid #2a306b; cursor: pointer; }
 
 footer { padding: 12px 16px; border-top: 1px solid #252a52; color: #98a0d3; }
 
@@ -61,3 +66,4 @@ footer { padding: 12px 16px; border-top: 1px solid #252a52; color: #98a0d3; }
 .dev-panel.hidden { display: none; }
 .dev-panel .dev-row { margin: 4px 0; font-size: 13px; }
 .dev-panel button { padding: 6px 10px; border-radius: 6px; background: #20316b; color: #dfe3ff; border: 1px solid #2a306b; cursor: pointer; }
+.dev-panel input { padding: 6px; border-radius: 6px; border: 1px solid #2a306b; background: #0f1331; color: #e6e8f0; }

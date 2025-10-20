@@ -5,13 +5,14 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { nanoid } from 'nanoid';
+import bcrypt from 'bcryptjs';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const LOGS_DIR = path.join(__dirname, '..', '..', '..', 'logs');
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
+const LOGS_DIR = process.env.LOGS_DIR ? path.resolve(process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
 
 // Ensure data dir exists
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -19,10 +20,15 @@ if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
 
 // Simple file logger
 const accessLogPath = path.join(LOGS_DIR, 'access.log');
+const telemetryLogPath = path.join(LOGS_DIR, 'telemetry.log');
 function logAccess(line) {
   try {
     fs.appendFileSync(accessLogPath, line + '\n');
   } catch {}
+}
+function logTelemetry(enabled, event) {
+  if (!enabled) return;
+  try { fs.appendFileSync(telemetryLogPath, JSON.stringify({ ts: Date.now(), ...event }) + '\n'); } catch {}
 }
 
 const defaultState = {
@@ -36,6 +42,8 @@ const defaultState = {
 
 const files = {
   state: path.join(DATA_DIR, 'state.json'),
+  users: path.join(DATA_DIR, 'users.json'),
+  sessions: path.join(DATA_DIR, 'sessions.json'),
   vocabulary: path.join(DATA_DIR, 'vocabulary.json'),
   concepts: path.join(DATA_DIR, 'concepts.json'),
   facts: path.join(DATA_DIR, 'facts.json'),
@@ -79,16 +87,20 @@ function saveState(state) {
 
 function getCollections() {
   const state = loadState();
+  const users = readJson(files.users, []);
+  const sessions = readJson(files.sessions, []);
   const vocabulary = readJson(files.vocabulary, []);
   const concepts = readJson(files.concepts, []);
   const facts = readJson(files.facts, []);
   const memories = readJson(files.memories, []);
   const chatLog = readJson(files.chatLog, []);
-  return { state, vocabulary, concepts, facts, memories, chatLog };
+  return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog };
 }
 
-function saveCollections({ state, vocabulary, concepts, facts, memories, chatLog }) {
+function saveCollections({ state, users, sessions, vocabulary, concepts, facts, memories, chatLog }) {
   saveState(state);
+  writeJson(files.users, users ?? readJson(files.users, []));
+  writeJson(files.sessions, sessions ?? readJson(files.sessions, []));
   writeJson(files.vocabulary, vocabulary);
   writeJson(files.concepts, concepts);
   writeJson(files.facts, facts);
@@ -171,8 +183,35 @@ app.use((req, res, next) => {
 });
 
 app.get('/api/health', (req, res) => {
+  const { state } = getCollections();
+  logTelemetry(!!state.settings?.telemetry, { type: 'health', uptime: process.uptime() });
   res.json({ ok: true, uptime: process.uptime() });
 });
+
+// --- Auth helpers and middleware
+function nowSec() { return Math.floor(Date.now() / 1000); }
+function tidySessions(sessions) {
+  const t = nowSec();
+  return sessions.filter(s => (s.exp || 0) > t);
+}
+function makeToken() { return nanoid(32); }
+function withAuth(req, res, next) {
+  const auth = req.headers['authorization'] || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) { req.user = null; return next(); }
+  const { sessions, users } = getCollections();
+  const active = tidySessions(sessions);
+  const s = active.find(x => x.token === token);
+  if (!s) { req.user = null; return next(); }
+  const user = users.find(u => u.username === s.username) || null;
+  req.user = user ? { username: user.username, role: user.role || 'user' } : null;
+  // persist session cleanup occasionally
+  if (active.length !== sessions.length) {
+    saveCollections({ ...getCollections(), sessions: active });
+  }
+  return next();
+}
+app.use(withAuth);
 
 app.get('/api/stats', (req, res) => {
   const { state, vocabulary } = getCollections();
@@ -188,12 +227,18 @@ app.get('/api/stats', (req, res) => {
 
 app.post('/api/settings', (req, res) => {
   const { state } = getCollections();
-  const { xpMultiplier, apiProvider, apiKey } = req.body || {};
+  const { xpMultiplier, apiProvider, apiKey, telemetry, authRequired } = req.body || {};
   if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
     state.settings.xpMultiplier = xpMultiplier;
   }
   if (typeof apiProvider === 'string' && ['local','openai','azure','gemini'].includes(apiProvider)) {
     state.settings.apiProvider = apiProvider;
+  }
+  if (typeof telemetry === 'boolean') {
+    state.settings.telemetry = telemetry;
+  }
+  if (typeof authRequired === 'boolean') {
+    state.settings.authRequired = authRequired;
   }
   if (typeof apiKey === 'string' && apiKey.length > 0) {
     const secrets = readSecrets();
@@ -204,6 +249,47 @@ app.post('/api/settings', (req, res) => {
   }
   saveState(state);
   res.json({ settings: state.settings });
+});
+
+// --- Auth endpoints
+app.post('/api/auth/register', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  const collections = getCollections();
+  const { users, sessions } = collections;
+  if (users.find(u => u.username === username)) return res.status(409).json({ error: 'user exists' });
+  const hash = bcrypt.hashSync(String(password), 10);
+  const user = { username, passwordHash: hash, role: users.length ? 'user' : 'admin', createdAt: Date.now() };
+  users.push(user);
+  const token = makeToken();
+  const exp = nowSec() + 60 * 60 * 24 * 14; // 14 days
+  sessions.push({ token, username, exp });
+  saveCollections({ ...collections, users, sessions });
+  res.json({ token, user: { username: user.username, role: user.role } });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const collections = getCollections();
+  const { users, sessions } = collections;
+  const user = users.find(u => u.username === username);
+  if (!user) return res.status(401).json({ error: 'invalid credentials' });
+  const ok = bcrypt.compareSync(String(password || ''), user.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'invalid credentials' });
+  const token = makeToken();
+  const exp = nowSec() + 60 * 60 * 24 * 14;
+  sessions.push({ token, username, exp });
+  saveCollections({ ...collections, sessions: tidySessions(sessions) });
+  res.json({ token, user: { username: user.username, role: user.role || 'user' } });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const { sessions } = getCollections();
+  const auth = req.headers['authorization'] || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  const next = tidySessions(sessions).filter(s => s.token !== token);
+  saveCollections({ ...getCollections(), sessions: next });
+  res.json({ ok: true });
 });
 
 app.post('/api/chat', (req, res) => {
@@ -240,6 +326,8 @@ app.post('/api/reinforce', (req, res) => {
 });
 
 app.post('/api/reset', (req, res) => {
+  const { state } = getCollections();
+  if (state.settings?.authRequired && !req.user) return res.status(401).json({ error: 'auth required' });
   // wipe files
   for (const f of Object.values(files)) {
     try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
@@ -250,6 +338,8 @@ app.post('/api/reset', (req, res) => {
 });
 
 app.get('/api/export', (req, res) => {
+  const { state } = getCollections();
+  if (state.settings?.authRequired && !req.user) return res.status(401).json({ error: 'auth required' });
   const data = getCollections();
   res.setHeader('Content-Disposition', 'attachment; filename="pal_memory.json"');
   res.json(data);
@@ -263,7 +353,18 @@ app.post('/api/report', (req, res) => {
   const entry = { id: nanoid(), ts: Date.now(), type, message: String(message).slice(0, 5000) };
   reports.push(entry);
   writeJson(file, reports);
+  const { state } = getCollections();
+  logTelemetry(!!state.settings?.telemetry, { type: 'report', id: entry.id, reportType: type });
   res.json({ ok: true, id: entry.id });
+});
+
+// Telemetry endpoint (local append only)
+app.post('/api/telemetry', (req, res) => {
+  const { state } = getCollections();
+  if (!state.settings?.telemetry) return res.status(202).json({ ok: false, reason: 'disabled' });
+  const payload = req.body || {};
+  logTelemetry(true, { type: 'client', payload });
+  res.json({ ok: true });
 });
 
 // Serve frontend in sibling folder if built
@@ -273,11 +374,90 @@ if (fs.existsSync(FRONTEND_DIR)) {
 }
 
 // Models directory and listing endpoint (scaffolding)
-const MODELS_DIR = process.env.MODELS_DIR || path.join(__dirname, '..', 'models');
+const MODELS_DIR = process.env.MODELS_DIR ? path.resolve(process.env.MODELS_DIR) : path.join(__dirname, '..', 'models');
 if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
 app.get('/api/models', (req, res) => {
   const files = fs.readdirSync(MODELS_DIR).filter(f => !f.startsWith('.'));
   res.json({ dir: MODELS_DIR, models: files });
+});
+
+// Plugin scaffolding: list + enable/disable
+const PLUGINS_DIR = path.join(__dirname, '..', 'plugins');
+if (!fs.existsSync(PLUGINS_DIR)) fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+const pluginsStateFile = path.join(DATA_DIR, 'plugins.json');
+function readPluginsState() { return readJson(pluginsStateFile, { enabled: {} }); }
+function writePluginsState(s) { writeJson(pluginsStateFile, s); }
+function discoverPlugins() {
+  const entries = fs.readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter(d => d.isDirectory());
+  const state = readPluginsState();
+  const list = [];
+  for (const dir of entries) {
+    const name = dir.name;
+    const manifestPath = path.join(PLUGINS_DIR, name, 'plugin.json');
+    let manifest = { name, version: '0.0.0' };
+    if (fs.existsSync(manifestPath)) {
+      try { manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch {}
+    }
+    list.push({ name, version: manifest.version || '0.0.0', enabled: !!state.enabled[name] });
+  }
+  return list;
+}
+app.get('/api/plugins', (req, res) => {
+  res.json({ plugins: discoverPlugins() });
+});
+app.post('/api/plugins/:name/toggle', (req, res) => {
+  const name = req.params.name;
+  const state = readPluginsState();
+  state.enabled[name] = !state.enabled[name];
+  writePluginsState(state);
+  res.json({ name, enabled: !!state.enabled[name] });
+});
+
+// Brain graph: derive simple co-occurrence network from chat log
+app.get('/api/brain', (req, res) => {
+  const { chatLog } = getCollections();
+  const maxMsgs = 300; // cap for performance
+  const logs = chatLog.slice(-maxMsgs);
+  const freq = new Map();
+  const edges = new Map(); // key: a|b sorted
+  const wordRegex = /[a-zA-Z]{2,}/g;
+
+  function tokenize(t) {
+    const m = String(t || '').toLowerCase().match(wordRegex);
+    if (!m) return [];
+    // de-duplicate within message to reduce heavy cliques
+    return Array.from(new Set(m.slice(0, 25)));
+  }
+
+  for (const m of logs) {
+    const words = tokenize(m.text);
+    for (const w of words) freq.set(w, (freq.get(w) || 0) + 1);
+    for (let i = 0; i < words.length; i++) {
+      for (let j = i + 1; j < words.length; j++) {
+        const a = words[i], b = words[j];
+        const [x, y] = a < b ? [a, b] : [b, a];
+        const key = x + '|' + y;
+        edges.set(key, (edges.get(key) || 0) + 1);
+      }
+    }
+  }
+
+  // Select top words
+  const topWords = Array.from(freq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 50)
+    .map(([w]) => w);
+  const wordSet = new Set(topWords);
+
+  const nodes = topWords.map((w) => ({ id: w, label: w, value: freq.get(w) || 1, group: 'language' }));
+  const links = [];
+  for (const [key, weight] of edges.entries()) {
+    const [a, b] = key.split('|');
+    if (wordSet.has(a) && wordSet.has(b) && weight >= 2) {
+      links.push({ from: a, to: b, value: weight });
+    }
+  }
+  res.json({ nodes, links });
 });
 
 const PORT = process.env.PORT || 3001;

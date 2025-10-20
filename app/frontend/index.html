@@ -40,6 +40,8 @@
         <label>API Key
           <input id="api-key" type="password" placeholder="Optional — stored locally" />
         </label>
+        <label><input id="telemetry" type="checkbox" /> Telemetry (opt-in)</label>
+        <label><input id="auth-required" type="checkbox" /> Require login for sensitive actions</label>
         <button id="save-settings">Save</button>
         <button id="reset-pal" class="danger">Reset Pal</button>
         <button id="export-memory">Export Memory</button>
@@ -69,9 +71,10 @@
     </section>
 
     <section id="tab-brain" class="tab">
-      <div class="brain-placeholder">
-        Brain graph coming soon. For now, this will visualize concepts and associations.
+      <div class="brain-toolbar">
+        <button id="refresh-brain" type="button">Refresh Graph</button>
       </div>
+      <div id="brain-graph"></div>
     </section>
   </main>
 
@@ -99,6 +102,17 @@
     <div class="dev-row"><strong>Backend:</strong> <span id="dev-backend-status">unknown</span></div>
     <div class="dev-row"><strong>API Provider:</strong> <span id="dev-api-provider">local</span></div>
     <div class="dev-row"><button id="dev-ping" type="button">Ping Health</button></div>
+    <div class="dev-row">
+      <input id="auth-user" placeholder="username" />
+      <input id="auth-pass" placeholder="password" type="password" />
+      <button id="auth-register" type="button">Register</button>
+      <button id="auth-login" type="button">Login</button>
+      <button id="auth-logout" type="button">Logout</button>
+    </div>
+    <div class="dev-row"><small id="auth-status">Not logged in</small></div>
   </div>
+
+  <!-- Graph library -->
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 </body>
 </html>

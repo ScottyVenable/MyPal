@@ -1,5 +1,13 @@
 const API_BASE = 'http://localhost:3001/api';
 let backendHealthy = false;
+let authToken = localStorage.getItem('mypal_token') || null;
+
+async function apiFetch(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  return res;
+}
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -13,7 +21,7 @@ function switchTab(name) {
 async function reinforceClick(btn) {
   btn.disabled = true;
   try {
-    await fetch(`${API_BASE}/reinforce`, { method: 'POST' });
+    await apiFetch(`/reinforce`, { method: 'POST' });
     await refreshStats();
   } catch {}
 }
@@ -38,7 +46,7 @@ function addMessage(role, text) {
 }
 
 async function sendChat(message) {
-  const res = await fetch(`${API_BASE}/chat`, {
+  const res = await apiFetch(`/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message }),
@@ -48,26 +56,26 @@ async function sendChat(message) {
 }
 
 async function getStats() {
-  const res = await fetch(`${API_BASE}/stats`);
+  const res = await apiFetch(`/stats`);
   return res.json();
 }
 
-async function saveSettings(xpMultiplier, apiProvider, apiKey) {
-  const res = await fetch(`${API_BASE}/settings`, {
+async function saveSettings(xpMultiplier, apiProvider, apiKey, telemetry, authRequired) {
+  const res = await apiFetch(`/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ xpMultiplier, apiProvider, apiKey })
+    body: JSON.stringify({ xpMultiplier, apiProvider, apiKey, telemetry, authRequired })
   });
   return res.json();
 }
 
 async function doReset() {
-  const res = await fetch(`${API_BASE}/reset`, { method: 'POST' });
+  const res = await apiFetch(`/reset`, { method: 'POST' });
   return res.json();
 }
 
 async function doExport() {
-  const res = await fetch(`${API_BASE}/export`);
+  const res = await apiFetch(`/export`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -86,6 +94,15 @@ function renderStats(s) {
   $('#stat-cp').textContent = s.cp;
   $('#stat-vocab').textContent = s.vocabSize;
   $('#xp-multiplier').value = s.settings?.xpMultiplier ?? 1;
+  if (document.getElementById('api-provider')) {
+    $('#api-provider').value = s.settings?.apiProvider || 'local';
+  }
+  if (document.getElementById('telemetry')) {
+    $('#telemetry').checked = !!s.settings?.telemetry;
+  }
+  if (document.getElementById('auth-required')) {
+    $('#auth-required').checked = !!s.settings?.authRequired;
+  }
 
   const labels = ['Curious', 'Logical', 'Social', 'Agreeable', 'Cautious'];
   const data = [
@@ -122,6 +139,30 @@ async function refreshStats() {
   renderStats(s);
 }
 
+async function fetchBrain() {
+  const res = await apiFetch(`/brain`);
+  if (!res.ok) throw new Error('brain fetch failed');
+  return res.json();
+}
+
+function renderBrain(data) {
+  const container = document.getElementById('brain-graph');
+  if (!container || typeof vis === 'undefined' || !vis.Network) return;
+  const nodes = new vis.DataSet(data.nodes.map(n => ({ id: n.id, label: n.label, value: n.value })));
+  const edges = new vis.DataSet(data.links.map(e => ({ from: e.from, to: e.to, value: e.value })));
+  const options = {
+    nodes: {
+      shape: 'dot',
+      scaling: { min: 4, max: 24 },
+      color: { background: '#2a306b', border: '#9ab4ff', highlight: { background: '#3240a8', border: '#dfe3ff' } },
+      font: { color: '#dfe3ff' }
+    },
+    edges: { color: { color: '#2a306b', highlight: '#9ab4ff' } },
+    physics: { stabilization: true }
+  };
+  new vis.Network(container, { nodes, edges }, options);
+}
+
 function wireTabs() {
   $$('nav button').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 }
@@ -151,7 +192,9 @@ function wireSettings() {
     const mult = parseInt($('#xp-multiplier').value, 10) || 1;
     const provider = ($('#api-provider').value || 'local');
     const keyRaw = ($('#api-key').value || '').trim();
-    await saveSettings(mult, provider, keyRaw ? keyRaw : undefined);
+    const telemetry = !!$('#telemetry').checked;
+    const authRequired = !!$('#auth-required').checked;
+    await saveSettings(mult, provider, keyRaw ? keyRaw : undefined, telemetry, authRequired);
     if (keyRaw) $('#api-key').value = '';
     await refreshStats();
   });
@@ -174,6 +217,7 @@ async function init() {
   await checkHealth();
   if (backendHealthy) {
     await refreshStats();
+    try { const brain = await fetchBrain(); renderBrain(brain); } catch {}
   } else {
     showStatusModal();
   }
@@ -184,6 +228,7 @@ async function init() {
     if (ok) {
       hideStatusModal();
       await refreshStats();
+      try { const brain = await fetchBrain(); renderBrain(brain); } catch {}
     }
   });
   dismiss?.addEventListener('click', hideStatusModal);
@@ -202,6 +247,40 @@ async function init() {
     if (!ok) showStatusModal();
   });
   updateDevPanel();
+  const refreshBrainBtn = document.getElementById('refresh-brain');
+  refreshBrainBtn?.addEventListener('click', async () => {
+    const data = await fetchBrain();
+    renderBrain(data);
+  });
+
+  // Auth controls in dev panel
+  const authUser = document.getElementById('auth-user');
+  const authPass = document.getElementById('auth-pass');
+  const authStatus = document.getElementById('auth-status');
+  const setAuthStatus = () => authStatus && (authStatus.textContent = authToken ? `Token: ${authToken.slice(0,8)}…` : 'Not logged in');
+  setAuthStatus();
+  document.getElementById('auth-register')?.addEventListener('click', async () => {
+    const username = (authUser?.value || '').trim();
+    const password = authPass?.value || '';
+    if (!username || !password) return;
+    const res = await fetch(`${API_BASE}/auth/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    if (!res.ok) return;
+    const data = await res.json();
+    authToken = data.token; localStorage.setItem('mypal_token', authToken); setAuthStatus();
+  });
+  document.getElementById('auth-login')?.addEventListener('click', async () => {
+    const username = (authUser?.value || '').trim();
+    const password = authPass?.value || '';
+    if (!username || !password) return;
+    const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    if (!res.ok) return;
+    const data = await res.json();
+    authToken = data.token; localStorage.setItem('mypal_token', authToken); setAuthStatus();
+  });
+  document.getElementById('auth-logout')?.addEventListener('click', async () => {
+    if (authToken) { await apiFetch('/auth/logout', { method: 'POST' }); }
+    authToken = null; localStorage.removeItem('mypal_token'); setAuthStatus();
+  });
 }
 
 window.addEventListener('DOMContentLoaded', init);

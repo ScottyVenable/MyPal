@@ -8,6 +8,8 @@ Thumbs.db
 # Node and build
 node_modules/
 dist/
+**/node_modules/
+**/dist/
 build/
 coverage/
 
