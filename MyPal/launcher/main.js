@@ -30,7 +30,20 @@ function resolveRootDir() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'app');
   }
-  return path.resolve(__dirname, '../../../../');
+  const candidates = [
+    path.resolve(__dirname, '..'),
+    path.resolve(__dirname, '../..'),
+    path.resolve(__dirname, '../../..')
+  ];
+
+  for (const candidate of candidates) {
+    const backendEntry = path.join(candidate, 'app', 'backend', 'src', 'server.js');
+    if (fs.existsSync(backendEntry)) {
+      return candidate;
+    }
+  }
+
+  throw new Error('Unable to locate project root containing app/backend/src/server.js');
 }
 
 async function startBackend(rootDir) {

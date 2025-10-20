@@ -10,6 +10,18 @@ This Electron-based launcher starts the MyPal backend and opens the existing SPA
 ## Development run
 > **Note:** `<pal-root>` refers to the `MyPal` folder inside the repository (for example `C:\path\to\repo\MyPal\MyPal`).
 
+### Quick start (AutoRun script)
+From the repository root you can launch everything in one step:
+
+```powershell
+cd <pal-root>
+.\autorun.ps1
+```
+
+The script installs missing dependencies (unless `-SkipInstall` is passed) and then runs the launcher in development mode.
+
+### Manual run
+
 ```powershell
 # First, install backend dependencies
 cd <pal-root>\app\backend
