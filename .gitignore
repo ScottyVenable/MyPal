@@ -1,0 +1,36 @@
+# OS and editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# Node and build
+node_modules/
+dist/
+build/
+coverage/
+
+# Python
+__pycache__/
+*.pyc
+
+# Environment and local config
+.env
+.env.*
+*.local
+
+# Google Drive shortcuts / special files
+*.gdoc
+*.gsheet
+*.gslides
+*.link
+
+# App data / runtime
+**/src/data/**
+**/src/logs/**
+**/src/temp/**
+**/dev/builds/**
+
+# Generated hardware specs
+docs/detect_user_specs/user_hardware.json

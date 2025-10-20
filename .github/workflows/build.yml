@@ -1,0 +1,31 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install backend deps
+        working-directory: app/backend
+        run: npm ci
+      - name: Lint/Type (placeholder)
+        run: echo "No lint configured"
+      - name: Package artifact
+        run: |
+          mkdir -p dist
+          cp -R app/backend dist/backend
+          cp -R app/frontend dist/frontend
+          (cd dist && zip -r mypal_mvp.zip backend frontend)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mypal_mvp
+          path: dist/mypal_mvp.zip

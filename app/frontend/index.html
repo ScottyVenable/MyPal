@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pal — Evolving AI Companion</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script type="module" src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Pal</h1>
+    <nav>
+      <button type="button" data-tab="chat" class="active">Conversation</button>
+      <button type="button" data-tab="stats">Stats</button>
+      <button type="button" data-tab="brain">Brain</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-chat" class="tab active">
+      <div id="chat-window"></div>
+      <form id="chat-form">
+        <input id="chat-input" placeholder="Teach Pal…" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+      <div class="settings">
+        <label>Learning Speed Multiplier
+          <input id="xp-multiplier" type="number" min="1" max="250" value="1" />
+        </label>
+        <label>API Provider
+          <select id="api-provider">
+            <option value="local">Local Only (default)</option>
+            <option value="openai">OpenAI</option>
+            <option value="azure">Azure OpenAI</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </label>
+        <label>API Key
+          <input id="api-key" type="password" placeholder="Optional — stored locally" />
+        </label>
+        <button id="save-settings">Save</button>
+        <button id="reset-pal" class="danger">Reset Pal</button>
+        <button id="export-memory">Export Memory</button>
+      </div>
+    </section>
+
+    <section id="tab-stats" class="tab">
+      <div class="stats">
+        <div class="stat-box">
+          <div>Level</div>
+          <div id="stat-level">0</div>
+        </div>
+        <div class="stat-box">
+          <div>XP</div>
+          <div id="stat-xp">0</div>
+        </div>
+        <div class="stat-box">
+          <div>CP</div>
+          <div id="stat-cp">0</div>
+        </div>
+        <div class="stat-box">
+          <div>Vocabulary</div>
+          <div id="stat-vocab">0</div>
+        </div>
+      </div>
+      <canvas id="personalityChart" width="400" height="400"></canvas>
+    </section>
+
+    <section id="tab-brain" class="tab">
+      <div class="brain-placeholder">
+        Brain graph coming soon. For now, this will visualize concepts and associations.
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <small>Stage 0–1 MVP — Local prototype</small>
+  </footer>
+
+  <!-- Connectivity/status modal -->
+  <div id="status-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="status-title">
+    <div class="modal-card">
+      <h2 id="status-title">Backend Not Reachable</h2>
+      <p>
+        The local server at <code>http://localhost:3001</code> is not responding.
+        Please start the backend (see README) and try again.
+      </p>
+      <div class="modal-actions">
+        <button id="retry-connection" type="button">Retry</button>
+        <button id="dismiss-connection" type="button">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Developer tools panel (toggle with Ctrl+D) -->
+  <div id="dev-panel" class="dev-panel hidden">
+    <div class="dev-row"><strong>Backend:</strong> <span id="dev-backend-status">unknown</span></div>
+    <div class="dev-row"><strong>API Provider:</strong> <span id="dev-api-provider">local</span></div>
+    <div class="dev-row"><button id="dev-ping" type="button">Ping Health</button></div>
+  </div>
+</body>
+</html>
