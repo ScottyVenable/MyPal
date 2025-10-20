@@ -2,6 +2,10 @@ const API_BASE = 'http://localhost:3001/api';
 let backendHealthy = false;
 let authToken = localStorage.getItem('mypal_token') || null;
 let latestMemoryTotal = 0;
+let defaultBrainDescription = '';
+let latestJournalTotal = 0;
+let journalLoaded = false;
+let journalLoading = false;
 let multiplierDirty = false;
 
 window.addEventListener('error', (event) => {
@@ -47,10 +51,13 @@ function setMultiplierDisplay(value) {
   label.textContent = `${numeric}x`;
 }
 
-function updateBrainSummary({ nodeCount = 0, edgeCount = 0, memoriesTotal = latestMemoryTotal } = {}) {
+function updateBrainSummary({ nodeCount = 0, edgeCount = 0, conceptCount = 0, memoriesTotal = latestMemoryTotal } = {}) {
   const summary = $('#brain-summary');
   if (!summary) return;
-  summary.textContent = `Nodes: ${nodeCount} · Links: ${edgeCount} · Memories: ${memoriesTotal}`;
+  const parts = [`Nodes: ${nodeCount}`, `Links: ${edgeCount}`];
+  if (conceptCount > 0) parts.push(`Concepts: ${conceptCount}`);
+  parts.push(`Memories: ${memoriesTotal}`);
+  summary.textContent = parts.join(' · ');
 }
 
 function formatTimestamp(ts) {
@@ -230,15 +237,38 @@ async function fetchMemories(limit = 20) {
   return res.json();
 }
 
+async function fetchJournal(limit = 50) {
+  const res = await apiFetch(`/journal?limit=${limit}`);
+  if (!res.ok) throw new Error('journal fetch failed');
+  return res.json();
+}
+
 function renderBrain(data) {
   const container = document.getElementById('brain-graph');
   if (!container || typeof vis === 'undefined' || !vis.Network) return;
-  const nodes = new vis.DataSet(data.nodes.map(n => ({ id: n.id, label: n.label, value: n.value })));
-  const edges = new vis.DataSet(data.links.map(e => ({ from: e.from, to: e.to, value: e.value })));
-  updateBrainSummary({ nodeCount: nodes.length, edgeCount: edges.length });
+  const desc = document.getElementById('brain-description');
+  if (!defaultBrainDescription && desc) {
+    defaultBrainDescription = desc.textContent || '';
+  }
+  const nodes = new vis.DataSet((data.nodes || []).map((n) => ({
+    id: n.id,
+    label: n.label,
+    value: n.value || 1,
+    group: n.group || 'language',
+  })));
+  const edges = new vis.DataSet((data.links || []).map((e) => ({
+    from: e.from,
+    to: e.to,
+    value: e.value || 1,
+  })));
+  const conceptCount = Array.isArray(data.concepts) ? data.concepts.length : 0;
+  updateBrainSummary({ nodeCount: nodes.length, edgeCount: edges.length, conceptCount });
 
   if (!nodes.length) {
     container.innerHTML = '<div class="graph-empty">Teach Pal new ideas to grow this graph.</div>';
+    if (desc) {
+      desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
+    }
     return;
   }
 
@@ -256,9 +286,33 @@ function renderBrain(data) {
       font: { color: '#dfe3ff' }
     },
     edges: { color: { color: '#2a306b', highlight: '#9ab4ff' } },
-    physics: { stabilization: true }
+    physics: { stabilization: true },
+    groups: {
+      concept: {
+        shape: 'diamond',
+        color: {
+          background: '#642d91',
+          border: '#d6b7ff',
+          highlight: { background: '#8044b0', border: '#ffffff' }
+        },
+        font: { color: '#f3e9ff' }
+      }
+    }
   };
   new vis.Network(container, { nodes, edges }, options);
+
+  if (!desc) return;
+  if (conceptCount && data.concepts?.length) {
+    const sorted = [...data.concepts].sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0) || (b.totalMentions || 0) - (a.totalMentions || 0));
+    const top = sorted[0];
+    if (top) {
+      const topKeywords = top.keywords?.slice(0, 3).map((k) => k.word).filter(Boolean);
+      const keywordText = topKeywords && topKeywords.length ? `Keywords: ${topKeywords.join(', ')}` : '';
+      desc.textContent = `Dominant concept: ${top.name} (${top.category}). ${keywordText}`.trim();
+      return;
+    }
+  }
+  desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
 }
 
 function renderMemories(payload) {
@@ -307,6 +361,136 @@ function renderMemories(payload) {
   });
 }
 
+function renderJournal(payload) {
+  const container = document.getElementById('journal-entries');
+  if (!container) return;
+  const summary = document.getElementById('journal-summary');
+  const thoughts = payload?.thoughts || [];
+  latestJournalTotal = payload?.total ?? latestJournalTotal;
+  if (summary) summary.textContent = `Thoughts: ${latestJournalTotal}`;
+
+  if (!thoughts.length) {
+    container.innerHTML = '<p class="memory-empty">No thoughts yet — keep chatting to spark new ones.</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+  thoughts.forEach((thought) => {
+    const entry = document.createElement('article');
+    entry.className = 'journal-entry';
+
+    const header = document.createElement('header');
+    const when = document.createElement('span');
+    when.textContent = formatTimestamp(thought.ts);
+    header.appendChild(when);
+    const stage = document.createElement('span');
+    stage.textContent = thought.stage ? thought.stage : `Level ${thought.level ?? '—'}`;
+    header.appendChild(stage);
+    const strategy = document.createElement('span');
+    strategy.textContent = `Strategy: ${thought?.response?.strategy || 'unknown'}`;
+    header.appendChild(strategy);
+    entry.appendChild(header);
+
+    const userLine = document.createElement('p');
+    userLine.className = 'journal-user';
+    userLine.textContent = thought.userText ? `User: ${thought.userText}` : 'User: —';
+    entry.appendChild(userLine);
+
+    const focusLine = document.createElement('p');
+    focusLine.className = 'journal-focus';
+    const focusParts = [];
+    if (thought.focus) focusParts.push(`Focus: ${thought.focus}`);
+    if (thought.concept?.name) focusParts.push(`Concept: ${thought.concept.name}`);
+    focusLine.textContent = focusParts.length ? focusParts.join(' · ') : 'Focus: —';
+    entry.appendChild(focusLine);
+
+    const responseLine = document.createElement('p');
+    responseLine.className = 'journal-response';
+    const palText = thought?.response?.text;
+    responseLine.textContent = palText ? `Pal: ${palText}` : 'Pal: …';
+    entry.appendChild(responseLine);
+
+    const analysis = document.createElement('div');
+    analysis.className = 'journal-analysis';
+    const analysisTags = [];
+    const keywords = Array.isArray(thought?.analysis?.keywords) ? thought.analysis.keywords : [];
+    if (keywords.length) analysisTags.push(`Keywords: ${keywords.join(', ')}`);
+    if (thought?.analysis?.sentiment) analysisTags.push(`Sentiment: ${thought.analysis.sentiment}`);
+    const flags = [];
+    if (thought?.analysis?.hasQuestion) flags.push('Question noted');
+    if (thought?.analysis?.hasGreeting) flags.push('Greeting detected');
+    if (thought?.analysis?.hasThanks) flags.push('Thanks detected');
+    if (thought?.analysis?.isCommand) flags.push('Instruction noticed');
+    if (flags.length) analysisTags.push(`Signals: ${flags.join(', ')}`);
+    if (analysisTags.length) {
+      analysisTags.forEach((text) => {
+        const span = document.createElement('span');
+        span.textContent = text;
+        analysis.appendChild(span);
+      });
+    } else {
+      const span = document.createElement('span');
+      span.textContent = 'No analysis captured';
+      analysis.appendChild(span);
+    }
+    entry.appendChild(analysis);
+
+    const reasoningList = document.createElement('ul');
+    reasoningList.className = 'journal-reasoning';
+    const reasoning = Array.isArray(thought?.response?.reasoning) ? thought.response.reasoning : [];
+    if (reasoning.length) {
+      reasoning.forEach((line) => {
+        const li = document.createElement('li');
+        li.textContent = line;
+        reasoningList.appendChild(li);
+      });
+      entry.appendChild(reasoningList);
+    }
+
+    const memoryLine = document.createElement('p');
+    memoryLine.className = 'journal-memory';
+    const memParts = [];
+    const memory = thought?.memory;
+    if (memory) {
+      memParts.push(memory.stored ? 'Memory stored' : 'Memory not stored');
+      if (memory.importanceLevel) memParts.push(`Importance: ${memory.importanceLevel}`);
+      if (typeof memory.importanceScore === 'number') memParts.push(`Score: ${Math.round(memory.importanceScore)}`);
+      if (memory.memoryId) memParts.push(`Memory ID: ${memory.memoryId.slice(0, 8)}…`);
+    }
+    if (memParts.length) {
+      memParts.forEach((text) => {
+        const span = document.createElement('span');
+        span.textContent = text;
+        memoryLine.appendChild(span);
+      });
+      entry.appendChild(memoryLine);
+    }
+
+    container.appendChild(entry);
+  });
+}
+
+async function loadJournal(force = false) {
+  const container = document.getElementById('journal-entries');
+  if (!container || !backendHealthy) return;
+  if (journalLoading) return;
+  if (!force && journalLoaded) return;
+  journalLoading = true;
+  if (!journalLoaded) {
+    container.innerHTML = '<p class="memory-empty">Loading thoughts…</p>';
+  }
+  try {
+    const data = await fetchJournal();
+    renderJournal(data);
+    journalLoaded = true;
+  } catch (err) {
+    console.error('Failed to load journal', err);
+    container.innerHTML = '<p class="memory-empty">Failed to load thoughts. Try refreshing.</p>';
+  } finally {
+    journalLoading = false;
+  }
+}
+
 async function loadBrainInsights() {
   try {
     const [graph, memories] = await Promise.all([fetchBrain(), fetchMemories()]);
@@ -318,7 +502,13 @@ async function loadBrainInsights() {
 }
 
 function wireTabs() {
-  $$('nav button').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+  $$('nav button').forEach(btn => btn.addEventListener('click', async () => {
+    const tab = btn.dataset.tab;
+    switchTab(tab);
+    if (tab === 'journal') {
+      await loadJournal(true);
+    }
+  }));
 }
 
 function wireChat() {
@@ -336,6 +526,9 @@ function wireChat() {
       const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
       addMessage('pal', replyText, meta);
       await refreshStats();
+      if (journalLoaded) {
+        await loadJournal(true);
+      }
     } catch (e) {
       addMessage('pal', backendHealthy ? 'Sorry, I had trouble responding.' : 'Server not running. Please start backend.');
       if (!backendHealthy) showStatusModal();
@@ -417,6 +610,10 @@ async function init() {
   const refreshBrainBtn = document.getElementById('refresh-brain');
   refreshBrainBtn?.addEventListener('click', async () => {
     await loadBrainInsights();
+  });
+  const refreshJournalBtn = document.getElementById('refresh-journal');
+  refreshJournalBtn?.addEventListener('click', async () => {
+    await loadJournal(true);
   });
 
   // Auth controls in dev panel

@@ -15,6 +15,7 @@
       <button type="button" data-tab="chat" class="active">Conversation</button>
       <button type="button" data-tab="stats">Stats</button>
       <button type="button" data-tab="brain">Brain</button>
+      <button type="button" data-tab="journal">Journal</button>
     </nav>
   </header>
 
@@ -98,6 +99,14 @@
           </div>
         </aside>
       </div>
+    </section>
+
+    <section id="tab-journal" class="tab">
+      <div class="journal-toolbar">
+        <button id="refresh-journal" type="button">Refresh</button>
+        <span id="journal-summary">Thoughts: 0</span>
+      </div>
+      <div id="journal-entries" class="journal-list"></div>
     </section>
   </main>
 

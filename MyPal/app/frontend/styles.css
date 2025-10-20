@@ -80,6 +80,20 @@ main { padding: 16px; }
 
 footer { padding: 12px 16px; border-top: 1px solid #252a52; color: #98a0d3; }
 
+.journal-toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+.journal-toolbar button { padding: 8px 12px; border-radius: 6px; background: #20316b; color: #dfe3ff; border: 1px solid #2a306b; cursor: pointer; }
+.journal-toolbar span { margin-left: auto; font-size: 13px; color: #9ab4ff; }
+.journal-list { display: flex; flex-direction: column; gap: 12px; max-height: 70vh; overflow-y: auto; }
+.journal-entry { background: #121634; border: 1px solid #2a306b; border-radius: 10px; padding: 12px; }
+.journal-entry header { display: flex; justify-content: space-between; font-size: 12px; color: #9ab4ff; margin-bottom: 6px; }
+.journal-entry .journal-user { font-size: 13px; color: #dfe3ff; margin: 0 0 6px 0; }
+.journal-entry .journal-focus { font-size: 12px; color: #cfd5ff; margin: 0 0 6px 0; }
+.journal-entry .journal-analysis { font-size: 11px; color: #98a0d3; margin: 0 0 8px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.journal-entry .journal-analysis span { background: rgba(50,64,168,0.25); border: 1px solid #2a306b; border-radius: 12px; padding: 2px 8px; }
+.journal-entry .journal-reasoning { margin: 0 0 6px 0; padding-left: 18px; color: #aeb6ea; font-size: 12px; }
+.journal-entry .journal-response { font-size: 13px; color: #ffdca8; margin: 0 0 6px 0; }
+.journal-entry .journal-memory { font-size: 12px; color: #98a0d3; margin: 0; display: flex; gap: 12px; flex-wrap: wrap; }
+
 /* Modal */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal.hidden { display: none; }

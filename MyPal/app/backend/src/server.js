@@ -101,6 +101,44 @@ function logTelemetry(enabled, event) {
 const MAX_VOCAB_SIZE = 500;
 const MAX_MEMORIES = 500;
 const MAX_CHAT_LOG_ENTRIES = 1000;
+const MAX_JOURNAL_ENTRIES = 400;
+
+const MEMORY_TEMPLATE = Object.freeze({
+  id: '',
+  ts: 0,
+  userText: '',
+  palText: '',
+  summary: '',
+  sentiment: 'neutral',
+  keywords: [],
+  xp: { gained: 0, total: 0, level: 0 },
+  importance: { score: 0, level: 'low', shouldRemember: false, reasons: [] },
+  tags: []
+});
+
+const stopWords = new Set([
+  'i','me','my','mine','you','your','yours','we','us','our','ours','they','them','their','theirs',
+  'a','an','the','and','or','but','if','then','else','for','of','in','on','at','to','with','from','by','about','as',
+  'is','am','are','was','were','be','been','being','do','does','did','have','has','had','will','would','should','could',
+  'can','may','might','this','that','these','those','here','there','it','its','so','very','just','really','also','too',
+  'please','thank','thanks','hey','hi','hello','ok','okay','fine','hmm','uh','um','oh','yeah','yup','no','not','dont','didnt','cant'
+]);
+
+const CONCEPT_HINT_SETS = [
+  { category: 'Emotion', name: 'Emotion', keywords: ['happy','sad','angry','mad','excited','calm','scared','afraid','worried','lonely','bored','laugh','cry'] },
+  { category: 'Need', name: 'Needs & Comfort', keywords: ['hungry','thirsty','sleepy','tired','rest','food','drink','water','hug','safe','warm'] },
+  { category: 'Social', name: 'Social Bonds', keywords: ['friend','together','play','share','talk','listen','team','we','us','family'] },
+  { category: 'Learning', name: 'Learning & Curiosity', keywords: ['learn','teach','remember','think','why','how','idea','question','study','book'] },
+  { category: 'Growth', name: 'Growth & Progress', keywords: ['level','grow','improve','practice','try','progress','step','goal'] },
+  { category: 'Care', name: 'Care & Support', keywords: ['help','support','protect','care','kind','gentle','love','trust'] },
+];
+
+const KEYWORD_TO_CONCEPT = new Map();
+for (const entry of CONCEPT_HINT_SETS) {
+  for (const word of entry.keywords) {
+    KEYWORD_TO_CONCEPT.set(word, entry);
+  }
+}
 
 const defaultState = {
   level: 0,
@@ -119,6 +157,7 @@ const files = {
   concepts: path.join(DATA_DIR, 'concepts.json'),
   facts: path.join(DATA_DIR, 'facts.json'),
   memories: path.join(DATA_DIR, 'memories.json'),
+  journal: path.join(DATA_DIR, 'journal.json'),
   chatLog: path.join(DATA_DIR, 'chatlog.json'),
 };
 
@@ -146,10 +185,25 @@ function writeSecrets(data) {
   writeJson(secretsFile, data);
 }
 
+function normalizeProgress(state) {
+  if (!state || typeof state !== 'object') return state;
+  if (typeof state.xp !== 'number' || Number.isNaN(state.xp)) state.xp = 0;
+  if (typeof state.level !== 'number' || Number.isNaN(state.level)) state.level = 0;
+  if (state.level < 0) state.level = 0;
+  while (state.level > 0 && state.xp < (state.level > 0 ? thresholdsFor(state.level - 1) : 0)) {
+    state.level -= 1;
+  }
+  while (state.xp >= thresholdsFor(state.level)) {
+    state.level += 1;
+  }
+  state.cp = Math.floor(state.xp / 100);
+  return state;
+}
+
 function loadState() {
   const state = readJson(files.state, defaultState);
-  // ensure defaults
-  return { ...defaultState, ...state, settings: { ...defaultState.settings, ...(state.settings || {}) } };
+  // ensure defaults and normalize progress against stored XP
+  return normalizeProgress({ ...defaultState, ...state, settings: { ...defaultState.settings, ...(state.settings || {}) } });
 }
 
 function saveState(state) {
@@ -165,10 +219,11 @@ function getCollections() {
   const facts = readJson(files.facts, []);
   const memories = readJson(files.memories, []);
   const chatLog = readJson(files.chatLog, []);
-  return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog };
+  const journal = readJson(files.journal, []);
+  return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal };
 }
 
-function saveCollections({ state, users, sessions, vocabulary, concepts, facts, memories, chatLog }) {
+function saveCollections({ state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal }) {
   saveState(state);
   writeJson(files.users, users ?? readJson(files.users, []));
   writeJson(files.sessions, sessions ?? readJson(files.sessions, []));
@@ -177,15 +232,33 @@ function saveCollections({ state, users, sessions, vocabulary, concepts, facts, 
   writeJson(files.facts, facts);
   writeJson(files.memories, memories);
   writeJson(files.chatLog, chatLog);
+  writeJson(files.journal, journal ?? readJson(files.journal, []));
 }
 
-// XP/Level logic (simple thresholds)
+// XP/Level logic (scaled thresholds)
+const LEVEL_THRESHOLDS = [
+  100,   // Level 0 → 1
+  400,   // Level 1 → 2
+  1000,  // Level 2 → 3
+  2000,  // Level 3 → 4
+  3500,  // Level 4 → 5
+  5500,  // Level 5 → 6
+  8000,  // Level 6 → 7
+  11000, // Level 7 → 8
+  14500, // Level 8 → 9
+  18500, // Level 9 → 10
+  23000, // Level 10 → 11
+  28000, // Level 11 → 12
+  33500, // Level 12 → 13
+  39500, // Level 13 → 14
+  46000, // Level 14 → 15
+];
+
 function thresholdsFor(level) {
-  // return cumulative XP required to reach next level
-  if (level === 0) return 100;
-  if (level === 1) return 400;
-  if (level === 2) return 1000;
-  return 9999999;
+  if (level < LEVEL_THRESHOLDS.length) return LEVEL_THRESHOLDS[level];
+  const base = LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
+  const extraLevels = level - (LEVEL_THRESHOLDS.length - 1);
+  return base + extraLevels * 6000;
 }
 
 function addXp(state, rawXp) {
@@ -309,33 +382,502 @@ function composeLearnedPhrase(vocabulary = [], fallback = '') {
   return fallback || generatePrimitivePhrase();
 }
 
-function buildMemoryEntry({ state, userText, palText, gainedXp }) {
-  const combined = `${userText} ${palText}`.trim();
-  const keywords = Array.from(new Set(tokenizeMessage(combined))).slice(0, 6);
+function extractKeywords(tokens = []) {
+  const keywords = [];
+  const seen = new Set();
+  for (const word of tokens) {
+    if (!word) continue;
+    if (stopWords.has(word)) continue;
+    if (seen.has(word)) continue;
+    seen.add(word);
+    keywords.push(word);
+  }
+  return keywords;
+}
+
+function selectTopVocabularyWord(vocabulary = []) {
+  if (!Array.isArray(vocabulary) || !vocabulary.length) return null;
+  const sorted = [...vocabulary].sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastSeen || 0) - (a.lastSeen || 0));
+  return sorted[0]?.word || null;
+}
+
+const FOCUS_SKIP_WORDS = new Set(['what', 'why', 'how', 'when', 'where', 'who', 'whom', 'whose', 'which', 'something', 'anything', 'everything']);
+
+function isViableFocusWord(word) {
+  if (!word) return false;
+  const normalized = String(word).toLowerCase();
+  if (normalized.length <= 1) return false;
+  if (stopWords.has(normalized)) return false;
+  if (FOCUS_SKIP_WORDS.has(normalized)) return false;
+  return true;
+}
+
+function chooseVariant(list = []) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  if (list.length === 1) return list[0];
+  const index = Math.floor(Math.random() * list.length);
+  return list[index];
+}
+
+function pickFocusKeyword(ctx = {}, vocabulary = []) {
+  const keywordSource = Array.isArray(ctx.keywords) ? ctx.keywords : [];
+  const tokenSource = Array.isArray(ctx.tokens) ? ctx.tokens : [];
+  const combined = [...keywordSource, ...tokenSource];
+  for (const word of combined) {
+    if (isViableFocusWord(word)) return word;
+  }
+  const vocabWord = selectTopVocabularyWord(vocabulary);
+  if (isViableFocusWord(vocabWord)) return vocabWord;
+  const fallback = chooseSingleWord(vocabulary);
+  if (isViableFocusWord(fallback)) return fallback;
+  return 'it';
+}
+
+function formatFocusDisplay(word, ctx = {}) {
+  const base = word && word !== 'it' ? word : 'that idea';
+  const extras = [];
+  const seen = new Set([String(word || '').toLowerCase()]);
+  for (const kw of ctx.keywords || []) {
+    if (!isViableFocusWord(kw)) continue;
+    const normalized = String(kw).toLowerCase();
+    if (seen.has(normalized)) continue;
+    extras.push(kw);
+    seen.add(normalized);
+    if (extras.length === 2) break;
+  }
+  if (!extras.length) return base;
+  if (extras.length === 1) return `${base} and ${extras[0]}`;
+  return `${base}, ${extras[0]}, and ${extras[1]}`;
+}
+
+function analyzeUserMessage(message = '') {
+  const text = String(message || '');
+  const lower = text.toLowerCase();
+  const tokens = tokenizeMessage(text);
   return {
-    id: nanoid(),
-    ts: Date.now(),
-    userText,
-    palText,
-    level: state.level,
-    xpAfter: state.xp,
-    xpGained: gainedXp,
-    sentiment: analyzeSentiment(combined),
-    keywords,
+    raw: text,
+    tokens,
+    keywords: extractKeywords(tokens),
+    sentiment: analyzeSentiment(text),
+    hasQuestion: /[?]/.test(text) || /^(why|what|how|when|where|who)\b/.test(lower),
+    hasGreeting: /(\bhi\b|\bhello\b|\bhey\b)/.test(lower),
+    hasThanks: /(\bthanks?\b|\bappreciate\b)/.test(lower),
+    isCommand: /(please|can you|could you|do this|show me|tell me)/.test(lower),
   };
 }
 
-function constrainResponse(input, state, vocabulary) {
-  // Stage 0-1: babble
+function buildThoughtfulFreeResponse(ctx = {}, state, vocabulary = []) {
+  const focusWord = pickFocusKeyword(ctx, vocabulary);
+  const focusDisplay = formatFocusDisplay(focusWord, ctx);
+  const sentences = [];
+  const reasoning = [];
+
+  if (ctx.hasGreeting) {
+    sentences.push(chooseVariant([
+      'Hi! I hear you and I am listening.',
+      'Hello—thanks for bringing me along.',
+      'Hey there, I am right here with you.'
+    ]));
+    reasoning.push('User greeted me, so I greet them back in varied language.');
+  }
+
+  if (ctx.hasThanks) {
+    sentences.push(chooseVariant([
+      'Thank you for sharing that with me.',
+      'I appreciate you telling me.',
+      'Thanks for trusting me with that.'
+    ]));
+    reasoning.push('They expressed gratitude, so I acknowledge it.');
+  }
+
+  const sentimentTone = ctx.sentiment === 'positive' ? 'positive' : ctx.sentiment === 'negative' ? 'negative' : 'neutral';
+  const reflectionTemplates = {
+    positive: [
+      ({ focus }) => `${capitalize(focus)} feels bright to me—like a new thought I'm eager to try in my own words.`,
+      ({ focus }) => `I'm holding onto ${focus} because it feels joyful and I want to echo it back well.`,
+      ({ focus }) => `Thinking about ${focus} makes my circuits buzz in a happy way.`
+    ],
+    negative: [
+      ({ focus }) => `I'm holding ${focus} gently; it feels heavy and I want to understand it carefully.`,
+      ({ focus }) => `${capitalize(focus)} sounds tender, so I'm moving slowly while I learn.`,
+      ({ focus }) => `I'm keeping ${focus} in a soft spot while I ask myself why it feels uncomfortable.`
+    ],
+    neutral: [
+      ({ focus }) => `I'm still chewing on ${focus} and seeing how it fits with what I've learned.`,
+      ({ focus }) => `${capitalize(focus)} keeps echoing in my thoughts as I look for patterns.`,
+      ({ focus }) => `I'm laying out ${focus} like puzzle pieces and testing how they connect.`
+    ]
+  };
+
+  const reflection = chooseVariant(reflectionTemplates[sentimentTone] || reflectionTemplates.neutral);
+  if (typeof reflection === 'function') {
+    sentences.push(reflection({ focus: focusDisplay }));
+    reasoning.push(`Tone ${sentimentTone}, so I picked a matching reflection about ${focusDisplay}.`);
+  }
+
+  const secondaryKeyword = (ctx.keywords || []).find((kw) => isViableFocusWord(kw) && kw !== focusWord);
+  if (secondaryKeyword) {
+    const curiosityLine = chooseVariant([
+      ({ focus, extra }) => `In my mind, ${focus} sits next to ${extra}, and I'm comparing how they relate.`,
+      ({ focus, extra }) => `I keep wondering how ${focus} and ${extra} fit together.`,
+      ({ focus, extra }) => `I'm linking ${focus} with ${extra} and testing if they share a story.`
+    ]);
+    if (typeof curiosityLine === 'function') {
+      sentences.push(curiosityLine({ focus: focusDisplay, extra: secondaryKeyword }));
+      reasoning.push('Mentioned related keyword to show associative thinking.');
+    }
+  }
+
+  if (state?.level >= 4) {
+    const learnedPhrase = composeLearnedPhrase(vocabulary, '');
+    if (learnedPhrase) {
+      const recallLine = chooseVariant([
+        ({ phrase }) => `My memory also whispers, "${phrase}"—I'm trying to weave that in.`,
+        ({ phrase }) => `I pair it with the phrase "${phrase}" to see if it fits.`,
+        ({ phrase }) => `Another thought nearby says "${phrase}", so I'm comparing them.`
+      ]);
+      if (typeof recallLine === 'function') {
+        sentences.push(recallLine({ phrase: learnedPhrase }));
+        reasoning.push('Surface a learned phrase to make the reflection feel less pre-generated.');
+      }
+    }
+  }
+
+  const followUpType = ctx.hasQuestion ? 'question' : ctx.isCommand ? 'command' : 'open';
+  const followUpTemplates = {
+    question: [
+      ({ focus }) => `I don't have my own answer yet—could you tell me more about ${focus}?`,
+      ({ focus }) => `Can you walk me through ${focus}? I'm building my answer piece by piece.`,
+      ({ focus }) => `Teach me what ${focus} means to you so I can learn it properly.`
+    ],
+    command: [
+      ({ focus }) => `I'll try, but it helps if you guide me through ${focus} step by step.`,
+      ({ focus }) => `Show me how to move through ${focus} and I'll copy your pattern.`,
+      ({ focus }) => `If you model ${focus} for me, I can practice it in my own words.`
+    ],
+    open: [
+      ({ focus }) => `What should we explore next about ${focus}?`,
+      ({ focus }) => `Where should we take ${focus} from here?`,
+      ({ focus }) => `What part of ${focus} would you like me to try saying next?`
+    ]
+  };
+
+  const followUp = chooseVariant(followUpTemplates[followUpType]);
+  if (typeof followUp === 'function') {
+    sentences.push(followUp({ focus: focusDisplay }));
+    reasoning.push(`Responded with a ${followUpType} follow-up to keep the dialogue going.`);
+  }
+
+  return { text: sentences.join(' '), focusWord, reasoning };
+}
+
+function sentimentToScore(sentiment) {
+  if (sentiment === 'positive') return 1;
+  if (sentiment === 'negative') return -1;
+  return 0;
+}
+
+function inferConceptAssignment(word) {
+  if (!word) return null;
+  const normalized = word.toLowerCase();
+  const hint = KEYWORD_TO_CONCEPT.get(normalized);
+  if (hint) {
+    return {
+      key: `category:${hint.category.toLowerCase()}`,
+      name: hint.name,
+      category: hint.category,
+      keyword: normalized,
+    };
+  }
+  return {
+    key: `topic:${normalized}`,
+    name: `Topic: ${capitalize(normalized)}`,
+    category: 'Topic',
+    keyword: normalized,
+  };
+}
+
+function getOrCreateConcept(concepts, assignment, now, level) {
+  let concept = concepts.find((c) => c.key === assignment.key);
+  if (!concept) {
+    concept = {
+      id: nanoid(),
+      key: assignment.key,
+      name: assignment.name,
+      category: assignment.category,
+      createdAt: now,
+      lastSeen: now,
+      totalMentions: 0,
+      keywords: {},
+      sentiment: { sum: 0, samples: 0, average: 0 },
+      importance: { high: 0, medium: 0, low: 0 },
+      importanceScore: 0,
+      levelRange: { min: typeof level === 'number' ? level : 0, max: typeof level === 'number' ? level : 0 },
+    };
+    concepts.push(concept);
+  }
+  if (!concept.key) concept.key = assignment.key;
+  if (!concept.keywords) concept.keywords = {};
+  if (!concept.importance) concept.importance = { high: 0, medium: 0, low: 0 };
+  if (!concept.sentiment) concept.sentiment = { sum: 0, samples: 0, average: 0 };
+  if (typeof concept.importanceScore !== 'number') concept.importanceScore = 0;
+  if (!concept.levelRange || typeof concept.levelRange !== 'object') {
+    concept.levelRange = { min: typeof level === 'number' ? level : 0, max: typeof level === 'number' ? level : 0 };
+  }
+  return concept;
+}
+
+function updateConceptAssociations(concepts, { keywords = [], sentiment = 'neutral', importance, level }) {
+  if (!Array.isArray(concepts)) return;
+  const uniqueKeywords = Array.from(new Set(keywords.filter(Boolean)));
+  if (!uniqueKeywords.length) return;
+
+  const now = Date.now();
+  const importanceLevel = importance?.level || 'low';
+  const importanceScore = importance?.score || 0;
+  const sentimentScore = sentimentToScore(sentiment);
+
+  for (const word of uniqueKeywords) {
+    const assignment = inferConceptAssignment(word);
+    if (!assignment) continue;
+    const concept = getOrCreateConcept(concepts, assignment, now, level);
+
+    concept.totalMentions += 1;
+    concept.lastSeen = now;
+    if (typeof level === 'number') {
+      concept.levelRange = concept.levelRange || { min: level, max: level };
+      concept.levelRange.min = Math.min(concept.levelRange.min, level);
+      concept.levelRange.max = Math.max(concept.levelRange.max, level);
+    }
+
+    if (!concept.keywords[assignment.keyword]) {
+      concept.keywords[assignment.keyword] = { count: 0, lastSeen: 0 };
+    }
+    concept.keywords[assignment.keyword].count += 1;
+    concept.keywords[assignment.keyword].lastSeen = now;
+
+    if (concept.importance[importanceLevel] !== undefined) {
+      concept.importance[importanceLevel] += 1;
+    }
+    if (importanceScore > 0) {
+      concept.importanceScore += importanceScore;
+    }
+
+    concept.sentiment.sum += sentimentScore;
+    concept.sentiment.samples += 1;
+    concept.sentiment.average = concept.sentiment.sum / concept.sentiment.samples;
+  }
+}
+
+function createMemoryShell() {
+  return JSON.parse(JSON.stringify(MEMORY_TEMPLATE));
+}
+
+function summarizeMemory(userText, palText) {
+  const combined = `${String(userText || '').trim()} ${String(palText || '').trim()}`.replace(/\s+/g, ' ').trim();
+  if (!combined) return '';
+  return combined.length <= 140 ? combined : `${combined.slice(0, 137)}…`;
+}
+
+const priorityKeywords = new Set(['remember', 'promise', 'important', 'goal', 'plan', 'secret', 'learn', 'teach', 'help']);
+
+function evaluateMemoryImportance({ userText, palText, sentiment, keywords, xpGained, existingCount, userWords, palWords }) {
+  let score = 0;
+  const reasons = [];
+  const tags = new Set();
+  const totalWords = (userWords?.length || 0) + (palWords?.length || 0);
+
+  if (!existingCount) {
+    score += 5;
+    reasons.push('First interaction captured');
+    tags.add('first-contact');
+  }
+
+  if (sentiment && sentiment !== 'neutral') {
+    score += 2;
+    reasons.push(`Emotional tone detected (${sentiment})`);
+    tags.add(`sentiment-${sentiment}`);
+  }
+
+  const emphaticText = `${userText || ''} ${palText || ''}`;
+  if (/[!?]{1,}/.test(emphaticText)) {
+    score += 1;
+    reasons.push('Expressive punctuation detected');
+    tags.add('expressive');
+  }
+
+  if (totalWords >= 18) {
+    score += 2;
+    reasons.push('Dense conversational exchange');
+    tags.add('detailed');
+  } else if (totalWords >= 10) {
+    score += 1;
+    reasons.push('Moderate detail provided');
+  }
+
+  const uniqueKeywords = keywords?.length || 0;
+  if (uniqueKeywords >= 5) {
+    score += 2;
+    reasons.push('Rich set of unique keywords');
+  } else if (uniqueKeywords >= 3) {
+    score += 1;
+    reasons.push('Notable keyword variety');
+  }
+
+  const highlighted = keywords.filter((word) => priorityKeywords.has(word));
+  if (highlighted.length) {
+    score += 3;
+    reasons.push(`Priority topic mentioned (${highlighted.join(', ')})`);
+    highlighted.forEach((word) => tags.add(`focus-${word}`));
+  }
+
+  if (xpGained > 10) {
+    score += 1;
+    reasons.push('Interaction rewarded notable XP');
+  }
+
+  if (/[?]/.test(String(userText))) {
+    tags.add('question');
+  }
+
+  const level = score >= 6 ? 'high' : score >= 3 ? 'medium' : 'low';
+  const shouldRemember = score >= 2 || existingCount === 0;
+
+  return {
+    score,
+    level,
+    shouldRemember,
+    reasons,
+    tags: Array.from(tags)
+  };
+}
+
+function buildMemoryEntry({ state, userText, palText, gainedXp, userWords, palWords, existingCount }) {
+  const combined = `${userText} ${palText}`.trim();
+  const keywords = Array.from(new Set([...(userWords || []), ...(palWords || [])])).slice(0, 8);
+  const sentiment = analyzeSentiment(combined);
+  const importance = evaluateMemoryImportance({
+    userText,
+    palText,
+    sentiment,
+    keywords,
+    xpGained: gainedXp,
+    existingCount,
+    userWords,
+    palWords,
+  });
+
+  const memory = createMemoryShell();
+  memory.id = nanoid();
+  memory.ts = Date.now();
+  memory.userText = userText;
+  memory.palText = palText;
+  memory.summary = summarizeMemory(userText, palText);
+  memory.sentiment = sentiment;
+  memory.keywords = keywords;
+  memory.xp = { gained: gainedXp, total: state.xp, level: state.level };
+  memory.importance = importance;
+  memory.tags = importance.tags;
+
+  return { memory, importance };
+}
+
+function describeDevelopmentalStage(level = 0) {
+  if (level <= 1) return { stage: 'Sensorimotor (Early)', code: 'stage-0-1' };
+  if (level <= 3) return { stage: 'Sensorimotor (Late)', code: 'stage-2-3' };
+  if (level <= 6) return { stage: 'Preoperational', code: 'stage-4-6' };
+  if (level <= 10) return { stage: 'Concrete Operational', code: 'stage-7-10' };
+  return { stage: 'Formal Operational', code: 'stage-11+' };
+}
+
+function buildThoughtEntry({ state, userText, responseContext, responsePlan, importance, memoryStored, memoryId }) {
+  const now = Date.now();
+  const stageInfo = describeDevelopmentalStage(state.level);
+  const focusWord = responsePlan?.focus || responseContext?.keywords?.[0] || null;
+  const conceptHint = focusWord ? inferConceptAssignment(focusWord) : null;
+  return {
+    id: nanoid(),
+    ts: now,
+    level: state.level,
+    stage: stageInfo.stage,
+    stageCode: stageInfo.code,
+    userText,
+    analysis: {
+      keywords: responseContext?.keywords || [],
+      sentiment: responseContext?.sentiment || 'neutral',
+      hasQuestion: !!responseContext?.hasQuestion,
+      hasGreeting: !!responseContext?.hasGreeting,
+      hasThanks: !!responseContext?.hasThanks,
+      isCommand: !!responseContext?.isCommand,
+    },
+    focus: focusWord,
+    concept: conceptHint ? { key: conceptHint.key, name: conceptHint.name, category: conceptHint.category } : null,
+    response: {
+      type: responsePlan?.utterance_type || 'unknown',
+      text: responsePlan?.output || '',
+      reasoning: responsePlan?.reasoning || [],
+      strategy: responsePlan?.strategy || 'unknown',
+    },
+    memory: {
+      stored: !!memoryStored,
+      importanceLevel: importance?.level || 'low',
+      importanceScore: importance?.score || 0,
+      memoryId: memoryStored ? memoryId : null,
+    },
+  };
+}
+
+function constrainResponse(input, state, vocabulary, context) {
+  const ctx = context || analyzeUserMessage(input);
+
   if (state.level <= 1) {
-    return { utterance_type: 'primitive_phrase', output: generatePrimitivePhrase() };
+    const focus = ctx.keywords?.[0];
+    const output = focus ? `me think ${focus}` : generatePrimitivePhrase();
+    const reasoning = focus
+      ? [`I heard the word "${focus}" so I repeat it simply.`]
+      : ['No clear focus yet, so I babble a simple phrase.'];
+    return {
+      utterance_type: 'primitive_phrase',
+      output,
+      focus: focus || null,
+      reasoning,
+      analysis: ctx,
+      strategy: 'babble',
+    };
   }
-  // Stage 2-3: single word from known vocabulary
+
   if (state.level <= 3) {
-    return { utterance_type: 'single_word', output: chooseSingleWord(vocabulary) };
+    const choice = ctx.keywords?.[0] || chooseSingleWord(vocabulary) || 'learn';
+    const word = String(choice).split(/\s+/)[0] || 'learn';
+    const reasoning = [];
+    if (ctx.keywords?.length) {
+      reasoning.push(`Using user keyword "${word}" to practice single-word speech.`);
+    } else {
+      reasoning.push('No new word spotted, falling back to a known word.');
+    }
+    return {
+      utterance_type: 'single_word',
+      output: word,
+      focus: word,
+      reasoning,
+      analysis: ctx,
+      strategy: 'single-word',
+    };
   }
-  // Stage 4+: unconstrained basic echo for now
-  return { utterance_type: 'free', output: composeLearnedPhrase(vocabulary, input.split(/\s+/).slice(0, 12).join(' ')) };
+
+  const thoughtfulPlan = buildThoughtfulFreeResponse(ctx, state, vocabulary);
+  const fallback = composeLearnedPhrase(vocabulary, input.split(/\s+/).slice(0, 12).join(' '));
+  const output = thoughtfulPlan?.text && thoughtfulPlan.text.trim().length ? thoughtfulPlan.text : fallback;
+  const focus = thoughtfulPlan?.focusWord || ctx.keywords?.[0] || selectTopVocabularyWord(vocabulary) || null;
+  const reasoning = thoughtfulPlan?.reasoning?.length ? thoughtfulPlan.reasoning : ['Falling back to familiar wording from vocabulary.'];
+  return {
+    utterance_type: 'free',
+    output,
+    focus,
+    reasoning,
+    analysis: ctx,
+    strategy: thoughtfulPlan ? 'reflective' : 'fallback',
+  };
 }
 
 function updatePersonalityFromInteraction(state, userText) {
@@ -481,17 +1023,19 @@ app.post('/api/chat', (req, res) => {
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
 
   const collections = getCollections();
-  const { state, vocabulary, chatLog, memories } = collections;
+  const { state, vocabulary, chatLog, memories, concepts, journal } = collections;
+
+  const responseContext = analyzeUserMessage(message);
 
   // Update personality heuristics from user input
   updatePersonalityFromInteraction(state, message);
 
   // Learn vocabulary from user input
-  const userWords = tokenizeMessage(message);
+  const userWords = responseContext.tokens || tokenizeMessage(message);
   learnVocabulary(vocabulary, userWords, 'user', message);
 
   // Constrain response based on level
-  const constrained = constrainResponse(message, state, vocabulary);
+  const constrained = constrainResponse(message, state, vocabulary, responseContext);
 
   // XP: standard typed user response
   const gained = addXp(state, 10);
@@ -507,9 +1051,43 @@ app.post('/api/chat', (req, res) => {
   const palWords = tokenizeMessage(constrained.output);
   learnVocabulary(vocabulary, palWords, 'pal', constrained.output);
 
-  const memory = buildMemoryEntry({ state, userText: message, palText: constrained.output, gainedXp: gained });
-  memories.push(memory);
-  if (memories.length > MAX_MEMORIES) memories.splice(0, memories.length - MAX_MEMORIES);
+  const { memory, importance } = buildMemoryEntry({
+    state,
+    userText: message,
+    palText: constrained.output,
+    gainedXp: gained,
+    userWords,
+    palWords,
+    existingCount: memories.length,
+  });
+
+  const memoryId = importance.shouldRemember ? memory.id : null;
+
+  if (importance.shouldRemember) {
+    memories.push(memory);
+    if (memories.length > MAX_MEMORIES) memories.splice(0, memories.length - MAX_MEMORIES);
+  } else {
+    console.info('Memory skipped (low importance)', { score: importance.score, reasons: importance.reasons });
+  }
+
+  updateConceptAssociations(concepts, {
+    keywords: memory.keywords.length ? memory.keywords : responseContext.keywords,
+    sentiment: memory.sentiment,
+    importance,
+    level: state.level,
+  });
+
+  const thought = buildThoughtEntry({
+    state,
+    userText: message,
+    responseContext,
+    responsePlan: constrained,
+    importance,
+    memoryStored: importance.shouldRemember,
+    memoryId,
+  });
+  journal.push(thought);
+  if (journal.length > MAX_JOURNAL_ENTRIES) journal.splice(0, journal.length - MAX_JOURNAL_ENTRIES);
 
   const summarized = [...vocabulary]
     .sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastSeen || 0) - (a.lastSeen || 0))
@@ -517,9 +1095,22 @@ app.post('/api/chat', (req, res) => {
     .map((entry) => entry.word);
   state.vocabulary = summarized;
 
-  saveCollections({ ...collections, chatLog, state, vocabulary, memories });
+  saveCollections({ ...collections, chatLog, state, vocabulary, memories, concepts, journal });
 
-  res.json({ reply: palMsg.text, kind: constrained.utterance_type, xpGained: gained, level: state.level, memoryCount: memories.length });
+  res.json({
+    reply: palMsg.text,
+    kind: constrained.utterance_type,
+    xpGained: gained,
+    level: state.level,
+    memoryCount: memories.length,
+    memoryStored: importance.shouldRemember,
+    memoryImportance: {
+      score: importance.score,
+      level: importance.level,
+      reasons: importance.reasons,
+    },
+    thoughtId: thought.id,
+  });
 });
 
 app.post('/api/reinforce', (req, res) => {
@@ -620,7 +1211,7 @@ app.post('/api/plugins/:name/toggle', (req, res) => {
 
 // Brain graph: derive simple co-occurrence network from chat log
 app.get('/api/brain', (req, res) => {
-  const { chatLog } = getCollections();
+  const { chatLog, concepts = [] } = getCollections();
   const maxMsgs = 300; // cap for performance
   const logs = chatLog.slice(-maxMsgs);
   const freq = new Map();
@@ -655,6 +1246,7 @@ app.get('/api/brain', (req, res) => {
   const wordSet = new Set(topWords);
 
   const nodes = topWords.map((w) => ({ id: w, label: w, value: freq.get(w) || 1, group: 'language' }));
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
   const links = [];
   for (const [key, weight] of edges.entries()) {
     const [a, b] = key.split('|');
@@ -662,7 +1254,49 @@ app.get('/api/brain', (req, res) => {
       links.push({ from: a, to: b, value: weight });
     }
   }
-  res.json({ nodes, links });
+
+  const conceptSummaries = [];
+  for (const concept of concepts) {
+    if (!concept || !concept.totalMentions) continue;
+    const sentimentAvg = concept.sentiment?.average ?? 0;
+    const sentimentLabel = sentimentAvg > 0.2 ? 'positive' : sentimentAvg < -0.2 ? 'negative' : 'neutral';
+    const importanceScore = concept.importanceScore || 0;
+    const nodeId = concept.id || concept.key || concept.name;
+    const conceptNode = {
+      id: nodeId,
+      label: concept.name,
+      value: Math.max(1, Math.round(concept.totalMentions + importanceScore)),
+      group: 'concept',
+      sentiment: sentimentLabel,
+    };
+    nodeMap.set(conceptNode.id, conceptNode);
+
+    const keywordEntries = Object.entries(concept.keywords || {})
+      .sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0))
+      .slice(0, 6);
+    for (const [word, info] of keywordEntries) {
+      const weight = info?.count || 1;
+      if (!nodeMap.has(word)) {
+        nodeMap.set(word, { id: word, label: word, value: weight, group: 'language' });
+      }
+      links.push({ from: conceptNode.id, to: word, value: Math.max(1, weight), type: 'concept-word' });
+    }
+
+    conceptSummaries.push({
+      id: nodeId,
+      name: concept.name,
+      category: concept.category,
+      totalMentions: concept.totalMentions,
+      importance: concept.importance,
+      importanceScore,
+      sentiment: { average: sentimentAvg, label: sentimentLabel },
+      keywords: keywordEntries.map(([word, info]) => ({ word, count: info?.count || 0 })),
+      levelRange: concept.levelRange,
+      lastSeen: concept.lastSeen,
+    });
+  }
+
+  res.json({ nodes: Array.from(nodeMap.values()), links, concepts: conceptSummaries });
 });
 
 app.get('/api/memories', (req, res) => {
@@ -670,6 +1304,13 @@ app.get('/api/memories', (req, res) => {
   const limit = Math.max(1, Math.min(Number(req.query.limit) || 20, 200));
   const items = memories.slice(-limit).reverse();
   res.json({ memories: items, total: memories.length });
+});
+
+app.get('/api/journal', (req, res) => {
+  const { journal } = getCollections();
+  const limit = Math.max(1, Math.min(Number(req.query.limit) || 50, MAX_JOURNAL_ENTRIES));
+  const items = journal.slice(-limit).reverse();
+  res.json({ thoughts: items, total: journal.length });
 });
 
 const PORT = process.env.PORT || 3001;

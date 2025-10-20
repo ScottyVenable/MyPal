@@ -112,4 +112,10 @@ test('chat endpoint returns constrained reply and updates stats', async () => {
   const memBody = await memRes.json();
   assert.ok(Array.isArray(memBody.memories), 'memories payload should include list');
   assert.equal(memBody.memories.length > 0, true, 'memories list should contain at least one entry');
+
+  const journalRes = await fetch(`${API}/journal?limit=5`);
+  assert.equal(journalRes.ok, true, 'journal endpoint should respond OK');
+  const journalBody = await journalRes.json();
+  assert.ok(Array.isArray(journalBody.thoughts), 'journal payload should include thoughts');
+  assert.equal(journalBody.thoughts.length > 0, true, 'thoughts list should contain at least one entry');
 });
