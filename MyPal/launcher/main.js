@@ -54,9 +54,9 @@ async function startBackend(rootDir) {
   }
 
   const userDataDir = app.getPath('userData');
-  const dataDir = path.join(userDataDir, 'backend-data');
-  const logsDir = path.join(userDataDir, 'logs');
-  const modelsDir = path.join(userDataDir, 'models');
+  const dataDir = process.env.MYPAL_DATA_DIR ? path.resolve(process.env.MYPAL_DATA_DIR) : path.join(userDataDir, 'backend-data');
+  const logsDir = process.env.MYPAL_LOGS_DIR ? path.resolve(process.env.MYPAL_LOGS_DIR) : path.join(userDataDir, 'logs');
+  const modelsDir = process.env.MYPAL_MODELS_DIR ? path.resolve(process.env.MYPAL_MODELS_DIR) : path.join(userDataDir, 'models');
   [dataDir, logsDir, modelsDir].forEach(ensureDir);
 
   const env = {
@@ -141,7 +141,11 @@ async function createWindow(rootDir) {
   await mainWindow.loadFile(frontendEntry);
 
   if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' }).catch(() => {});
+    try {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    } catch (err) {
+      console.warn('Failed to open devtools', err);
+    }
   }
 }
 

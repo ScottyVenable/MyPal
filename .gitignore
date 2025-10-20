@@ -33,6 +33,8 @@ __pycache__/
 **/src/logs/**
 **/src/temp/**
 MyPal/app/backend/data/*.json
+MyPal/dev-data/
+MyPal/dev-logs/
 
 # Development-only files (not for GitHub)
 Developer Files/

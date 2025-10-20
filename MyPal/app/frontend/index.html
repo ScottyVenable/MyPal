@@ -26,8 +26,9 @@
         <button type="submit">Send</button>
       </form>
       <div class="settings">
-        <label>Learning Speed Multiplier
-          <input id="xp-multiplier" type="number" min="1" max="250" value="1" />
+        <label class="slider-group">Learning Speed Multiplier
+          <input id="xp-multiplier" type="range" min="1" max="250" value="1" />
+          <span id="xp-multiplier-value">1x</span>
         </label>
         <label>API Provider
           <select id="api-provider">

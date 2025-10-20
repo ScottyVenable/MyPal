@@ -18,7 +18,13 @@ cd <pal-root>
 .\autorun.ps1
 ```
 
-The script installs missing dependencies (unless `-SkipInstall` is passed) and then runs the launcher in development mode.
+The script installs missing dependencies (unless `-SkipInstall` is passed) and then runs the launcher in development mode. For local debugging it also mirrors backend data and logs into:
+
+- Data: `<pal-root>\dev-data`
+- Logs: `<pal-root>\dev-logs` (contains `console.log`, `error.log`, `access.log`, `telemetry.log`)
+- Telemetry log is forced in dev via `MYPAL_FORCE_TELEMETRY=1` so frontend errors reported through `/telemetry` also land in `dev-logs\telemetry.log`.
+
+Disable the mirroring by unsetting `MYPAL_DATA_DIR`, `MYPAL_LOGS_DIR`, `MYPAL_MODELS_DIR`, and `MYPAL_FORCE_TELEMETRY` before launching if you prefer the default Electron user data directory.
 
 ### Manual run
 

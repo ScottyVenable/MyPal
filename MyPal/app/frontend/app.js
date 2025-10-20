@@ -2,6 +2,32 @@ const API_BASE = 'http://localhost:3001/api';
 let backendHealthy = false;
 let authToken = localStorage.getItem('mypal_token') || null;
 
+window.addEventListener('error', (event) => {
+  const message = event?.error?.stack || event?.message || 'Unknown error';
+  console.error('[GlobalError]', message);
+  try {
+    fetch(`${API_BASE}/telemetry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'frontend', type: 'error', message }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const message = event?.reason?.stack || event?.reason || 'Unknown rejection';
+  console.error('[UnhandledRejection]', message);
+  try {
+    fetch(`${API_BASE}/telemetry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'frontend', type: 'unhandledrejection', message }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+});
+
 async function apiFetch(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
@@ -12,10 +38,30 @@ async function apiFetch(path, options = {}) {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+function setMultiplierDisplay(value) {
+  const label = $('#xp-multiplier-value');
+  if (!label) return;
+  const numeric = Math.max(1, Math.min(250, Number(value) || 1));
+  label.textContent = `${numeric}x`;
+}
+
 function switchTab(name) {
-  $$('.tab').forEach(t => t.classList.remove('active'));
-  $$('#tab-' + name).classList.add('active');
-  $$('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  const target = document.getElementById(`tab-${name}`);
+  if (!target) {
+    console.warn(`Tab "${name}" not found; ignoring switch request.`);
+    return;
+  }
+
+  $$('.tab').forEach((tab) => {
+    tab.classList.toggle('active', tab === target);
+    tab.setAttribute('aria-hidden', tab !== target ? 'true' : 'false');
+  });
+
+  $$('nav button').forEach((btn) => {
+    const isActive = btn.dataset.tab === name;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
 }
 
 async function reinforceClick(btn) {
@@ -26,13 +72,19 @@ async function reinforceClick(btn) {
   } catch {}
 }
 
-function addMessage(role, text) {
+function addMessage(role, text, metaText) {
   const wrap = document.createElement('div');
   wrap.className = `msg ${role}`;
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text;
+  bubble.textContent = text && String(text).trim().length ? text : '…';
   wrap.appendChild(bubble);
+  if (metaText) {
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = metaText;
+    wrap.appendChild(meta);
+  }
   if (role === 'pal') {
     const star = document.createElement('button');
     star.className = 'reinforce';
@@ -93,7 +145,9 @@ function renderStats(s) {
   $('#stat-xp').textContent = s.xp;
   $('#stat-cp').textContent = s.cp;
   $('#stat-vocab').textContent = s.vocabSize;
-  $('#xp-multiplier').value = s.settings?.xpMultiplier ?? 1;
+  const multiplier = s.settings?.xpMultiplier ?? 1;
+  $('#xp-multiplier').value = multiplier;
+  setMultiplierDisplay(multiplier);
   if (document.getElementById('api-provider')) {
     $('#api-provider').value = s.settings?.apiProvider || 'local';
   }
@@ -178,7 +232,9 @@ function wireChat() {
     input.value = '';
     try {
       const res = await sendChat(msg);
-      addMessage('pal', res.reply);
+      const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
+      const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
+      addMessage('pal', replyText, meta);
       await refreshStats();
     } catch (e) {
       addMessage('pal', backendHealthy ? 'Sorry, I had trouble responding.' : 'Server not running. Please start backend.');
@@ -208,6 +264,11 @@ function wireSettings() {
     await refreshStats();
   });
   $('#export-memory').addEventListener('click', doExport);
+
+  const multiplierInput = $('#xp-multiplier');
+  multiplierInput?.addEventListener('input', (e) => {
+    setMultiplierDisplay(e.target.value);
+  });
 }
 
 async function init() {

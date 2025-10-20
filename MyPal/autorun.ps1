@@ -39,6 +39,11 @@ $launcherDir = Join-Path $scriptRoot "launcher"
 Ensure-NpmDependencies -Directory $backendDir
 Ensure-NpmDependencies -Directory $launcherDir
 
+$env:MYPAL_DATA_DIR = Join-Path $scriptRoot "dev-data"
+$env:MYPAL_LOGS_DIR = Join-Path $scriptRoot "dev-logs"
+$env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
+$env:MYPAL_FORCE_TELEMETRY = '1'
+
 Write-Host "Starting MyPal launcher (this will also boot the backend)..."
 Push-Location $launcherDir
 try {
