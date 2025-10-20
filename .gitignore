@@ -32,7 +32,10 @@ __pycache__/
 **/src/data/**
 **/src/logs/**
 **/src/temp/**
-**/dev/builds/**
+app/backend/data/*.json
+
+# Development-only files (not for GitHub)
+dev/
 
 # Generated hardware specs
 docs/detect_user_specs/user_hardware.json

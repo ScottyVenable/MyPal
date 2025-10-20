@@ -9,11 +9,12 @@ This Electron-based launcher starts the MyPal backend and opens the existing SPA
 
 ## Development run
 ```powershell
-cd "g:\My Drive\Technology\AI Projects\MyPal"
-cd app/backend
+# First, install backend dependencies
+cd <project-root>\app\backend
 npm install
 
-cd ../../dev/src/bin/launcher
+# Then run the launcher
+cd <project-root>\launcher
 npm install
 npm run dev
 ```
@@ -21,15 +22,16 @@ This boots the backend (using the dependencies you installed in `app/backend`) a
 
 ## Building the Windows installer
 ```powershell
-cd "g:\My Drive\Technology\AI Projects\MyPal"
-cd app/backend
+# Ensure backend dependencies are installed
+cd <project-root>\app\backend
 npm install
 
-cd ../../dev/src/bin/launcher
+# Build the installer
+cd <project-root>\launcher
 npm install
 npm run dist
 ```
-The installer (`MyPal-Launcher-Setup-<version>.exe`) will appear under `dist/`.
+The installer (`MyPal-Launcher-Setup-<version>.exe`) will appear under `launcher/dist/`.
 
 During packaging the `app/` directory is copied into the Electron bundle. Backend data, logs, and models are stored in the user data directory (e.g., `%APPDATA%/MyPal`).
 

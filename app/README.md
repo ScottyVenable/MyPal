@@ -11,7 +11,8 @@ This is a runnable first version aligned with the App Design Document. It includ
 1) Install backend deps
 
 ```powershell
-cd "g:\My Drive\Technology\AI Projects\MyPal\Documents\app\backend"; npm install
+cd <project-root>\app\backend
+npm install
 ```
 
 If you see EBADF/EPERM errors (common on synced folders like Google Drive), copy the backend folder to a local, unsynced path (e.g., `C:\dev\mypal\backend`) and run `npm install` there, then run `npm start`. Alternatively, pause Drive sync during install.
@@ -25,7 +26,7 @@ npm start
 You should see: MyPal backend listening on http://localhost:3001
 
 3) Open frontend
-- Open `g:\My Drive\Technology\AI Projects\MyPal\Documents\app\frontend\index.html` in your browser.
+- Open `app/frontend/index.html` in your browser.
 
 ## Using the app
 - Type messages in Conversation tab; Pal responds with constrained output based on level.
