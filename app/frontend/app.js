@@ -552,6 +552,10 @@ function renderBrain(data) {
   if (!defaultBrainDescription && desc) {
     defaultBrainDescription = desc.textContent || '';
   }
+  
+  // Show loading placeholder
+  container.innerHTML = '<div class="graph-loading"><div class="loading-spinner"></div><p>Loading knowledge graph...</p></div>';
+  
   const nodes = new vis.DataSet((data.nodes || []).map((n) => ({
     id: n.id,
     label: n.label,
@@ -574,77 +578,91 @@ function renderBrain(data) {
     return;
   }
 
-  container.innerHTML = '';
+  // Use setTimeout to allow loading UI to render before heavy computation
+  setTimeout(() => {
+    container.innerHTML = '';
 
-  const options = {
-    layout: { improvedLayout: true },
-    nodes: {
-      shape: 'dot',
-      scaling: { min: 4, max: 24 },
-      color: {
-        background: '#2a306b',
-        border: '#9ab4ff',
-        highlight: { background: '#3240a8', border: '#dfe3ff' }
-      },
-      font: { color: '#dfe3ff' },
-      shadow: {
-        enabled: true,
-        color: 'rgba(0,0,0,0.35)',
-        size: 8,
-        x: 2,
-        y: 2
-      }
-    },
-    edges: {
-      color: { color: '#2a306b', highlight: '#9ab4ff' },
-      smooth: { type: 'continuous', roundness: 0.15 }
-    },
-    physics: {
-      enabled: true,
-      solver: 'forceAtlas2Based',
-      forceAtlas2Based: {
-        gravitationalConstant: -45,
-        centralGravity: 0.012,
-        springLength: 180,
-        springConstant: 0.055,
-        avoidOverlap: 0.6
-      },
-      maxVelocity: 20,
-      minVelocity: 0.4,
-      timestep: 0.4,
-      stabilization: { iterations: 250, updateInterval: 25, fit: true }
-    },
-    interaction: {
-      hover: true,
-      zoomView: true,
-      dragNodes: true
-    },
-    groups: {
-      concept: {
-        shape: 'diamond',
+    const options = {
+      layout: { improvedLayout: true },
+      nodes: {
+        shape: 'dot',
+        scaling: { min: 4, max: 24 },
         color: {
-          background: '#642d91',
-          border: '#d6b7ff',
-          highlight: { background: '#8044b0', border: '#ffffff' }
+          background: '#2a306b',
+          border: '#9ab4ff',
+          highlight: { background: '#3240a8', border: '#dfe3ff' }
         },
-        font: { color: '#f3e9ff' }
+        font: { color: '#dfe3ff', size: 12 },
+        shadow: {
+          enabled: true,
+          color: 'rgba(0,0,0,0.35)',
+          size: 8,
+          x: 2,
+          y: 2
+        }
+      },
+      edges: {
+        color: { color: '#2a306b', highlight: '#9ab4ff' },
+        smooth: { type: 'continuous', roundness: 0.15 },
+        width: 1
+      },
+      physics: {
+        enabled: true,
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: {
+          gravitationalConstant: -50,
+          centralGravity: 0.01,
+          springLength: 200,
+          springConstant: 0.04,
+          avoidOverlap: 0.5
+        },
+        maxVelocity: 30,
+        minVelocity: 0.5,
+        timestep: 0.35,
+        stabilization: { 
+          enabled: true,
+          iterations: 200,
+          updateInterval: 50,
+          fit: true 
+        }
+      },
+      interaction: {
+        hover: true,
+        zoomView: true,
+        dragNodes: true,
+        tooltipDelay: 200,
+        hideEdgesOnDrag: true,
+        hideEdgesOnZoom: false
+      },
+      groups: {
+        concept: {
+          shape: 'diamond',
+          color: {
+            background: '#642d91',
+            border: '#d6b7ff',
+            highlight: { background: '#8044b0', border: '#ffffff' }
+          },
+          font: { color: '#f3e9ff' }
+        }
       }
-    }
-  };
-  new vis.Network(container, { nodes, edges }, options);
+    };
+    
+    new vis.Network(container, { nodes, edges }, options);
 
-  if (!desc) return;
-  if (conceptCount && data.concepts?.length) {
-    const sorted = [...data.concepts].sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0) || (b.totalMentions || 0) - (a.totalMentions || 0));
-    const top = sorted[0];
-    if (top) {
-      const topKeywords = top.keywords?.slice(0, 3).map((k) => k.word).filter(Boolean);
-      const keywordText = topKeywords && topKeywords.length ? `Keywords: ${topKeywords.join(', ')}` : '';
-      desc.textContent = `Dominant concept: ${top.name} (${top.category}). ${keywordText}`.trim();
-      return;
+    if (desc) {
+      if (conceptCount && data.concepts?.length) {
+        const sorted = [...data.concepts].sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0) || (b.totalMentions || 0) - (a.totalMentions || 0));
+        const top = sorted[0];
+        if (top) {
+          const topKeywords = top.keywords?.slice(0, 3).map((k) => k.word).filter(Boolean);
+          const keywordText = topKeywords && topKeywords.length ? `Keywords: ${topKeywords.join(', ')}` : '';
+          desc.textContent = `Dominant concept: ${top.name} (${top.category}). ${keywordText}`.trim();
+          return;
+        }
+      }
+      desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
     }
-  }
-  desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
+  }, 10); // Small delay to let loading UI render
 }
 
 function renderMemories(payload) {
