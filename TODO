@@ -5,7 +5,7 @@
 
   ## CRITICAL PRIORITY - Core Functionality
 ### Must fix for basic app operation
-  ☐ Fix dependency installation error - Express module not found (ERR_MODULE_NOT_FOUND)
+  ☑ Fix dependency installation error - Express module not found (ERR_MODULE_NOT_FOUND)
   ⏳ Create a plan for AI to respond to user messages. Right now the AI does not appropriately respond to user inputs in a meaningful way.
      → IN PROGRESS: Implemented training on USER messages only (breaks gibberish feedback loop)
      → Added quality checks to Markov chain output
@@ -13,6 +13,7 @@
      → Need to test and iterate based on results
   ☐ Patch race condition when multiple chats arrive before data save completes
   ☐ Implement proper concurrency handling for JSON file operations
+  ☐ Correct new profile bootstrap files (chat-log.json, memories.json, vocabulary.json, journal.json) to use array structures expected by runtime loops
 
 ## HIGH PRIORITY - Essential Features
 ### Core communication and user experience
@@ -37,9 +38,9 @@
     - Verify relationship created: question:means → "we want to learn"
   ☐ Test quotation learning ("You should say 'hello' to greet people")
   ☐ Test correction system ("Don't say 'You is', say 'You are'")
-  ☐ Verify subjective narratives appear in memories with proper styling
-  ☐ Confirm help tooltips work on hover in Memories and Journal sections
-  ☐ Implement concept tagging system from CONCEPTUAL_INTELLIGENCE.md design doc
+  ☑ Verify subjective narratives appear in memories with proper styling
+  ☑ Confirm help tooltips work on hover in Memories and Journal sections
+  ☑ Implement concept tagging system from CONCEPTUAL_INTELLIGENCE.md design doc
   ☐ Add abstractionLevel field to concept storage structure
   ☐ Create level-gating for complex concepts in response generation
   ☐ Implement developmental milestone notifications (e.g., "Pal can now understand abstract logic!")
@@ -48,9 +49,9 @@
   ☐ Add help tooltips to Brain tab (node/edge visualization guide)
   ☐ Add help tooltips to Settings tab (explain each configuration option)
   ☐ Implement vocabulary teaching flow with user-defined meanings
-  ☐ Add single-word constraint from learned vocabulary list
+  ☑ Add single-word constraint from learned vocabulary list
   ☐ Create proper local database (lowdb or nedb) to replace JSON file persistence
-  ☐ Design telegraphic speech (2-3 word utterances) system
+  ☑ Design telegraphic speech (2-3 word utterances) system
   ☐ Implement S-V-O schema validation for speech construction
   ☐ Fix development setup documentation for path issues
 
@@ -68,6 +69,7 @@
   ☐ Improve responsive design for different screen sizes
   ☐ Add request rate limiting and validation
   ☐ Implement backup/restore functionality for data files
+  ☐ Add automatic reconnection/backoff for neural activity WebSocket to keep brain visualization live after disconnects
 
 ## MEDIUM-LOW PRIORITY - Enhanced Features
 ### Nice-to-have functionality improvements
@@ -81,7 +83,7 @@
   ☐ Implement lobe coloring for brain visualization
   ☐ Build journal filters for sentiment, concept, and memory linkage
   ☐ Add timeline view that combines chat, memories, and journal entries
-  ☐ Implement theme selector (light/dark/colorblind friendly)
+  ☑ Implement theme selector (light/dark/colorblind friendly)
 
 ## LOW PRIORITY - Development & Tooling
 ### Developer experience and testing
@@ -134,6 +136,7 @@
   ☐ Automate nightly dev builds with auto-version bumping
   ☐ Add release checklist template and verification scripts
   ☐ Integrate crash reporting symbol upload into CI
+  ☐ Externalize frontend API base URL and CSP configuration so packaged builds can target custom backend endpoints
 
 ## 11. Documentation & Training
   ☐ Update API documentation for new endpoints
