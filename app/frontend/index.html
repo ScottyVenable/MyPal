@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 ws://localhost:3001; img-src 'self' data:; font-src 'self';" />
   <title>Pal — Evolving AI Companion</title>
+  <link rel="icon" href="../../media/images/icon.ico" type="image/x-icon" />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script type="module" src="app.js" defer></script>
@@ -55,7 +56,7 @@
   <div id="main-app" class="hidden">
   <header>
     <div class="header-left">
-      <img src="../../media/images/logos/logo_outline.png" alt="MyPal" class="header-logo" />
+      <img src="../../media/images/logos/logo_no_background.png" alt="MyPal" class="header-logo" />
       <h1>Pal</h1>
       <span id="current-profile-name" class="profile-badge"></span>
     </div>
@@ -187,17 +188,25 @@
           </div>
           <aside class="brain-sidebar">
             <div class="brain-info">
-              <h3>How to read this graph</h3>
-              <p id="brain-description">Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.</p>
-              <ul>
-                <li><strong>Size</strong>: frequency of the word.</li>
-                <li><strong>Color</strong>: interaction recency.</li>
-                <li><strong>Edges</strong>: shared context strength.</li>
-              </ul>
+              <h3 class="collapsible-header">
+                How to read this graph
+                <button class="collapse-btn" type="button" aria-label="Toggle info">−</button>
+              </h3>
+              <div class="collapsible-content">
+                <p id="brain-description">Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.</p>
+                <ul>
+                  <li><strong>Size</strong>: frequency of the word.</li>
+                  <li><strong>Color</strong>: interaction recency.</li>
+                  <li><strong>Edges</strong>: shared context strength.</li>
+                </ul>
+              </div>
             </div>
             <div class="brain-memories">
               <div class="brain-memories-header">
-                <h3>Recent Memories <span class="help-icon" title="Memories are important interactions stored by Pal. Click on a memory to see Pal's subjective perspective of how it felt during that moment. Sentiment shows emotional tone, keywords show main concepts.">ⓘ</span></h3>
+                <h3>Recent Memories</h3>
+              </div>
+              <div class="memory-search">
+                <input id="memory-search-input" type="text" placeholder="Search memories..." />
               </div>
               <div id="memory-list" class="memory-list"></div>
             </div>

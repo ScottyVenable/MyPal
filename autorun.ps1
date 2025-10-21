@@ -93,16 +93,16 @@ if ($NoServerConsole) {
         New-Item -ItemType Directory -Path $_ -Force | Out-Null
     }
 }
-
+Clear-Host
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Starting MyPal with Electron Launcher" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Features:" -ForegroundColor Yellow
-Write-Host "  • Server Console: Auto-opens to show real-time logs" -ForegroundColor White
-Write-Host "  • System Tray: Right-click tray icon for menu" -ForegroundColor White
-Write-Host "  • Background Mode: Keep server running when window closes" -ForegroundColor White
+Write-Host "  - Server Console: Auto-opens to show real-time logs" -ForegroundColor White
+Write-Host "  - System Tray: Right-click tray icon for menu" -ForegroundColor White
+Write-Host "  - Background Mode: Keep server running when window closes" -ForegroundColor White
 Write-Host ""
 Write-Host "Data Directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
 Write-Host "Logs Directory: $env:MYPAL_LOGS_DIR" -ForegroundColor Gray
@@ -110,6 +110,8 @@ Write-Host ""
 Write-Host "Tip: Run '.\autorun.ps1 -NoServerConsole' to skip the console window" -ForegroundColor DarkGray
 Write-Host "Tip: Run '.\autorun.ps1 -SkipInstall' for faster restarts" -ForegroundColor DarkGray
 Write-Host ""
+
+# todo: add a prompt for user to select dev vs prod mode, run commands before launch, change env vars/directories, etc.
 
 Push-Location $launcherDir
 try {

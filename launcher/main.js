@@ -46,6 +46,7 @@ function createTray(rootDir) {
   let trayIcon = nativeImage.createEmpty();
   
   const iconCandidates = [
+    path.join(rootDir, 'media', 'images', 'icon.ico'),
     path.join(rootDir, 'launcher', 'icon.png'),
     path.join(rootDir, 'app', 'frontend', 'favicon.ico'),
     path.join(__dirname, 'icon.png')
@@ -56,6 +57,7 @@ function createTray(rootDir) {
       try {
         trayIcon = nativeImage.createFromPath(candidate);
         if (!trayIcon.isEmpty()) {
+          console.log('Loaded tray icon from:', candidate);
           break;
         }
       } catch (err) {
@@ -308,12 +310,21 @@ async function startBackend(rootDir) {
 }
 
 async function createWindow(rootDir) {
+  // Set window icon
+  const iconPath = path.join(rootDir, 'media', 'images', 'icon.ico');
+  let icon = null;
+  if (fs.existsSync(iconPath)) {
+    icon = nativeImage.createFromPath(iconPath);
+    console.log('Loaded window icon from:', iconPath);
+  }
+
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 780,
     minWidth: 900,
     minHeight: 600,
     title: 'MyPal',
+    icon: icon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

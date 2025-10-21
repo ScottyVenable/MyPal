@@ -2,7 +2,6 @@
 
 ## BUGS & ISSUES
   ☐ When asking a question, Pal responds with a question in return, not answering question in Level 2. Is this normal behavior?
-
   ## CRITICAL PRIORITY - Core Functionality
 ### Must fix for basic app operation
   ☑ Fix dependency installation error - Express module not found (ERR_MODULE_NOT_FOUND)

@@ -838,14 +838,44 @@ function renderStats(s) {
         label: 'Personality',
         data,
         borderColor: '#9ab4ff',
-        backgroundColor: 'rgba(154, 180, 255, 0.2)'
+        backgroundColor: 'rgba(154, 180, 255, 0.2)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#9ab4ff'
       }]
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1.5,
       scales: {
-        r: { suggestedMin: 0, suggestedMax: 100, grid: { color: '#2a306b' }, angleLines: { color: '#2a306b' }, pointLabels: { color: '#dfe3ff' } }
+        r: { 
+          suggestedMin: 0, 
+          suggestedMax: 100, 
+          grid: { color: 'rgba(42, 48, 107, 0.4)' }, 
+          angleLines: { color: 'rgba(42, 48, 107, 0.4)' }, 
+          pointLabels: { 
+            color: '#dfe3ff',
+            font: { size: 12, weight: '500' },
+            padding: 8
+          },
+          ticks: {
+            color: '#7a8ab8',
+            backdropColor: 'transparent',
+            font: { size: 9 }
+          }
+        }
       },
-      plugins: { legend: { labels: { color: '#dfe3ff' } } }
+      plugins: { 
+        legend: { 
+          labels: { 
+            color: '#dfe3ff',
+            font: { size: 11 },
+            padding: 10
+          } 
+        } 
+      }
     }
   });
 }
@@ -914,8 +944,8 @@ function renderBrain(data) {
 
   // Use setTimeout to allow loading UI to render before heavy computation
   setTimeout(() => {
-    // Keep loading spinner visible
-    const loadingDiv = container.querySelector('.graph-loading');
+    // Clear container completely to prevent duplicates
+    container.innerHTML = '';
     
     const options = {
       layout: { improvedLayout: true },
@@ -986,22 +1016,14 @@ function renderBrain(data) {
     const canvas = document.createElement('div');
     canvas.style.width = '100%';
     canvas.style.height = '100%';
-    canvas.style.display = 'none'; // Hide until ready
     container.appendChild(canvas);
     
     const network = new vis.Network(canvas, { nodes, edges }, options);
     
-    // Remove loading spinner when stabilization is complete
+    // Network is ready after stabilization
     network.once('stabilizationIterationsDone', () => {
-      if (loadingDiv) loadingDiv.remove();
-      canvas.style.display = 'block';
+      // Network is now stable and visible
     });
-    
-    // Fallback in case stabilization event doesn't fire
-    setTimeout(() => {
-      if (loadingDiv && loadingDiv.isConnected) loadingDiv.remove();
-      canvas.style.display = 'block';
-    }, 3000);
 
     if (desc) {
       if (conceptCount && data.concepts?.length) {
@@ -1529,6 +1551,8 @@ async function init() {
   setupJournalSubTabs();
   setupNeuralRefresh();
   setupNeuralRegeneration();
+  setupCollapsibleInfo();
+  setupMemorySearch();
   connectNeuralSocket(); // Connect WebSocket for real-time neural events
   
   // Wire exit button
@@ -1732,8 +1756,44 @@ async function renderProgressDashboard() {
     if (xpChartEl) xpChartEl.destroy();
     xpChartEl = new Chart(xpCtx, {
       type: 'line',
-      data: { labels: xpLabels, datasets: [{ label: 'XP Over Time', data: xpData, borderColor: '#9ab4ff', backgroundColor: 'rgba(154,180,255,0.2)', tension: 0.25 }] },
-      options: { plugins: { legend: { labels: { color: '#dfe3ff' } } }, scales: { x: { ticks: { color: '#dfe3ff' } }, y: { ticks: { color: '#dfe3ff' } } } }
+      data: { 
+        labels: xpLabels, 
+        datasets: [{ 
+          label: 'XP Over Time', 
+          data: xpData, 
+          borderColor: '#9ab4ff', 
+          backgroundColor: 'rgba(154,180,255,0.2)', 
+          tension: 0.25,
+          pointRadius: 2,
+          pointHoverRadius: 4
+        }] 
+      },
+      options: { 
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: 2,
+        plugins: { 
+          legend: { 
+            labels: { color: '#dfe3ff', font: { size: 11 } } 
+          } 
+        }, 
+        scales: { 
+          x: { 
+            ticks: { 
+              color: '#dfe3ff',
+              maxRotation: 45,
+              minRotation: 45,
+              font: { size: 9 },
+              maxTicksLimit: 12
+            },
+            grid: { color: 'rgba(42, 48, 107, 0.3)' }
+          }, 
+          y: { 
+            ticks: { color: '#dfe3ff', font: { size: 10 } },
+            grid: { color: 'rgba(42, 48, 107, 0.3)' }
+          } 
+        } 
+      }
     });
   }
   const convoCtx = document.getElementById('convoChart')?.getContext('2d');
@@ -1741,8 +1801,42 @@ async function renderProgressDashboard() {
     if (convoChartEl) convoChartEl.destroy();
     convoChartEl = new Chart(convoCtx, {
       type: 'bar',
-      data: { labels: convoLabels, datasets: [{ label: 'Conversations per day', data: convoData, backgroundColor: 'rgba(50,64,168,0.5)', borderColor: '#9ab4ff' }] },
-      options: { plugins: { legend: { labels: { color: '#dfe3ff' } } }, scales: { x: { ticks: { color: '#dfe3ff' } }, y: { ticks: { color: '#dfe3ff' } } } }
+      data: { 
+        labels: convoLabels, 
+        datasets: [{ 
+          label: 'Conversations per day', 
+          data: convoData, 
+          backgroundColor: 'rgba(50,64,168,0.5)', 
+          borderColor: '#9ab4ff',
+          borderWidth: 1
+        }] 
+      },
+      options: { 
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: 2,
+        plugins: { 
+          legend: { 
+            labels: { color: '#dfe3ff', font: { size: 11 } } 
+          } 
+        }, 
+        scales: { 
+          x: { 
+            ticks: { 
+              color: '#dfe3ff',
+              font: { size: 10 },
+              maxRotation: 0,
+              minRotation: 0
+            },
+            grid: { color: 'rgba(42, 48, 107, 0.3)' }
+          }, 
+          y: { 
+            ticks: { color: '#dfe3ff', font: { size: 10 } },
+            grid: { color: 'rgba(42, 48, 107, 0.3)' },
+            beginAtZero: true
+          } 
+        } 
+      }
     });
   }
 }
@@ -1963,6 +2057,48 @@ function setupNeuralRefresh() {
   const btn = $('#refresh-neural');
   if (btn) {
     btn.addEventListener('click', refreshNeuralNetwork);
+  }
+}
+
+// Wire up collapsible info box
+function setupCollapsibleInfo() {
+  const header = document.querySelector('.brain-info .collapsible-header');
+  const content = document.querySelector('.brain-info .collapsible-content');
+  const btn = document.querySelector('.brain-info .collapse-btn');
+  
+  if (header && content && btn) {
+    header.addEventListener('click', () => {
+      const isCollapsed = content.classList.contains('collapsed');
+      if (isCollapsed) {
+        content.classList.remove('collapsed');
+        btn.textContent = '−';
+      } else {
+        content.classList.add('collapsed');
+        btn.textContent = '+';
+      }
+    });
+  }
+}
+
+// Wire up memory search
+function setupMemorySearch() {
+  const searchInput = $('#memory-search-input');
+  const memoryList = $('#memory-list');
+  
+  if (searchInput && memoryList) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      const memoryItems = memoryList.querySelectorAll('.memory-item');
+      
+      memoryItems.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        if (!query || text.includes(query)) {
+          item.style.display = '';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    });
   }
 }
 

@@ -59,28 +59,44 @@ const originalWarn = console.warn.bind(console);
 const originalError = console.error.bind(console);
 
 console.log = (...args) => {
-  const line = formatArgs(args);
-  writeLine(consoleStream, 'LOG', line);
-  originalLog(...args);
+  try {
+    const line = formatArgs(args);
+    writeLine(consoleStream, 'LOG', line);
+    originalLog(...args);
+  } catch (err) {
+    // Ignore EPIPE errors when console output fails
+  }
 };
 
 console.info = (...args) => {
-  const line = formatArgs(args);
-  writeLine(consoleStream, 'INFO', line);
-  originalInfo(...args);
+  try {
+    const line = formatArgs(args);
+    writeLine(consoleStream, 'INFO', line);
+    originalInfo(...args);
+  } catch (err) {
+    // Ignore EPIPE errors
+  }
 };
 
 console.warn = (...args) => {
-  const line = formatArgs(args);
-  writeLine(consoleStream, 'WARN', line);
-  originalWarn(...args);
+  try {
+    const line = formatArgs(args);
+    writeLine(consoleStream, 'WARN', line);
+    originalWarn(...args);
+  } catch (err) {
+    // Ignore EPIPE errors
+  }
 };
 
 console.error = (...args) => {
-  const line = formatArgs(args);
-  writeLine(consoleStream, 'ERROR', line);
-  writeLine(errorStream, 'ERROR', line);
-  originalError(...args);
+  try {
+    const line = formatArgs(args);
+    writeLine(consoleStream, 'ERROR', line);
+    writeLine(errorStream, 'ERROR', line);
+    originalError(...args);
+  } catch (err) {
+    // Ignore EPIPE errors
+  }
 };
 
 function closeLogStreams() {
@@ -5075,7 +5091,11 @@ try {
     });
 
     ws.on('close', () => {
-      console.log('WebSocket client disconnected from neural-stream');
+      try {
+        console.log('WebSocket client disconnected from neural-stream');
+      } catch (err) {
+        // Ignore EPIPE errors when console output fails
+      }
     });
   });
 
