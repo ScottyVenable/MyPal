@@ -31,6 +31,12 @@
           </div>
         </div>
       </div>
+      <div class="chat-tools">
+        <input id="chat-search" placeholder="Search chat history..." autocomplete="off" />
+        <button id="chat-search-btn" type="button">Search</button>
+        <button id="chat-search-clear" type="button">Clear</button>
+      </div>
+      <div id="chat-search-results" class="search-results hidden" aria-live="polite"></div>
       <div id="chat-window"></div>
       <form id="chat-form">
         <input id="chat-input" placeholder="Teach Pal…" autocomplete="off" />
@@ -39,6 +45,32 @@
     </section>
 
     <section id="tab-stats" class="tab">
+      <div class="pal-advancement-card">
+        <h3>Pal Advancement</h3>
+        <div class="advancement-content">
+          <div class="advancement-info">
+            <div class="advancement-row">
+              <span class="advancement-label">Current Level</span>
+              <span class="advancement-value" id="advancement-level">0</span>
+            </div>
+            <div class="advancement-row">
+              <span class="advancement-label">Experience Points</span>
+              <span class="advancement-value" id="advancement-xp">0 / 100</span>
+            </div>
+            <div class="advancement-row">
+              <span class="advancement-label">XP to Next Level</span>
+              <span class="advancement-value highlight" id="advancement-remaining">100</span>
+            </div>
+          </div>
+          <div class="advancement-progress">
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" id="advancement-progress-bar" style="width: 0%"></div>
+              <div class="progress-bar-text" id="advancement-progress-text">0%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <div class="stats">
         <div class="stat-box">
           <div>Level</div>
@@ -73,6 +105,17 @@
         </div>
       </div>
       
+      <div class="progress-dashboard">
+        <div class="chart-card">
+          <h3>XP Over Time</h3>
+          <canvas id="xpChart" height="200"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Conversations per Day</h3>
+          <canvas id="convoChart" height="200"></canvas>
+        </div>
+      </div>
+      
       <canvas id="personalityChart" width="400" height="400"></canvas>
     </section>
 
@@ -97,7 +140,7 @@
           </div>
           <div class="brain-memories">
             <div class="brain-memories-header">
-              <h3>Recent Memories</h3>
+              <h3>Recent Memories <span class="help-icon" title="Memories are important interactions stored by Pal. Click on a memory to see Pal's subjective perspective of how it felt during that moment. Sentiment shows emotional tone, keywords show main concepts.">ⓘ</span></h3>
             </div>
             <div id="memory-list" class="memory-list"></div>
           </div>
@@ -109,6 +152,7 @@
       <div class="journal-toolbar">
         <button id="refresh-journal" type="button">Refresh</button>
         <span id="journal-summary">Thoughts: 0</span>
+        <span class="help-icon" title="Journal shows Pal's internal thought process for each interaction. Strategy shows how Pal decided to respond, Focus shows what concept Pal was thinking about, and Reasoning explains Pal's logic.">ⓘ</span>
       </div>
       <div id="journal-entries" class="journal-list"></div>
     </section>

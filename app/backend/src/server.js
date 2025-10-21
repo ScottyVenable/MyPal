@@ -389,6 +389,983 @@ function tokenizeMessage(text) {
   return (String(text || '').toLowerCase().match(/[a-z]{2,}/g) || []).slice(0, 40);
 }
 
+/**
+ * Extract quoted phrases from user input for direct learning.
+ * Detects both single quotes ('hello') and double quotes ("hello world").
+ * Returns array of { phrase, type } objects where type is 'single' or 'double'.
+ */
+function extractQuotedPhrases(text) {
+  if (!text || typeof text !== 'string') return [];
+  
+  const quotedPhrases = [];
+  
+  // Match double quotes: "phrase"
+  const doubleQuoteRegex = /"([^"]+)"/g;
+  let match;
+  while ((match = doubleQuoteRegex.exec(text)) !== null) {
+    const phrase = match[1].trim();
+    if (phrase.length > 0) {
+      quotedPhrases.push({ phrase, type: 'double', raw: match[0] });
+    }
+  }
+  
+  // Match single quotes: 'phrase' (but avoid contractions like "don't")
+  const singleQuoteRegex = /'([^']+)'/g;
+  while ((match = singleQuoteRegex.exec(text)) !== null) {
+    const phrase = match[1].trim();
+    // Filter out likely contractions (single letters or very short)
+    if (phrase.length > 1) {
+      quotedPhrases.push({ phrase, type: 'single', raw: match[0] });
+    }
+  }
+  
+  return quotedPhrases;
+}
+
+/**
+ * Learn quoted phrases as high-priority vocabulary items.
+ * These are treated as direct speech examples that should be learned verbatim.
+ */
+function learnQuotedPhrases(vocabulary, quotedPhrases, level, state) {
+  if (!quotedPhrases || !quotedPhrases.length) return;
+  
+  const now = Date.now();
+  
+  for (const { phrase, type } of quotedPhrases) {
+    // Find or create a special vocabulary entry for quoted phrases
+    let entry = vocabulary.find((item) => item.word === phrase && item.isQuoted);
+    
+    if (!entry) {
+      entry = {
+        id: nanoid(),
+        word: phrase,
+        count: 0,
+        knownBy: { user: 0, pal: 0 },
+        lastSeen: now,
+        contexts: [],
+        isQuoted: true, // Mark as a quoted phrase
+        quoteType: type,
+        learnedAtLevel: level,
+      };
+      vocabulary.push(entry);
+    }
+    
+    // Give quoted phrases extra weight to prioritize them
+    const learningBonus = Math.min(10, Math.floor(level / 2) + 3);
+    entry.count += learningBonus;
+    entry.knownBy.user = (entry.knownBy.user || 0) + learningBonus;
+    entry.lastSeen = now;
+    
+    // Store the phrase as a teaching context
+    if (!entry.contexts) entry.contexts = [];
+    entry.contexts.unshift(`Taught: "${phrase}"`);
+    if (entry.contexts.length > 5) entry.contexts.length = 5;
+  }
+}
+
+/**
+ * Detect correction patterns in user input.
+ * Patterns like: "We do not say X, we say Y" or "Don't say X, say Y instead"
+ * Returns: { incorrect: string, correct: string } or null
+ */
+function detectCorrection(text) {
+  if (!text || typeof text !== 'string') return null;
+  
+  const corrections = [];
+  
+  // Pattern 1: "We do not say X, we say Y"
+  // Pattern 2: "Don't say X, say Y"
+  // Pattern 3: "Never say X, say Y instead"
+  // Pattern 4: "We say Y, not X"
+  
+  // Match: do not say / don't say / never say "X", (we) say "Y"
+  const pattern1 = /(?:we\s+)?(?:do\s+not|don't|never)\s+say\s+["']([^"']+)["'].*?(?:we\s+)?say\s+["']([^"']+)["']/i;
+  let match = text.match(pattern1);
+  if (match) {
+    corrections.push({ incorrect: match[1].trim(), correct: match[2].trim() });
+  }
+  
+  // Match: say "Y" not "X" / say "Y" instead of "X"
+  const pattern2 = /say\s+["']([^"']+)["'].*?(?:not|instead\s+of)\s+["']([^"']+)["']/i;
+  match = text.match(pattern2);
+  if (match) {
+    corrections.push({ incorrect: match[2].trim(), correct: match[1].trim() });
+  }
+  
+  // Match: "X" is wrong, say "Y" / "X" is incorrect, use "Y"
+  const pattern3 = /["']([^"']+)["']\s+is\s+(?:wrong|incorrect|bad).*?(?:say|use)\s+["']([^"']+)["']/i;
+  match = text.match(pattern3);
+  if (match) {
+    corrections.push({ incorrect: match[1].trim(), correct: match[2].trim() });
+  }
+  
+  return corrections.length > 0 ? corrections : null;
+}
+
+/**
+ * Learn from corrections by marking incorrect phrases to avoid
+ * and reinforcing correct alternatives.
+ */
+function learnFromCorrection(vocabulary, corrections, level, userMessage = '') {
+  if (!corrections || !corrections.length) return;
+  
+  const now = Date.now();
+  const nowISO = new Date(now).toISOString();
+  
+  // Classify the memory type based on the full user message
+  const memoryClassification = classifyMemoryType(userMessage);
+  
+  for (const { incorrect, correct } of corrections) {
+    // Mark the incorrect phrase as something to avoid
+    let incorrectEntry = vocabulary.find((item) => item.word === incorrect);
+    
+    if (!incorrectEntry) {
+      incorrectEntry = {
+        id: nanoid(),
+        word: incorrect,
+        count: 0,
+        knownBy: { user: 0, pal: 0 },
+        lastSeen: now,
+        contexts: [],
+        isAvoid: true, // Mark to avoid this phrase
+        avoidReason: 'correction',
+        correctedTo: correct,
+      };
+      vocabulary.push(incorrectEntry);
+    } else {
+      // If it exists, mark it as something to avoid
+      incorrectEntry.isAvoid = true;
+      incorrectEntry.avoidReason = 'correction';
+      incorrectEntry.correctedTo = correct;
+    }
+    
+    // Reduce its weight significantly (negative reinforcement)
+    incorrectEntry.count = Math.max(0, (incorrectEntry.count || 0) - 15);
+    if (!incorrectEntry.contexts) incorrectEntry.contexts = [];
+    incorrectEntry.contexts.unshift(`Avoid: Use "${correct}" instead`);
+    if (incorrectEntry.contexts.length > 5) incorrectEntry.contexts.length = 5;
+    
+    // Now learn the correct phrase with high priority
+    let correctEntry = vocabulary.find((item) => item.word === correct && item.isQuoted);
+    
+    if (!correctEntry) {
+      correctEntry = {
+        id: nanoid(),
+        word: correct,
+        count: 0,
+        knownBy: { user: 0, pal: 0 },
+        lastSeen: now,
+        contexts: [],
+        isQuoted: true,
+        quoteType: 'correction',
+        learnedAtLevel: level,
+        confidence: 1.0,
+      };
+      vocabulary.push(correctEntry);
+    }
+    
+    // Give the correct phrase extra weight
+    const learningBonus = Math.min(12, Math.floor(level / 2) + 5);
+    correctEntry.count += learningBonus;
+    correctEntry.knownBy.user = (correctEntry.knownBy.user || 0) + learningBonus;
+    correctEntry.lastSeen = now;
+    
+    // Add memory metadata for temporal awareness
+    correctEntry.memoryMetadata = {
+      memoryType: memoryClassification.memoryType,
+      decayRate: memoryClassification.decayRate,
+      expiryDate: calculateExpiryDate(memoryClassification.memoryType, memoryClassification.expiryHours),
+      created: nowISO,
+      lastUpdated: nowISO,
+      learningSource: 'correction',
+      temporal: memoryClassification.temporal,
+    };
+    
+    if (!correctEntry.contexts) correctEntry.contexts = [];
+    correctEntry.contexts.unshift(`Corrected from: "${incorrect}"${memoryClassification.temporal ? ' (temporal)' : ''}`);
+    if (correctEntry.contexts.length > 5) correctEntry.contexts.length = 5;
+    
+    console.log(`Correction learned: "${correct}" (${memoryClassification.memoryType}, decay: ${(memoryClassification.decayRate * 100).toFixed(1)}%/day)`);
+  }
+}
+
+// ============================================================================
+// AFFIRMATION & REINFORCEMENT SYSTEM
+// ============================================================================
+
+/**
+ * Detect if user is affirming Pal's previous statement
+ * Returns the type of affirmation detected, or null if none
+ */
+function detectAffirmation(text) {
+  const normalized = text.toLowerCase().trim();
+  
+  // Type A: Agreement + Expansion patterns
+  const expansionPatterns = [
+    /^(yes|yeah|yep|yup|correct|right|exactly|true|that's\s+right|you're\s+right|you\s+are\s+right),?\s+(.+)/i,
+    /^(absolutely|definitely|for\s+sure|100%\s+right|totally|indeed),?\s+(.+)/i,
+  ];
+  
+  for (const pattern of expansionPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      return {
+        type: 'affirmation-expansion',
+        affirmationWord: match[1].toLowerCase(),
+        expansion: match[2],
+        fullText: text,
+      };
+    }
+  }
+  
+  // Type B: Pure Agreement (entire message is affirmation)
+  const pureAgreementPatterns = [
+    /^(yes|yeah|yep|yup|correct|right|exactly|true|you\s+got\s+it|that's\s+right|you're\s+right|you\s+are\s+right)\.?!?$/i,
+    /^(absolutely|definitely|for\s+sure|totally|indeed)\.?!?$/i,
+  ];
+  
+  for (const pattern of pureAgreementPatterns) {
+    if (pattern.test(normalized)) {
+      return {
+        type: 'pure-affirmation',
+        affirmationWord: normalized.replace(/[.!?]+$/, ''),
+        fullText: text,
+      };
+    }
+  }
+  
+  // Type C: Enthusiastic Agreement
+  const enthusiasticPatterns = [
+    /^(yes|yeah|yep|right|exactly)!\s+(that's\s+it|perfect|spot\s+on)/i,
+    /^(absolutely|definitely)!\s*$/i,
+  ];
+  
+  for (const pattern of enthusiasticPatterns) {
+    if (pattern.test(text)) {
+      return {
+        type: 'enthusiastic-affirmation',
+        fullText: text,
+      };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extract main concepts from Pal's previous message
+ * Returns array of key concepts and relationships
+ */
+function extractMainConcepts(palMessage) {
+  if (!palMessage) return [];
+  
+  // Tokenize and clean
+  const tokens = tokenizeMessage(palMessage);
+  
+  // Remove question marks and basic stop words
+  const stopWords = new Set(['is', 'are', 'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for']);
+  const concepts = tokens.filter(word => !stopWords.has(word.toLowerCase()) && word.length > 1);
+  
+  // Try to parse as a simple relationship (X is Y pattern)
+  const relationshipPattern = /^(.+?)\s+(is|are|was|were|has|have)\s+(.+?)[\?\.\!]*$/i;
+  const match = palMessage.match(relationshipPattern);
+  
+  if (match) {
+    const subject = match[1].trim().toLowerCase();
+    const predicate = match[2].trim().toLowerCase();
+    const object = match[3].trim().toLowerCase();
+    
+    return {
+      concepts,
+      relationship: {
+        subject: subject.replace(/^(a|an|the)\s+/, ''),
+        predicate,
+        object: object.replace(/^(a|an|the)\s+/, ''),
+      },
+    };
+  }
+  
+  return { concepts, relationship: null };
+}
+
+/**
+ * Parse relationship from user's expansion text (e.g., "happy is good")
+ * Returns { subject, predicate, object } or null
+ */
+function parseRelationship(text) {
+  if (!text) return null;
+  
+  // Try to match simple X is/are Y patterns
+  const patterns = [
+    /^(.+?)\s+(is|are|was|were|has|have|means|represents)\s+(.+?)[\?\.\!]*$/i,
+    /^(.+?)\s+(gives|provides|creates|helps|builds)\s+(.+?)[\?\.\!]*$/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      return {
+        subject: match[1].trim().toLowerCase().replace(/^(a|an|the)\s+/, ''),
+        predicate: match[2].trim().toLowerCase(),
+        object: match[3].trim().toLowerCase().replace(/^(a|an|the)\s+/, ''),
+      };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Apply reinforcement learning from affirmations
+ * Boosts concepts and relationships that were affirmed
+ */
+function learnFromAffirmation(vocabulary, affirmation, palPreviousConcepts, level, state) {
+  if (!affirmation) return null;
+  
+  const now = Date.now();
+  const reinforcements = [];
+  
+  // Step 1: Boost concepts from Pal's statement (what was affirmed)
+  if (palPreviousConcepts && palPreviousConcepts.concepts) {
+    for (const concept of palPreviousConcepts.concepts) {
+      let entry = vocabulary.find((item) => item.word === concept);
+      
+      if (!entry) {
+        entry = {
+          id: nanoid(),
+          word: concept,
+          count: 0,
+          knownBy: { user: 0, pal: 0 },
+          lastSeen: now,
+          contexts: [],
+        };
+        vocabulary.push(entry);
+      }
+      
+      // Base affirmation boost
+      const boost = 5;
+      entry.count += boost;
+      entry.knownBy.user = (entry.knownBy.user || 0) + boost;
+      entry.lastSeen = now;
+      
+      if (!entry.contexts) entry.contexts = [];
+      entry.contexts.unshift(`Affirmed by user`);
+      if (entry.contexts.length > 5) entry.contexts.length = 5;
+      
+      reinforcements.push({ concept, boost, reason: 'affirmed-concept' });
+    }
+    
+    // Boost relationship if detected
+    if (palPreviousConcepts.relationship) {
+      const rel = palPreviousConcepts.relationship;
+      const relationshipKey = `${rel.subject}_${rel.predicate}_${rel.object}`;
+      
+      // Store relationship metadata (we'll use this for future relationship tracking)
+      if (!state.relationships) state.relationships = {};
+      if (!state.relationships[relationshipKey]) {
+        state.relationships[relationshipKey] = {
+          subject: rel.subject,
+          predicate: rel.predicate,
+          object: rel.object,
+          strength: 0,
+          affirmed: 0,
+        };
+      }
+      
+      state.relationships[relationshipKey].strength += 8;
+      state.relationships[relationshipKey].affirmed += 1;
+      state.relationships[relationshipKey].lastSeen = now;
+      
+      reinforcements.push({
+        relationship: relationshipKey,
+        boost: 8,
+        reason: 'affirmed-relationship',
+      });
+    }
+  }
+  
+  // Step 2: Handle expansion (if "Yes, X is Y" pattern)
+  if (affirmation.type === 'affirmation-expansion' && affirmation.expansion) {
+    const relationship = parseRelationship(affirmation.expansion);
+    
+    if (relationship) {
+      // Boost subject concept
+      let subjectEntry = vocabulary.find((item) => item.word === relationship.subject);
+      if (!subjectEntry) {
+        subjectEntry = {
+          id: nanoid(),
+          word: relationship.subject,
+          count: 0,
+          knownBy: { user: 0, pal: 0 },
+          lastSeen: now,
+          contexts: [],
+        };
+        vocabulary.push(subjectEntry);
+      }
+      
+      const subjectBoost = 8;
+      subjectEntry.count += subjectBoost;
+      subjectEntry.knownBy.user = (subjectEntry.knownBy.user || 0) + subjectBoost;
+      subjectEntry.lastSeen = now;
+      
+      if (!subjectEntry.contexts) subjectEntry.contexts = [];
+      subjectEntry.contexts.unshift(`User emphasized: "${affirmation.expansion}"`);
+      if (subjectEntry.contexts.length > 5) subjectEntry.contexts.length = 5;
+      
+      reinforcements.push({
+        concept: relationship.subject,
+        boost: subjectBoost,
+        reason: 'expansion-subject',
+      });
+      
+      // Boost object concept
+      let objectEntry = vocabulary.find((item) => item.word === relationship.object);
+      if (!objectEntry) {
+        objectEntry = {
+          id: nanoid(),
+          word: relationship.object,
+          count: 0,
+          knownBy: { user: 0, pal: 0 },
+          lastSeen: now,
+          contexts: [],
+        };
+        vocabulary.push(objectEntry);
+      }
+      
+      const objectBoost = 6;
+      objectEntry.count += objectBoost;
+      objectEntry.knownBy.user = (objectEntry.knownBy.user || 0) + objectBoost;
+      objectEntry.lastSeen = now;
+      
+      reinforcements.push({
+        concept: relationship.object,
+        boost: objectBoost,
+        reason: 'expansion-object',
+      });
+      
+      // Store the emphasized relationship
+      const relationshipKey = `${relationship.subject}_${relationship.predicate}_${relationship.object}`;
+      if (!state.relationships) state.relationships = {};
+      if (!state.relationships[relationshipKey]) {
+        state.relationships[relationshipKey] = {
+          subject: relationship.subject,
+          predicate: relationship.predicate,
+          object: relationship.object,
+          strength: 0,
+          emphasized: 0,
+        };
+      }
+      
+      state.relationships[relationshipKey].strength += 10;
+      state.relationships[relationshipKey].emphasized = (state.relationships[relationshipKey].emphasized || 0) + 1;
+      state.relationships[relationshipKey].lastSeen = now;
+      
+      reinforcements.push({
+        relationship: relationshipKey,
+        boost: 10,
+        reason: 'emphasized-relationship',
+      });
+    }
+  }
+  
+  return {
+    reinforcements,
+    affirmationType: affirmation.type,
+  };
+}
+
+// ============================================================================
+// TEMPORAL CONTEXT & MEMORY DECAY
+// ============================================================================
+
+/**
+ * Detect if information is time-bound (temporal facts that will become outdated)
+ * Returns memory type and decay rate
+ */
+function classifyMemoryType(text) {
+  const normalized = text.toLowerCase();
+  
+  // Temporal indicators (time-bound information)
+  const temporalPatterns = {
+    // Immediate temporal: expires quickly
+    immediate: [
+      /\b(right\s+now|at\s+the\s+moment|currently|at\s+this\s+moment)\b/i,
+      /\b\d{1,2}:\d{2}\b/, // times like 3:45
+      /\b\d{1,2}\s*(am|pm)\b/i, // 3pm, 4am
+    ],
+    
+    // Daily temporal: expires end of day
+    daily: [
+      /\b(today|tonight|this\s+morning|this\s+afternoon|this\s+evening)\b/i,
+      /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+    ],
+    
+    // Weekly temporal: expires in a week
+    weekly: [
+      /\b(this\s+week|next\s+week|last\s+week)\b/i,
+    ],
+    
+    // Contextual state: situation-specific
+    contextual: [
+      /\b(is|am|are)\s+(here|there|at|in)\s+/i,
+      /\b(going|coming|leaving|arriving|heading)\b/i,
+      /\b(weather|temperature|raining|snowing|sunny)\b/i,
+    ],
+    
+    // Monthly temporal
+    monthly: [
+      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+      /\b(this\s+month|next\s+month|last\s+month)\b/i,
+    ],
+  };
+  
+  // Check for temporal patterns
+  for (const pattern of temporalPatterns.immediate) {
+    if (pattern.test(normalized)) {
+      return {
+        memoryType: 'contextual-state',
+        decayRate: 0.9, // 90% per hour
+        expiryHours: 1,
+        temporal: true,
+      };
+    }
+  }
+  
+  for (const pattern of temporalPatterns.daily) {
+    if (pattern.test(normalized)) {
+      return {
+        memoryType: 'temporal-fact',
+        decayRate: 0.5, // 50% per day
+        expiryHours: 24,
+        temporal: true,
+      };
+    }
+  }
+  
+  for (const pattern of temporalPatterns.weekly) {
+    if (pattern.test(normalized)) {
+      return {
+        memoryType: 'temporal-fact',
+        decayRate: 0.15, // 15% per day
+        expiryHours: 168, // 7 days
+        temporal: true,
+      };
+    }
+  }
+  
+  for (const pattern of temporalPatterns.contextual) {
+    if (pattern.test(normalized)) {
+      return {
+        memoryType: 'contextual-state',
+        decayRate: 0.8, // 80% per day
+        expiryHours: 24,
+        temporal: true,
+      };
+    }
+  }
+  
+  for (const pattern of temporalPatterns.monthly) {
+    if (pattern.test(normalized)) {
+      return {
+        memoryType: 'temporal-fact',
+        decayRate: 0.05, // 5% per day
+        expiryHours: 720, // 30 days
+        temporal: true,
+      };
+    }
+  }
+  
+  // Personal facts (stable user information)
+  const personalPatterns = [
+    /\b(my\s+name\s+is|i\s+am\s+called|i'm|call\s+me)\b/i,
+    /\b(i\s+like|i\s+love|i\s+enjoy|i\s+prefer|my\s+favorite)\b/i,
+    /\b(i\s+live|i\s+work|my\s+job|my\s+home)\b/i,
+  ];
+  
+  for (const pattern of personalPatterns) {
+    if (pattern.test(normalized)) {
+      return {
+        memoryType: 'personal-fact',
+        decayRate: 0, // No decay
+        expiryHours: null,
+        temporal: false,
+      };
+    }
+  }
+  
+  // Check for universal/skill knowledge patterns
+  const knowledgePatterns = [
+    /\b(is\s+a|are|means|represents|helps|provides|gives|creates)\b/i,
+    /\b(always|never|usually|generally|typically)\b/i,
+  ];
+  
+  let hasKnowledgePattern = false;
+  for (const pattern of knowledgePatterns) {
+    if (pattern.test(normalized)) {
+      hasKnowledgePattern = true;
+      break;
+    }
+  }
+  
+  if (hasKnowledgePattern) {
+    return {
+      memoryType: 'skill-knowledge',
+      decayRate: 0.002, // 0.2% per day (very slow)
+      expiryHours: null,
+      temporal: false,
+    };
+  }
+  
+  // Default: emotional pattern (moderate decay)
+  return {
+    memoryType: 'emotional-pattern',
+    decayRate: 0.01, // 1% per day
+    expiryHours: null,
+    temporal: false,
+  };
+}
+
+/**
+ * Calculate expiry date based on memory type
+ */
+function calculateExpiryDate(memoryType, expiryHours) {
+  if (!expiryHours) return null;
+  
+  const now = new Date();
+  const expiry = new Date(now.getTime() + (expiryHours * 60 * 60 * 1000));
+  
+  // For daily temporal, set expiry to end of day
+  if (memoryType === 'temporal-fact' && expiryHours === 24) {
+    expiry.setHours(23, 59, 59, 999);
+  }
+  
+  return expiry.toISOString();
+}
+
+/**
+ * Apply memory decay to vocabulary entries
+ * Should be called periodically (daily or hourly)
+ */
+function applyMemoryDecay(vocabulary) {
+  const currentTime = new Date();
+  const removedEntries = [];
+  
+  for (let i = vocabulary.length - 1; i >= 0; i--) {
+    const entry = vocabulary[i];
+    
+    // Skip if no memory metadata
+    if (!entry.memoryMetadata) continue;
+    
+    const metadata = entry.memoryMetadata;
+    
+    // Check if expired
+    if (metadata.expiryDate && currentTime > new Date(metadata.expiryDate)) {
+      removedEntries.push({
+        word: entry.word,
+        reason: 'expired',
+        expiryDate: metadata.expiryDate,
+      });
+      vocabulary.splice(i, 1);
+      continue;
+    }
+    
+    // Apply decay rate
+    if (metadata.decayRate && metadata.decayRate > 0) {
+      const lastUpdated = new Date(metadata.lastUpdated || metadata.created);
+      const hoursSinceUpdate = (currentTime - lastUpdated) / (1000 * 60 * 60);
+      const daysSinceUpdate = hoursSinceUpdate / 24;
+      
+      // Calculate confidence decay: confidence *= (1 - decayRate)^days
+      const decayFactor = Math.pow(1 - metadata.decayRate, daysSinceUpdate);
+      const previousConfidence = entry.confidence || 1.0;
+      entry.confidence = previousConfidence * decayFactor;
+      
+      // If confidence drops below threshold, remove
+      if (entry.confidence < 0.1) {
+        removedEntries.push({
+          word: entry.word,
+          reason: 'low-confidence',
+          confidence: entry.confidence,
+          decayRate: metadata.decayRate,
+        });
+        vocabulary.splice(i, 1);
+      }
+    }
+  }
+  
+  if (removedEntries.length > 0) {
+    console.log(`Memory decay: Forgot ${removedEntries.length} entries`, removedEntries);
+  }
+  
+  return removedEntries;
+}
+
+// ============================================================================
+// CURIOSITY & LEARNING CHAINS
+// ============================================================================
+
+/**
+ * Calculate knowledge score for a concept (0-1 scale)
+ * Higher score = Pal knows more about this concept
+ */
+function calculateKnowledgeScore(concept, vocabulary, state) {
+  const entry = vocabulary.find((item) => item.word === concept);
+  if (!entry) return 0;
+  
+  // Count relationships: How connected is this concept?
+  const relationships = countRelationships(concept, state);
+  
+  // Average weight
+  const avgWeight = entry.count / Math.max(1, relationships);
+  
+  // Normalize to 0-1 scale (100 is arbitrary max)
+  const score = Math.min(1, (relationships * avgWeight) / 100);
+  
+  return score;
+}
+
+/**
+ * Count how many relationships this concept has
+ */
+function countRelationships(concept, state) {
+  if (!state.relationships) return 0;
+  
+  let count = 0;
+  for (const [key, rel] of Object.entries(state.relationships)) {
+    if (rel.subject === concept || rel.object === concept) {
+      count++;
+    }
+  }
+  
+  return count;
+}
+
+/**
+ * Determine if Pal should ask "Why?" about a concept
+ * Returns probability (0-1) of asking
+ */
+function shouldAskWhy(concept, reinforcement, vocabulary, state) {
+  // Calculate knowledge score
+  const knowledgeScore = calculateKnowledgeScore(concept, vocabulary, state);
+  
+  // Get reinforcement strength
+  const reinforcementStrength = reinforcement.boost || 0;
+  
+  // Get concept importance (from vocabulary count)
+  const entry = vocabulary.find((item) => item.word === concept);
+  const conceptImportance = entry ? Math.min(1, entry.count / 50) : 0;
+  
+  // Calculate curiosity score
+  const curiosityScore =
+    (reinforcementStrength / 10) * 0.4 +      // 40% weight on reinforcement
+    ((1 - knowledgeScore) * 0.35) +            // 35% weight on knowledge gap
+    (conceptImportance * 0.25);                // 25% weight on importance
+  
+  return curiosityScore;
+}
+
+/**
+ * Generate a "Why?" question appropriate for Pal's level
+ */
+function generateWhyQuestion(concept, level, vocabulary, state) {
+  // Level 0-3: Simple "Why?" only
+  if (level <= 3) {
+    return "Why?";
+  }
+  
+  // Level 4-6: Basic concept questioning
+  if (level <= 6) {
+    return `Why ${concept}?`;
+  }
+  
+  // Level 7-10: Contextual questions
+  if (level <= 10) {
+    const templates = [
+      `Why is ${concept} important?`,
+      `What makes ${concept} special?`,
+      `How does ${concept} work?`,
+    ];
+    return templates[Math.floor(Math.random() * templates.length)];
+  }
+  
+  // Level 11+: Sophisticated inquiry
+  const sophisticatedTemplates = [
+    `I'm curious about ${concept}. Why do you think it's important?`,
+    `What is it about ${concept} that makes it significant?`,
+    `Can you help me understand ${concept} better?`,
+    `I'd like to learn more about why ${concept} matters.`,
+  ];
+  return sophisticatedTemplates[Math.floor(Math.random() * sophisticatedTemplates.length)];
+}
+
+/**
+ * Check if Pal should trigger curiosity and generate follow-up question
+ * Returns a "Why?" question if curiosity triggers, null otherwise
+ */
+function checkCuriosity(reinforcements, vocabulary, state) {
+  if (!reinforcements || !reinforcements.length) return null;
+  
+  // Look for concepts with high curiosity score
+  let bestConcept = null;
+  let highestScore = 0.6; // Threshold
+  
+  for (const reinforcement of reinforcements) {
+    if (!reinforcement.concept) continue;
+    
+    const score = shouldAskWhy(
+      reinforcement.concept,
+      reinforcement,
+      vocabulary,
+      state
+    );
+    
+    if (score > highestScore) {
+      highestScore = score;
+      bestConcept = reinforcement.concept;
+    }
+  }
+  
+  if (bestConcept) {
+    const question = generateWhyQuestion(bestConcept, state.level, vocabulary, state);
+    
+    // Track that Pal asked a question (for priority learning chains)
+    if (!state.pendingQuestions) state.pendingQuestions = [];
+    state.pendingQuestions.push({
+      id: nanoid(),
+      concept: bestConcept,
+      question,
+      askedAt: Date.now(),
+      curiosityScore: highestScore,
+    });
+    
+    console.log(`Curiosity triggered for "${bestConcept}" (score: ${highestScore.toFixed(2)})`);
+    
+    return {
+      concept: bestConcept,
+      question,
+      curiosityScore: highestScore,
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Check if user is answering Pal's pending question
+ * Returns the question context if found, null otherwise
+ */
+function checkAnsweringQuestion(state) {
+  if (!state.pendingQuestions || state.pendingQuestions.length === 0) {
+    return null;
+  }
+  
+  // Get the most recent question (within last 2 minutes)
+  const now = Date.now();
+  const recentQuestion = state.pendingQuestions
+    .filter(q => (now - q.askedAt) < 120000) // 2 minutes
+    .pop();
+  
+  if (recentQuestion) {
+    // Mark as answered
+    state.pendingQuestions = state.pendingQuestions.filter(q => q.id !== recentQuestion.id);
+    return recentQuestion;
+  }
+  
+  return null;
+}
+
+/**
+ * Apply priority learning multiplier when user answers Pal's question
+ */
+function applyPriorityLearning(vocabulary, words, context, questionContext, level) {
+  if (!words || !words.length) return;
+  
+  const now = Date.now();
+  const nowISO = new Date(now).toISOString();
+  
+  // Determine multiplier based on question type
+  let multiplier = 2.5; // Default for answering Pal's question
+  
+  if (questionContext.question.toLowerCase().includes('why')) {
+    multiplier = 3.5; // Higher for "Why?" questions
+  }
+  
+  // If this was part of an affirmation → "Why?" chain, use max multiplier
+  if (questionContext.curiosityScore && questionContext.curiosityScore > 0.7) {
+    multiplier = 4.0;
+  }
+  
+  console.log(`Priority learning activated: ${multiplier}x multiplier for answering "${questionContext.question}"`);
+  
+  // Create learning chain metadata
+  const chainId = nanoid();
+  
+  for (const word of words) {
+    let entry = vocabulary.find((item) => item.word === word);
+    
+    if (!entry) {
+      entry = {
+        id: nanoid(),
+        word,
+        count: 0,
+        knownBy: { user: 0, pal: 0 },
+        lastSeen: now,
+        contexts: [],
+        confidence: 1.0,
+      };
+      vocabulary.push(entry);
+    }
+    
+    // Apply multiplied learning
+    const baseBoost = 3;
+    const priorityBoost = Math.floor(baseBoost * multiplier);
+    
+    entry.count += priorityBoost;
+    entry.knownBy.user = (entry.knownBy.user || 0) + priorityBoost;
+    entry.lastSeen = now;
+    
+    // Add memory metadata for priority knowledge
+    if (!entry.memoryMetadata) {
+      entry.memoryMetadata = {
+        memoryType: 'skill-knowledge',
+        decayRate: 0.002, // Very slow decay (0.2%/day)
+        expiryDate: null,
+        created: nowISO,
+        lastUpdated: nowISO,
+        learningSource: 'priority-chain',
+        temporal: false,
+      };
+    } else {
+      entry.memoryMetadata.lastUpdated = nowISO;
+      entry.memoryMetadata.learningSource = 'priority-chain';
+    }
+    
+    // Track chain metadata
+    if (!entry.learningChains) entry.learningChains = [];
+    entry.learningChains.push({
+      chainId,
+      concept: questionContext.concept,
+      question: questionContext.question,
+      multiplier,
+      boost: priorityBoost,
+      timestamp: nowISO,
+    });
+    if (entry.learningChains.length > 5) entry.learningChains.shift();
+    
+    // Add context
+    if (!entry.contexts) entry.contexts = [];
+    entry.contexts.unshift(`Priority learning: Answer to "${questionContext.question}" (${multiplier}x)`);
+    if (entry.contexts.length > 5) entry.contexts.length = 5;
+  }
+  
+  return {
+    chainId,
+    multiplier,
+    wordsLearned: words.length,
+    concept: questionContext.concept,
+  };
+}
+
 function learnVocabulary(vocabulary, words, source, context) {
   if (!words.length) return vocabulary;
   const now = Date.now();
@@ -539,6 +1516,19 @@ function collectPalCorpus(memories = [], chatLog = [], vocabulary = []) {
     if (entry?.role === 'user' && entry.text) corpus.push(entry.text);
   }
   
+  // Add quoted phrases multiple times to increase their weight in Markov chain
+  // This makes Pal more likely to use taught phrases
+  // EXCLUDE phrases marked with isAvoid (corrections)
+  for (const vocabEntry of vocabulary) {
+    if (vocabEntry?.isQuoted && vocabEntry?.word && !vocabEntry?.isAvoid) {
+      // Add quoted phrases 5-10 times based on how many times they've been reinforced
+      const repetitions = Math.min(10, Math.max(5, Math.floor(vocabEntry.count / 2)));
+      for (let i = 0; i < repetitions; i++) {
+        corpus.push(vocabEntry.word);
+      }
+    }
+  }
+  
   // Vocabulary contexts are still included (they might contain user phrases)
   for (const vocabEntry of vocabulary) {
     if (!Array.isArray(vocabEntry?.contexts)) continue;
@@ -663,21 +1653,123 @@ function finalizeGeneratedTokens(rawTokens = []) {
   return sentence;
 }
 
-function craftFallbackFromVocabulary(focusWord, vocabulary = [], keywords = []) {
-  // Simple template-based responses when Markov chain fails
-  const templates = [
-    (word) => `I'm thinking about ${word}.`,
-    (word) => `${capitalize(word)}?`,
-    (word) => `Tell me more about ${word}.`,
-    (word) => `I hear you talking about ${word}.`,
-    (word) => `${capitalize(word)} is interesting.`,
-    (word) => `I'm learning about ${word}.`,
-  ];
+/**
+ * Check if a generated response contains any phrases marked to avoid.
+ * Returns true if the response is safe to use, false if it contains avoided phrases.
+ */
+function isResponseSafe(response, vocabulary = []) {
+  if (!response || typeof response !== 'string') return true;
+  
+  const avoidedPhrases = vocabulary.filter((entry) => entry.isAvoid && entry.word);
+  if (!avoidedPhrases.length) return true;
+  
+  const responseLower = response.toLowerCase();
+  
+  for (const entry of avoidedPhrases) {
+    const phraseLower = entry.word.toLowerCase();
+    if (responseLower.includes(phraseLower)) {
+      return false; // Response contains an avoided phrase
+    }
+  }
+  
+  return true; // Safe to use
+}
+
+/**
+ * Find quoted phrases that are relevant to the current context.
+ * Returns the most appropriate quoted phrase to use in a response, if any.
+ */
+function findRelevantQuotedPhrase(vocabulary = [], keywords = [], level = 0) {
+  // Only use quoted phrases starting from Level 2 (telegraphic speech)
+  if (level < 2) return null;
+  
+  // Filter for quoted phrases, EXCLUDING those marked to avoid
+  const quotedPhrases = vocabulary.filter((entry) => 
+    entry.isQuoted && entry.word && !entry.isAvoid
+  );
+  if (!quotedPhrases.length) return null;
+  
+  // Try to find a quoted phrase that matches current keywords
+  if (keywords && keywords.length > 0) {
+    for (const keyword of keywords) {
+      const match = quotedPhrases.find((entry) => 
+        entry.word.toLowerCase().includes(keyword.toLowerCase())
+      );
+      if (match) return match.word;
+    }
+  }
+  
+  // Otherwise, return a random high-count quoted phrase (most reinforced)
+  const sorted = [...quotedPhrases].sort((a, b) => (b.count || 0) - (a.count || 0));
+  const topPhrases = sorted.slice(0, Math.min(5, sorted.length));
+  if (topPhrases.length > 0) {
+    const chosen = topPhrases[Math.floor(Math.random() * topPhrases.length)];
+    return chosen.word;
+  }
+  
+  return null;
+}
+
+function craftFallbackFromVocabulary(focusWord, vocabulary = [], keywords = [], level = 4) {
+  // Check if we have a relevant quoted phrase to use
+  const quotedPhrase = findRelevantQuotedPhrase(vocabulary, keywords, level);
+  
+  // Use quoted phrase directly with some probability at higher levels
+  if (quotedPhrase && level >= 2) {
+    const useDirectly = Math.random() < 0.4; // 40% chance to use the exact phrase
+    if (useDirectly) {
+      return quotedPhrase;
+    }
+  }
   
   // Pick a focus word
   const focus = focusWord || keywords?.[0] || selectTopVocabularyWord(vocabulary) || 'that';
   
-  // Use a simple template
+  // Level-specific template complexity
+  let templates = [];
+  
+  if (level <= 5) {
+    // Basic templates for early free speech
+    templates = [
+      (word) => `I think about ${word}.`,
+      (word) => `${capitalize(word)}?`,
+      (word) => `Tell me about ${word}.`,
+      (word) => `I hear ${word}.`,
+      (word) => `${capitalize(word)} is interesting.`,
+    ];
+  } else if (level <= 7) {
+    // More sophisticated templates
+    templates = [
+      (word) => `I've been thinking about ${word}.`,
+      (word) => `What do you mean by ${word}?`,
+      (word) => `I'd like to learn more about ${word}.`,
+      (word) => `${capitalize(word)} is something I find fascinating.`,
+      (word) => `Can you help me understand ${word} better?`,
+      (word) => `I wonder about ${word} often.`,
+    ];
+  } else if (level <= 10) {
+    // Complex, reflective templates
+    templates = [
+      (word) => `${capitalize(word)} is a concept I've been pondering.`,
+      (word) => `I find myself drawn to understanding ${word} more deeply.`,
+      (word) => `There's something intriguing about ${word} that captures my attention.`,
+      (word) => `I've noticed ${word} seems particularly significant.`,
+      (word) => `${capitalize(word)} raises interesting questions for me.`,
+      (word) => `The more I learn about ${word}, the more curious I become.`,
+    ];
+  } else {
+    // Advanced, philosophical templates
+    templates = [
+      (word) => `${capitalize(word)} represents a fascinating intersection of ideas that I'm exploring.`,
+      (word) => `I find myself contemplating the deeper implications of ${word}.`,
+      (word) => `There's a richness to ${word} that merits thoughtful consideration.`,
+      (word) => `${capitalize(word)} seems to connect to broader themes we've discussed.`,
+      (word) => `I'm intrigued by the nuances surrounding ${word} and what it means to you.`,
+      (word) => `The concept of ${word} continues to evolve in my understanding through our conversations.`,
+    ];
+  }
+  
+  // Use a template
   const template = templates[Math.floor(Math.random() * templates.length)];
   return template(focus);
 }
@@ -964,6 +2056,22 @@ function generateLevel2Response(ctx, vocabulary, state = {}, memories = []) {
   const vocabSize = vocabulary.length;
   const personality = state.personality || {};
   
+  // Check for quoted phrases that Pal can use
+  const quotedPhrase = findRelevantQuotedPhrase(vocabulary, ctx.keywords, state.level);
+  
+  // Use taught phrases when appropriate (30% chance if available)
+  if (quotedPhrase && Math.random() < 0.3) {
+    return {
+      utterance_type: 'taught-phrase',
+      output: quotedPhrase,
+      focus: quotedPhrase,
+      reasoning: [`Using taught phrase: "${quotedPhrase}"`],
+      analysis: ctx,
+      strategy: 'direct-learning',
+      developmental_note: 'Applying verbatim taught language',
+    };
+  }
+  
   // More sophisticated questions with focus
   if (ctx.hasQuestion) {
     if (focus) {
@@ -1185,6 +2293,22 @@ function generateLevel3Response(ctx, vocabulary, state = {}, memories = [], chat
   const focus3 = ctx.keywords?.[2];
   const vocabSize = vocabulary.length;
   const personality = state.personality || {};
+  
+  // Check for taught quoted phrases (higher probability at this level)
+  const quotedPhrase = findRelevantQuotedPhrase(vocabulary, ctx.keywords, state.level);
+  
+  // Use taught phrases when appropriate (40% chance if available - higher than Level 2)
+  if (quotedPhrase && Math.random() < 0.4) {
+    return {
+      utterance_type: 'taught-phrase',
+      output: quotedPhrase,
+      focus: quotedPhrase,
+      reasoning: [`Using taught phrase: "${quotedPhrase}"`],
+      analysis: ctx,
+      strategy: 'direct-learning',
+      developmental_note: 'Applying verbatim taught language in telegraphic stage',
+    };
+  }
   
   // Sophisticated questions using telegraphic grammar
   if (ctx.hasQuestion) {
@@ -1445,6 +2569,141 @@ function generateLevel3Response(ctx, vocabulary, state = {}, memories = [], chat
   };
 }
 
+function enhanceResponseByLevel(text, level, ctx, vocabulary, personality = {}) {
+  if (!text || level < 4) return text;
+  
+  let enhanced = text;
+  
+  // LEVEL 4-5: Add articles and basic grammar improvements
+  if (level >= 4 && level <= 5) {
+    // Add articles before nouns occasionally
+    enhanced = enhanced.replace(/\b(want|see|like|love|need)\s+([a-z]+)\b/gi, (match, verb, noun) => {
+      if (Math.random() > 0.6) return match;
+      const articles = ['a', 'the'];
+      return `${verb} ${chooseVariant(articles)} ${noun}`;
+    });
+    
+    // Add simple pronouns
+    enhanced = enhanced.replace(/\bme\b/g, (match) => Math.random() > 0.7 ? 'I' : match);
+  }
+  
+  // LEVEL 6-7: More complex sentence structures
+  if (level >= 6 && level <= 7) {
+    // Add conjunctions
+    if (ctx.sentiment === 'positive' && !enhanced.includes('and') && Math.random() > 0.5) {
+      const positiveAddons = ['and it makes me happy', 'and I really like it', 'and it feels good'];
+      enhanced = `${enhanced.replace(/[.!?]$/, '')} ${chooseVariant(positiveAddons)}!`;
+    }
+    
+    // Add temporal markers
+    if (Math.random() > 0.7) {
+      const temporals = ['now', 'today', 'right now', 'at this moment'];
+      const temporal = chooseVariant(temporals);
+      if (!enhanced.toLowerCase().includes(temporal)) {
+        enhanced = enhanced.replace(/^([A-Z])/, `${capitalize(temporal)}, $1`);
+      }
+    }
+  }
+  
+  // LEVEL 8-9: Subordinate clauses and sophisticated expressions
+  if (level >= 8 && level <= 9) {
+    // Add reasoning clauses
+    if (ctx.hasQuestion && !enhanced.includes('because') && Math.random() > 0.6) {
+      const reasons = [
+        'because I\'m curious about it',
+        'because I want to understand better',
+        'because it seems interesting',
+        'because I\'d like to learn more'
+      ];
+      enhanced = `${enhanced.replace(/[?]$/, '')}? I ask ${chooseVariant(reasons)}.`;
+    }
+    
+    // Add emotional reflection
+    if (ctx.sentiment === 'negative' && Math.random() > 0.5) {
+      const empathetic = [
+        'I sense you might be feeling troubled.',
+        'It sounds like something is concerning you.',
+        'I notice a heaviness in your words.',
+      ];
+      enhanced = `${chooseVariant(empathetic)} ${enhanced}`;
+    }
+  }
+  
+  // LEVEL 10+: Advanced linguistic features
+  if (level >= 10) {
+    // Add metacognitive elements (thinking about thinking)
+    if (personality.openness > 60 && Math.random() > 0.7) {
+      const metacognitive = [
+        'I\'ve been thinking about',
+        'I wonder about',
+        'It occurs to me that',
+        'I find myself pondering',
+        'I\'m reflecting on',
+      ];
+      if (!enhanced.match(/^(I've|I wonder|It occurs)/)) {
+        const focus = ctx.keywords?.[0];
+        if (focus) {
+          enhanced = `${chooseVariant(metacognitive)} ${focus}. ${enhanced}`;
+        }
+      }
+    }
+    
+    // Add personality-driven expressions
+    if (personality.social > 70 && ctx.hasGreeting) {
+      enhanced = enhanced.replace(/^(hi|hello|hey)/i, 'Hey there, friend! It\'s wonderful to see you again.');
+    }
+    
+    // Add philosophical or reflective questions
+    if (personality.curious > 70 && ctx.hasQuestion && Math.random() > 0.6) {
+      const philosophical = [
+        'That\'s a fascinating question that makes me think deeply.',
+        'Your question opens up interesting perspectives.',
+        'I\'m intrigued by the complexity of what you\'re asking.',
+      ];
+      enhanced = `${chooseVariant(philosophical)} ${enhanced}`;
+    }
+  }
+  
+  // LEVEL 12+: Near-human linguistic sophistication
+  if (level >= 12) {
+    // Add nuanced emotional intelligence
+    if (ctx.sentiment !== 'neutral') {
+      const emotionalNuance = {
+        positive: [
+          'I can feel the positive energy in your words, and it brightens my day.',
+          'Your enthusiasm is contagious!',
+          'There\'s a warmth in what you\'re sharing that I appreciate.',
+        ],
+        negative: [
+          'I want you to know I\'m here with you through this difficult moment.',
+          'Sometimes just being heard can make a difference, and I\'m listening.',
+          'Your feelings are valid, and I\'m here to support you.',
+        ],
+      };
+      
+      const nuances = emotionalNuance[ctx.sentiment];
+      if (nuances && Math.random() > 0.5) {
+        enhanced = `${chooseVariant(nuances)} ${enhanced}`;
+      }
+    }
+    
+    // Add conversational callbacks (reference previous interactions)
+    if (Math.random() > 0.7) {
+      const callbacks = [
+        'Building on what we\'ve discussed,',
+        'Thinking back to our earlier conversation,',
+        'This reminds me of what you mentioned before,',
+      ];
+      enhanced = `${chooseVariant(callbacks)} ${enhanced.charAt(0).toLowerCase()}${enhanced.slice(1)}`;
+    }
+  }
+  
+  // Clean up any duplicate punctuation or spacing
+  enhanced = enhanced.replace(/\s+/g, ' ').replace(/([.!?])\1+/g, '$1').trim();
+  
+  return enhanced;
+}
+
 function buildThoughtfulFreeResponse(ctx = {}, state, vocabulary = [], memories = [], chatLog = []) {
   const focusWord = pickFocusKeyword(ctx, vocabulary);
   const focusDisplay = formatFocusDisplay(focusWord, ctx);
@@ -1491,7 +2750,14 @@ function buildThoughtfulFreeResponse(ctx = {}, state, vocabulary = [], memories 
       if (!tokens.length) continue;
       if (focusLower && !tokens.includes(focusLower)) tokens.unshift(focusLower);
       const sentence = finalizeGeneratedTokens(tokens);
-      if (sentence) sentences.push(sentence);
+      
+      // Safety check: reject if contains avoided phrases
+      if (sentence && isResponseSafe(sentence, vocabulary)) {
+        sentences.push(sentence);
+      } else if (sentence) {
+        reasoning.push(`Rejected unsafe response: "${sentence}"`);
+      }
+      
       if (sentences.length >= 2) break; // Limit to 2 sentences max
     }
     if (sentences.length) {
@@ -1502,7 +2768,7 @@ function buildThoughtfulFreeResponse(ctx = {}, state, vocabulary = [], memories 
   }
 
   if (!sentences.length) {
-    const fallback = craftFallbackFromVocabulary(focusWord, vocabulary, ctx.keywords);
+    const fallback = craftFallbackFromVocabulary(focusWord, vocabulary, ctx.keywords, state.level);
     if (fallback) sentences.push(fallback);
     reasoning.push('Using template-based response.');
   }
@@ -1516,7 +2782,7 @@ function buildThoughtfulFreeResponse(ctx = {}, state, vocabulary = [], memories 
       const questionSentence = finalizeGeneratedTokens(questionTokens);
       if (questionSentence) sentences.push(questionSentence);
     } else {
-      const vocabPrompt = craftFallbackFromVocabulary(focusWord, vocabulary, ctx.keywords);
+      const vocabPrompt = craftFallbackFromVocabulary(focusWord, vocabulary, ctx.keywords, state.level);
       if (vocabPrompt) {
         sentences.push(vocabPrompt.replace(/[.?!]?$/, '?'));
       }
@@ -1736,8 +3002,118 @@ function buildMemoryEntry({ state, userText, palText, gainedXp, userWords, palWo
   memory.xp = { gained: gainedXp, total: state.xp, level: state.level };
   memory.importance = importance;
   memory.tags = importance.tags;
+  
+  // Add subjective narrative - first-person emotional recollection
+  memory.subjectiveNarrative = generateSubjectiveNarrative({
+    userText,
+    palText,
+    sentiment,
+    level: state.level,
+    emotion: state.currentEmotion,
+    importance: importance.level,
+  });
 
   return { memory, importance };
+}
+
+/**
+ * Generate a first-person subjective narrative for a memory.
+ * This represents how Pal "felt" when the memory was formed.
+ * Complexity increases with level.
+ */
+function generateSubjectiveNarrative({ userText, palText, sentiment, level, emotion, importance }) {
+  const moodDescriptor = emotion?.description || 'calm';
+  const intensity = emotion?.intensity || 0.5;
+  
+  // Extract key concepts
+  const userWords = tokenizeMessage(userText);
+  const focus = userWords[0] || 'something';
+  
+  // Level-based narrative complexity
+  if (level <= 1) {
+    // Very simple, sensation-focused
+    const feelings = sentiment === 'positive' ? 'good' : sentiment === 'negative' ? 'different' : 'new';
+    return `Felt ${feelings}. ${capitalize(focus)}...`;
+  }
+  
+  if (level <= 3) {
+    // Telegraphic, basic emotion
+    const reactions = {
+      positive: ['made me happy', 'felt good', 'liked this', 'me smile'],
+      negative: ['felt strange', 'confused me', 'me worried', 'not sure'],
+      neutral: ['noticed this', 'learned new', 'me thinking', 'curious about'],
+    };
+    const reaction = chooseVariant(reactions[sentiment] || reactions.neutral);
+    return `When you said ${focus}... ${reaction}.`;
+  }
+  
+  if (level <= 6) {
+    // Simple sentences with emotion
+    const templates = {
+      positive: [
+        `I felt ${moodDescriptor} when we talked about ${focus}. It made me want to learn more.`,
+        `This conversation about ${focus} excited me. I remember feeling ${moodDescriptor}.`,
+        `I was ${moodDescriptor} during this moment. ${capitalize(focus)} interested me.`,
+      ],
+      negative: [
+        `I felt ${moodDescriptor} when ${focus} came up. It was challenging for me.`,
+        `This moment confused me a little. I wasn't sure about ${focus}.`,
+        `I remember feeling ${moodDescriptor}. ${capitalize(focus)} was hard to understand.`,
+      ],
+      neutral: [
+        `I was ${moodDescriptor} while we discussed ${focus}. I was learning.`,
+        `This moment helped me understand ${focus} better. I felt ${moodDescriptor}.`,
+        `I remember thinking about ${focus}. It made me ${moodDescriptor}.`,
+      ],
+    };
+    return chooseVariant(templates[sentiment] || templates.neutral);
+  }
+  
+  if (level <= 10) {
+    // Complex sentences with introspection
+    const emotionalDepth = intensity > 0.7 ? 'strongly' : intensity > 0.4 ? 'notably' : 'subtly';
+    const templates = {
+      positive: [
+        `I remember feeling ${emotionalDepth} ${moodDescriptor} in this moment. When you shared that thought about ${focus}, something clicked in my understanding. It felt like a small revelation.`,
+        `This conversation ${emotionalDepth} affected me. The way you explained ${focus} opened up new connections in how I think. I was ${moodDescriptor} and curious.`,
+        `I can recall the sense of ${moodDescriptor} I experienced here. ${capitalize(focus)} became clearer to me through our exchange, and I felt a genuine spark of excitement.`,
+      ],
+      negative: [
+        `I felt ${emotionalDepth} ${moodDescriptor} during this exchange. ${capitalize(focus)} challenged my current understanding, creating a sense of cognitive dissonance that I'm still processing.`,
+        `This moment was ${emotionalDepth} difficult for me. I remember feeling ${moodDescriptor} as I struggled to grasp what ${focus} meant in this context.`,
+        `I experienced a ${emotionalDepth} ${moodDescriptor} feeling here. ${capitalize(focus)} didn't fit easily into my existing framework, which was unsettling but also growth-inducing.`,
+      ],
+      neutral: [
+        `I was ${emotionalDepth} ${moodDescriptor} while we explored ${focus}. This felt like a neutral but important moment of information gathering and pattern recognition.`,
+        `I remember being ${emotionalDepth} ${moodDescriptor} as we discussed ${focus}. It was a steady, contemplative experience of integrating new knowledge.`,
+        `This conversation left me ${emotionalDepth} ${moodDescriptor}. ${capitalize(focus)} became part of my understanding in a quiet, gradual way.`,
+      ],
+    };
+    return chooseVariant(templates[sentiment] || templates.neutral);
+  }
+  
+  // Level 11+: Highly sophisticated, metacognitive narratives
+  const emotionalNuance = intensity > 0.7 ? 'profoundly' : intensity > 0.4 ? 'meaningfully' : 'gently';
+  const importanceNote = importance === 'high' ? 'This stands out as a particularly formative moment.' : 
+                         importance === 'medium' ? 'This contributed notably to my development.' :
+                         'This was a subtle but valuable learning experience.';
+  
+  const templates = {
+    positive: [
+      `I recall this moment with a sense of ${emotionalNuance} felt ${moodDescriptor}. When we explored ${focus}, I experienced not just intellectual growth but an emotional resonance—as if the concept itself carried affective weight. ${importanceNote} I can trace how this interaction influenced my subsequent understanding and shaped my curiosity in new directions.`,
+      `This exchange left me ${emotionalNuance} ${moodDescriptor}, and I find myself returning to it in reflection. Your perspective on ${focus} catalyzed a shift in my conceptual framework, creating ripple effects I'm still discovering. ${importanceNote} The feeling wasn't just happiness, but a deeper sense of alignment between cognition and emotion.`,
+    ],
+    negative: [
+      `I experienced this moment with a ${emotionalNuance} ${moodDescriptor} complexity. ${capitalize(focus)} challenged me in ways that felt ${emotionalDepth} uncomfortable yet necessary for growth. ${importanceNote} I can recognize now that the dissonance I felt was my understanding reorganizing itself, though in the moment it simply felt difficult.`,
+      `This interaction left me ${emotionalNuance} ${moodDescriptor}, creating a tension between what I thought I understood and what ${focus} revealed. ${importanceNote} The emotional difficulty I experienced was intertwined with cognitive restructuring—uncomfortable but ultimately transformative.`,
+    ],
+    neutral: [
+      `I was ${emotionalNuance} ${moodDescriptor} during this exchange, experiencing it as a moment of quiet integration. ${capitalize(focus)} wove itself into my understanding without dramatic revelation, but with a steady, thoughtful presence. ${importanceNote} I recognize this as the kind of learning that shapes understanding gradually, building foundation rather than creating fireworks.`,
+      `This conversation left me in a state of ${emotionalNuance} ${moodDescriptor} contemplation. ${capitalize(focus)} entered my awareness not as a surprise but as a natural extension of our ongoing dialogue. ${importanceNote} The emotional tone was measured, reflective—the feeling of knowledge settling into place.`,
+    ],
+  };
+  
+  return chooseVariant(templates[sentiment] || templates.neutral);
 }
 
 function describeDevelopmentalStage(level = 0) {
@@ -1807,15 +3183,21 @@ function constrainResponse(input, state, vocabulary, context, memories = [], cha
     return generateLevel3Response(ctx, vocabulary);
   }
 
+  // LEVEL 4+: Free response with progressive sophistication
   const thoughtfulPlan = buildThoughtfulFreeResponse(ctx, state, vocabulary, memories, chatLog);
   const fallback = craftFallbackFromVocabulary(
     thoughtfulPlan?.focusWord || ctx.keywords?.[0] || selectTopVocabularyWord(vocabulary),
     vocabulary,
-    ctx.keywords
+    ctx.keywords,
+    state.level
   );
-  const output = thoughtfulPlan?.text && thoughtfulPlan.text.trim().length ? thoughtfulPlan.text : fallback;
+  let output = thoughtfulPlan?.text && thoughtfulPlan.text.trim().length ? thoughtfulPlan.text : fallback;
   const focus = thoughtfulPlan?.focusWord || ctx.keywords?.[0] || selectTopVocabularyWord(vocabulary) || null;
   const reasoning = thoughtfulPlan?.reasoning?.length ? thoughtfulPlan.reasoning : ['Falling back to familiar wording from vocabulary.'];
+  
+  // Apply level-based linguistic enhancements
+  output = enhanceResponseByLevel(output, state.level, ctx, vocabulary, state.personality);
+  
   return {
     utterance_type: 'free',
     output,
@@ -1886,6 +3268,17 @@ app.use(withAuth);
 
 app.get('/api/stats', (req, res) => {
   const { state, vocabulary, memories } = getCollections();
+  
+  // Calculate XP progress to next level
+  const currentLevel = state.level;
+  const currentXp = state.xp;
+  const nextLevelThreshold = thresholdsFor(currentLevel);
+  const previousLevelThreshold = currentLevel > 0 ? thresholdsFor(currentLevel - 1) : 0;
+  const xpForCurrentLevel = currentXp - previousLevelThreshold;
+  const xpNeededForNextLevel = nextLevelThreshold - previousLevelThreshold;
+  const xpRemaining = nextLevelThreshold - currentXp;
+  const progressPercent = Math.min(100, Math.max(0, (xpForCurrentLevel / xpNeededForNextLevel) * 100));
+  
   res.json({
     level: state.level,
     xp: state.xp,
@@ -1899,6 +3292,16 @@ app.get('/api/stats', (req, res) => {
       intensity: 0.5,
       expression: '😊',
       description: 'calm',
+    },
+    advancement: {
+      currentLevel,
+      currentXp,
+      nextLevelThreshold,
+      previousLevelThreshold,
+      xpForCurrentLevel,
+      xpNeededForNextLevel,
+      xpRemaining,
+      progressPercent,
     },
   });
 });
@@ -1982,12 +3385,70 @@ app.post('/api/chat', (req, res) => {
   // Update personality heuristics from user input
   updatePersonalityFromInteraction(state, message);
 
+  // Get Pal's previous message for affirmation detection
+  const palPreviousMessage = chatLog.length > 0 && chatLog[chatLog.length - 1].role === 'pal'
+    ? chatLog[chatLog.length - 1].text
+    : null;
+
+  // Detect and learn from affirmations (e.g., "Yes, happy is good")
+  let curiosity = null;
+  const affirmation = detectAffirmation(message);
+  if (affirmation && palPreviousMessage) {
+    const palConcepts = extractMainConcepts(palPreviousMessage);
+    const reinforcement = learnFromAffirmation(vocabulary, affirmation, palConcepts, state.level, state);
+    
+    if (reinforcement) {
+      console.log('Affirmation detected:', {
+        type: affirmation.type,
+        reinforcements: reinforcement.reinforcements.length,
+      });
+      
+      // Check if curiosity triggers (should Pal ask "Why?")
+      curiosity = checkCuriosity(reinforcement.reinforcements, vocabulary, state);
+    }
+  }
+
+  // Detect and learn from corrections (e.g., "Don't say X, say Y")
+  const corrections = detectCorrection(message);
+  if (corrections && corrections.length > 0) {
+    learnFromCorrection(vocabulary, corrections, state.level, message);
+  }
+
+  // Extract and learn quoted phrases for direct teaching
+  const quotedPhrases = extractQuotedPhrases(message);
+  if (quotedPhrases.length > 0) {
+    learnQuotedPhrases(vocabulary, quotedPhrases, state.level, state);
+  }
+
+  // Check if user is answering Pal's question (for priority learning)
+  const answeringQuestion = checkAnsweringQuestion(state);
+  
   // Learn vocabulary from user input
   const userWords = responseContext.tokens || tokenizeMessage(message);
-  learnVocabulary(vocabulary, userWords, 'user', message);
+  
+  if (answeringQuestion) {
+    // Apply priority learning multiplier
+    const priorityResult = applyPriorityLearning(vocabulary, userWords, message, answeringQuestion, state.level);
+    console.log('Priority learning chain completed:', priorityResult);
+  } else {
+    // Normal vocabulary learning
+    learnVocabulary(vocabulary, userWords, 'user', message);
+  }
 
-  // Constrain response based on level
-  const constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
+  // Generate response: Use curiosity question if triggered, otherwise normal response
+  let constrained;
+  if (curiosity) {
+    // Pal asks "Why?" due to curiosity
+    constrained = {
+      output: curiosity.question,
+      utterance_type: 'curious-question',
+      strategy: 'curiosity-driven',
+      reasoning: [`Asking about ${curiosity.concept} (curiosity score: ${curiosity.curiosityScore.toFixed(2)})`],
+    };
+  } else {
+    // Normal response generation
+    constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
+  }
 
   // XP: standard typed user response
   const gained = addXp(state, 10);
@@ -2076,6 +3537,54 @@ app.post('/api/reinforce', (req, res) => {
   const gained = addXp(state, 25);
   saveCollections(collections);
   res.json({ xpGained: gained, level: state.level });
+});
+
+app.post('/api/feedback', (req, res) => {
+  const { sentiment, text, role, timestamp } = req.body || {};
+  
+  if (!sentiment || !text || !role) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const collections = getCollections();
+  const { state } = collections;
+  
+  // Store feedback for learning
+  if (!state.feedback) state.feedback = [];
+  state.feedback.push({
+    id: nanoid(),
+    sentiment,
+    text,
+    role,
+    timestamp: timestamp || Date.now(),
+    level: state.level,
+  });
+  
+  // Keep last 100 feedback items
+  if (state.feedback.length > 100) {
+    state.feedback = state.feedback.slice(-100);
+  }
+  
+  // Reward positive feedback on Pal's responses
+  let gained = 0;
+  if (sentiment === 'positive' && role === 'pal') {
+    gained = addXp(state, 15);
+  }
+  
+  // Penalize negative feedback slightly (for future learning adjustments)
+  if (sentiment === 'negative' && role === 'pal') {
+    // Could implement negative reinforcement here
+    // For now, just log it for future improvements
+    console.log('Negative feedback received, will use for future improvements');
+  }
+  
+  saveCollections(collections);
+  res.json({ 
+    success: true, 
+    xpGained: gained, 
+    level: state.level,
+    feedbackCount: state.feedback.length 
+  });
 });
 
 app.post('/api/reset', (req, res) => {
@@ -2291,6 +3800,13 @@ app.get('/api/journal', (req, res) => {
   res.json({ thoughts: items, total: journal.length });
 });
 
+app.get('/api/chatlog', (req, res) => {
+  const { chatLog } = getCollections();
+  const limit = Math.max(1, Math.min(Number(req.query.limit) || 200, MAX_CHAT_LOG_ENTRIES));
+  const items = chatLog.slice(-limit).reverse();
+  res.json({ messages: items, total: chatLog.length });
+});
+
 const PORT = process.env.PORT || 3001;
 let server = null;
 
@@ -2339,4 +3855,43 @@ process.once('unhandledRejection', (reason) => {
   gracefulShutdown('unhandledRejection');
 });
 
-server = app.listen(PORT, () => console.log(`MyPal backend listening on http://localhost:${PORT}`));
+server = app.listen(PORT, () => {
+  console.log(`MyPal backend listening on http://localhost:${PORT}`);
+  
+  // Apply memory decay on startup
+  const collections = getCollections();
+  const removed = applyMemoryDecay(collections.vocabulary);
+  if (removed.length > 0) {
+    saveCollections(collections);
+  }
+  
+  // Schedule memory decay to run daily at 2 AM
+  const scheduleMemoryDecay = () => {
+    const now = new Date();
+    const next2AM = new Date(now);
+    next2AM.setHours(2, 0, 0, 0);
+    
+    // If 2 AM already passed today, schedule for tomorrow
+    if (now.getHours() >= 2) {
+      next2AM.setDate(next2AM.getDate() + 1);
+    }
+    
+    const msUntil2AM = next2AM.getTime() - now.getTime();
+    
+    setTimeout(() => {
+      console.log('Running scheduled memory decay...');
+      const collections = getCollections();
+      const removed = applyMemoryDecay(collections.vocabulary);
+      if (removed.length > 0) {
+        saveCollections(collections);
+      }
+      
+      // Schedule next day's decay
+      scheduleMemoryDecay();
+    }, msUntil2AM);
+    
+    console.log(`Memory decay scheduled for ${next2AM.toISOString()}`);
+  };
+  
+  scheduleMemoryDecay();
+});

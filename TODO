@@ -1,6 +1,9 @@
 # Next Build & Bug Fix TODO List (Prioritized)
 
-## CRITICAL PRIORITY - Core Functionality
+## BUGS & ISSUES
+  ☐ When asking a question, Pal responds with a question in return, not answering question in Level 2. Is this normal behavior?
+
+  ## CRITICAL PRIORITY - Core Functionality
 ### Must fix for basic app operation
   ☐ Fix dependency installation error - Express module not found (ERR_MODULE_NOT_FOUND)
   ☐ Resolve Google Drive sync conflicts causing EBADF/EPERM npm install errors
@@ -14,13 +17,36 @@
 
 ## HIGH PRIORITY - Essential Features
 ### Core communication and user experience
+  ☐ **RESTART MYPAL APP to activate new features** (affirmations, temporal memory, curiosity, priority learning!)
+  ☐ Test affirmation system:
+    - "Yes, happy is good" should reinforce happy (+8), good (+6), and relationship (+10)
+    - "You are right! Eating is important" should trigger curiosity → "Why is eating important?"
+  ☐ Test temporal memory system:
+    - "No, today is Tuesday" should learn as temporal-fact with 50%/day decay and end-of-day expiry
+    - Check memory decay runs at 2 AM daily
+  ☐ Test curiosity system:
+    - Affirm concept with low knowledge → Pal should ask "Why?"
+    - Question sophistication should match level (L0-3: "Why?", L11+: full sentences)
+  ☐ Test priority learning chains:
+    - Answer Pal's "Why?" question → words should get 3.5-4.0x learning multiplier
+    - Check learningChains metadata in vocabulary entries
+  ☐ Test quotation learning ("You should say 'hello' to greet people")
+  ☐ Test correction system ("Don't say 'You is', say 'You are'")
+  ☐ Verify subjective narratives appear in memories with proper styling
+  ☐ Confirm help tooltips work on hover in Memories and Journal sections
+  ☐ Implement concept tagging system from CONCEPTUAL_INTELLIGENCE.md design doc
+  ☐ Add abstractionLevel field to concept storage structure
+  ☐ Create level-gating for complex concepts in response generation
+  ☐ Implement developmental milestone notifications (e.g., "Pal can now understand abstract logic!")
+  ☐ Add concept evolution tracking (same concept understood differently at each level)
+  ☐ Expand help tooltips to Stats tab (XP/CP/Level/Advancement explanations)
+  ☐ Add help tooltips to Brain tab (node/edge visualization guide)
+  ☐ Add help tooltips to Settings tab (explain each configuration option)
   ☐ Implement vocabulary teaching flow with user-defined meanings
   ☐ Add single-word constraint from learned vocabulary list
   ☐ Create proper local database (lowdb or nedb) to replace JSON file persistence
   ☐ Design telegraphic speech (2-3 word utterances) system
   ☐ Implement S-V-O schema validation for speech construction
-  ☐ Implement proper loading states for all async operations
-  ☐ Add better error messages and user feedback
   ☐ Fix development setup documentation for path issues
 
 ## MEDIUM PRIORITY - User Experience & Stability
@@ -82,19 +108,7 @@
   ☐ Add model download manager UI with progress tracking
   ☐ Implement sandbox execution guardrails for third-party models
 
-## DEPLOYMENT & DISTRIBUTION
-### Build and release preparation
-  ☐ Fix Electron builder configuration for all platforms
-  ☐ Add automated testing to GitHub Actions workflow
-  ☐ Implement proper version management and migration system
-  ☐ Create Windows installer (.exe) for easy installation
-  ☐ Create installer packages for macOS and Linux
-  ☐ Add digital signing for Windows installer
-  ☐ Implement update mechanism for future releases
-  ☐ Automate nightly dev builds with auto-version bumping
-
-## SECURITY & PRIVACY
-### Important but not immediately blocking
+## 9. Security & Privacy
   ☐ Implement proper API key masking in settings UI
   ☐ Add content filtering for user inputs
   ☐ Implement proper secrets management for local storage
@@ -104,8 +118,51 @@
   ☐ Implement per-user encryption keys for saved conversations
   ☐ Create privacy mode that disables telemetry and sensitive logging entirely
 
-## GAMIFICATION & PROGRESSION
-### Enhancement features for engagement
+## 10. Build & Deployment
+  ☐ Fix Electron builder configuration for all platforms
+  ☐ Add automated testing to GitHub Actions workflow
+  ☐ Implement proper version management and migration system
+  ☐ Create Windows installer (.exe) for easy installation
+  ☐ Create installer packages for macOS and Linux
+  ☐ Add digital signing for Windows installer
+  ☐ Implement update mechanism for future releases
+  ☐ Automate nightly dev builds with auto-version bumping
+  ☐ Add release checklist template and verification scripts
+  ☐ Integrate crash reporting symbol upload into CI
+
+## 11. Documentation & Training
+  ☐ Update API documentation for new endpoints
+  ☐ Create brief user tutorial/onboarding guide
+  ☐ Create troubleshooting guide for common setup issues
+  ☐ Add developer setup guide for different operating systems
+  ☐ Document personality system mechanics for users
+  ☐ Create plugin development documentation (future)
+  ☐ Record short loom videos demonstrating new UI features
+  ☐ Publish style guide for thought journal copywriting
+  ☐ Maintain changelog synced with release plan milestones
+
+## 12. Performance & Reliability
+  ☑ Implement conversation history pruning to prevent memory bloat
+  ☐ Add lazy loading for brain graph visualization
+  ☐ Optimize JSON file I/O operations
+  ☐ Implement caching for frequently accessed data
+  ☐ Add memory usage monitoring and cleanup
+  ☐ Benchmark new language generation pipeline under stress scenarios
+  ☐ Introduce synthetic load tests for chat throughput
+  ☐ Add watchdog to restart backend if critical operations hang
+
+## 13. Persona & Customization
+  ☐ Design multiple pal personality archetypes (curious scholar, playful companion, wise mentor, etc.)
+  ☐ Create unique personality traits and behaviors per pal type
+  ☐ Implement pal type selection during initial setup
+  ☐ Design pal-specific visual avatars and evolution stages
+  ☐ Add pal type switching capability (with data migration)
+  ☐ Create pal-specific vocabulary and interaction styles
+  ☐ Implement memory recall rituals unique to each archetype
+  ☐ Add customizable catchphrases and intro greetings per pal
+  ☐ Build wardrobe/inventory system for avatar accessories
+
+## 14. Rewards & Progression Systems
   ☐ Design CP (Cognition Points) spending store/menu
   ☐ Implement personality boost purchases (temporary trait enhancements)
   ☐ Add cosmetic unlocks (avatar accessories, backgrounds, themes)
@@ -119,40 +176,7 @@
   ☐ Implement gratitude journal bonus rewards when user checks in daily
   ☐ Add surprise events that temporarily boost XP gain
 
-## PERSONALIZATION & ARCHETYPES
-### Advanced customization features
-  ☐ Design multiple pal personality archetypes (curious scholar, playful companion, wise mentor, etc.)
-  ☐ Create unique personality traits and behaviors per pal type
-  ☐ Implement pal type selection during initial setup
-  ☐ Design pal-specific visual avatars and evolution stages
-  ☐ Add pal type switching capability (with data migration)
-  ☐ Create pal-specific vocabulary and interaction styles
-  ☐ Implement memory recall rituals unique to each archetype
-  ☐ Add customizable catchphrases and intro greetings per pal
-  ☐ Build wardrobe/inventory system for avatar accessories
-
-## DOCUMENTATION & TRAINING
-### Supporting materials
-  ☐ Update API documentation for new endpoints
-  ☐ Create brief user tutorial/onboarding guide
-  ☐ Create troubleshooting guide for common setup issues
-  ☐ Add developer setup guide for different operating systems
-  ☐ Document personality system mechanics for users
-  ☐ Create plugin development documentation (future)
-  ☐ Record short loom videos demonstrating new UI features
-  ☐ Publish style guide for thought journal copywriting
-  ☐ Maintain changelog synced with release plan milestones
-
-## RESEARCH & EXPERIMENTATION
-### Exploratory development
-  ☐ Collect corpus of Pal's existing replies to seed generative models
-  ☐ Implement weighted n-gram generator tuned by concept valence
-  ☐ Prototype Markov + template hybrid for higher-level pals
-  ☐ Evaluate lightweight transformer options for offline phrasing
-  ☐ Create evaluation rubric for "Pal-sounding" thoughts vs. canned text
-  ☐ Benchmark new language generation pipeline under stress scenarios
-  ☐ Introduce synthetic load tests for chat throughput
-  ☐ Add watchdog to restart backend if critical operations hang
+## 15. Long-Term Roadmap
   ☐ Design plugin system architecture and hooks
   ☐ Plan cloud sync data structures and APIs
   ☐ Design avatar evolution visual system
@@ -178,3 +202,34 @@
   ☑ Implement conversation history pruning to prevent memory bloat
   ☑ Create dedicated Settings tab for easy access to configuration
   ☑ Fix environment variable handling (MYPAL_DATA_DIR, MYPAL_LOGS_DIR, etc.)
+  ☑ Implement proper loading states for all async operations
+  ☑ Add better error messages and user feedback
+  ☑ Add disabled button states with loading animations
+  ☑ Implement input disabling during chat message processing
+  ☑ Add success/error feedback for settings save and reset operations
+  ☑ Implement quotation detection for direct speech learning
+  ☑ Add quoted phrase extraction (single and double quotes)
+  ☑ Create high-priority learning for taught phrases with weight bonuses
+  ☑ Integrate quoted phrases into Markov chain corpus with repetition
+  ☑ Add quoted phrase prioritization in Level 2+ responses
+  ☑ Implement correction detection ("Don't say X, say Y")
+  ☑ Add negative reinforcement system to avoid corrected phrases
+  ☑ Create isAvoid flag for vocabulary entries to mark incorrect patterns
+  ☑ Filter avoided phrases from corpus and response generation
+  ☑ Add safety checks to prevent avoided phrases in Markov outputs
+  ☑ Add subjective narrative to memories (first-person emotional perspective)
+  ☑ Level-based narrative sophistication (simple at L0-3, complex at L11+)
+  ☑ Display subjective narratives in memory UI with special styling
+  ☑ Add help icon tooltips to Memories and Journal sections
+  ☑ Create comprehensive CONCEPTUAL_INTELLIGENCE.md design document
+  ☑ Define level-based cognitive capabilities and concept abstraction levels
+  ☑ Implement affirmation detection system (detectAffirmation, extractMainConcepts, parseRelationship)
+  ☑ Add affirmation reinforcement learning (learnFromAffirmation with concept/relationship boosts)
+  ☑ Create temporal memory classification (classifyMemoryType: temporal-fact, contextual-state, etc.)
+  ☑ Implement memory decay system (applyMemoryDecay with daily scheduler)
+  ☑ Add confidence field to vocabulary with exponential decay formulas
+  ☑ Implement curiosity-driven questioning (calculateKnowledgeScore, shouldAskWhy, generateWhyQuestion)
+  ☑ Create curiosity trigger system (checkCuriosity with 0.6 threshold)
+  ☑ Implement priority learning chains (checkAnsweringQuestion, applyPriorityLearning with 2.5-4.0x multipliers)
+  ☑ Track learning chain metadata (chainId, concept, question, multiplier)
+  ☑ Create comprehensive AFFIRMATION_REINFORCEMENT.md design document

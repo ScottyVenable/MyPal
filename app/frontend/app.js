@@ -7,6 +7,8 @@ let latestJournalTotal = 0;
 let journalLoaded = false;
 let journalLoading = false;
 let multiplierDirty = false;
+let lastUserMessage = '';
+let typingEl = null;
 
 window.addEventListener('error', (event) => {
   const message = event?.error?.stack || event?.message || 'Unknown error';
@@ -128,12 +130,55 @@ async function reinforceClick(btn) {
   } catch {}
 }
 
+async function feedbackClick(btn, sentiment, text, role) {
+  // Visual feedback
+  const wasActive = btn.classList.contains('active');
+  
+  // Remove active state from sibling button
+  const sibling = btn.parentElement.querySelector(`.feedback-btn:not(.${btn.classList.contains('thumbs-up') ? 'thumbs-up' : 'thumbs-down'})`);
+  if (sibling) sibling.classList.remove('active');
+  
+  // Toggle this button
+  if (wasActive) {
+    btn.classList.remove('active');
+  } else {
+    btn.classList.add('active');
+    
+    // Send feedback to backend
+    try {
+      await apiFetch(`/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          sentiment, 
+          text, 
+          role,
+          timestamp: Date.now()
+        }),
+      });
+      
+      // If positive feedback on Pal's message, give bonus XP
+      if (sentiment === 'positive' && role === 'pal') {
+        await refreshStats();
+      }
+    } catch (err) {
+      console.error('Feedback error:', err);
+    }
+  }
+}
+
 function addMessage(role, text, metaText) {
   const wrap = document.createElement('div');
   wrap.className = `msg ${role}`;
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = text && String(text).trim().length ? text : '?';
+  // Timestamp tooltip
+  try {
+    const ts = new Date();
+    bubble.title = ts.toLocaleString();
+    wrap.dataset.ts = String(ts.getTime());
+  } catch {}
   wrap.appendChild(bubble);
   if (metaText) {
     const meta = document.createElement('div');
@@ -141,16 +186,96 @@ function addMessage(role, text, metaText) {
     meta.textContent = metaText;
     wrap.appendChild(meta);
   }
+  
+  // Add feedback buttons for both user and pal messages
+  const feedbackContainer = document.createElement('div');
+  feedbackContainer.className = 'feedback-buttons';
+  
+  const thumbsUp = document.createElement('button');
+  thumbsUp.className = 'feedback-btn thumbs-up';
+  thumbsUp.title = 'Good response';
+  thumbsUp.innerHTML = '👍';
+  thumbsUp.addEventListener('click', () => feedbackClick(thumbsUp, 'positive', text, role));
+  
+  const thumbsDown = document.createElement('button');
+  thumbsDown.className = 'feedback-btn thumbs-down';
+  thumbsDown.title = 'Needs improvement';
+  thumbsDown.innerHTML = '👎';
+  thumbsDown.addEventListener('click', () => feedbackClick(thumbsDown, 'negative', text, role));
+  
+  feedbackContainer.appendChild(thumbsUp);
+  feedbackContainer.appendChild(thumbsDown);
+  wrap.appendChild(feedbackContainer);
+
+  // Add a 'Try again' option for pal messages
   if (role === 'pal') {
-    const star = document.createElement('button');
-    star.className = 'reinforce';
-    star.title = 'Reinforce';
-    star.textContent = '★';
-    star.addEventListener('click', () => reinforceClick(star));
-    wrap.appendChild(star);
+    const tryBtn = document.createElement('button');
+    tryBtn.className = 'try-again-btn';
+    tryBtn.type = 'button';
+    tryBtn.title = 'Regenerate Pal\'s response';
+    tryBtn.textContent = 'Try again';
+    tryBtn.addEventListener('click', async () => {
+      if (!lastUserMessage) return;
+      
+      // Disable button during regeneration
+      tryBtn.disabled = true;
+      tryBtn.textContent = 'Generating...';
+      
+      const indicator = showTyping();
+      try {
+        const res = await sendChat(lastUserMessage);
+        const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '�?�');
+        const meta = 'Regenerated' + (res?.kind ? ` | Mode: ${res.kind}` : '');
+        addMessage('pal', replyText, meta);
+        if (res?.emotion) updateEmotionDisplay(res.emotion);
+        const wasDirty = multiplierDirty; await refreshStats(); multiplierDirty = wasDirty;
+        if (journalLoaded) await loadJournal(true);
+      } catch (e) {
+        console.error('Regeneration error:', e);
+        let errorMsg = 'Sorry, I had trouble responding.';
+        
+        if (!backendHealthy) {
+          errorMsg = 'Server not running. Please start the backend.';
+          showStatusModal();
+        } else if (e.message?.includes('fetch') || e.message?.includes('network')) {
+          errorMsg = 'Network error. Unable to regenerate response.';
+        }
+        
+        addMessage('pal', errorMsg);
+      } finally {
+        hideTyping(indicator);
+        // Re-enable button
+        tryBtn.disabled = false;
+        tryBtn.textContent = 'Try again';
+      }
+    });
+    wrap.appendChild(tryBtn);
   }
+  
   $('#chat-window').appendChild(wrap);
   $('#chat-window').scrollTop = $('#chat-window').scrollHeight;
+}
+
+function showTyping() {
+  if (typingEl && typingEl.isConnected) return typingEl;
+  const wrap = document.createElement('div');
+  wrap.className = 'msg pal typing';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble typing-bubble';
+  bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+  wrap.appendChild(bubble);
+  const win = document.getElementById('chat-window');
+  if (win) {
+    win.appendChild(wrap);
+    win.scrollTop = win.scrollHeight;
+  }
+  typingEl = wrap;
+  return wrap;
+}
+
+function hideTyping(el = typingEl) {
+  try { if (el && el.parentElement) el.parentElement.removeChild(el); } catch {}
+  if (el === typingEl) typingEl = null;
 }
 
 async function sendChat(message) {
@@ -241,6 +366,21 @@ function renderStats(s) {
     }
   }
 
+  // Update advancement display
+  if (s.advancement) {
+    const advLevel = $('#advancement-level');
+    const advXp = $('#advancement-xp');
+    const advRemaining = $('#advancement-remaining');
+    const advProgressBar = $('#advancement-progress-bar');
+    const advProgressText = $('#advancement-progress-text');
+    
+    if (advLevel) advLevel.textContent = s.advancement.currentLevel;
+    if (advXp) advXp.textContent = `${s.advancement.currentXp} / ${s.advancement.nextLevelThreshold}`;
+    if (advRemaining) advRemaining.textContent = s.advancement.xpRemaining;
+    if (advProgressBar) advProgressBar.style.width = `${s.advancement.progressPercent}%`;
+    if (advProgressText) advProgressText.textContent = `${Math.round(s.advancement.progressPercent)}%`;
+  }
+
   const labels = ['Curious', 'Logical', 'Social', 'Agreeable', 'Cautious'];
   const data = [
     s.personality.curious,
@@ -291,6 +431,12 @@ async function fetchMemories(limit = 20) {
 async function fetchJournal(limit = 50) {
   const res = await apiFetch(`/journal?limit=${limit}`);
   if (!res.ok) throw new Error('journal fetch failed');
+  return res.json();
+}
+
+async function fetchChatLog(limit = 200) {
+  const res = await apiFetch(`/chatlog?limit=${limit}`);
+  if (!res.ok) throw new Error('chatlog fetch failed');
   return res.json();
 }
 
@@ -427,6 +573,25 @@ function renderMemories(payload) {
     text.className = 'text';
     text.textContent = `You: ${memory.userText || ''}\nPal: ${memory.palText || ''}`.trim();
 
+    // Add subjective narrative if available
+    if (memory.subjectiveNarrative) {
+      const narrative = document.createElement('div');
+      narrative.className = 'subjective-narrative';
+      const narrativeLabel = document.createElement('span');
+      narrativeLabel.className = 'narrative-label';
+      narrativeLabel.textContent = "Pal's perspective:";
+      const narrativeText = document.createElement('p');
+      narrativeText.textContent = memory.subjectiveNarrative;
+      narrative.appendChild(narrativeLabel);
+      narrative.appendChild(narrativeText);
+      item.appendChild(header);
+      item.appendChild(text);
+      item.appendChild(narrative);
+    } else {
+      item.appendChild(header);
+      item.appendChild(text);
+    }
+
     const keywords = document.createElement('div');
     keywords.className = 'keywords';
     if (memory.keywords?.length) {
@@ -435,8 +600,6 @@ function renderMemories(payload) {
       keywords.textContent = 'Keywords: —';
     }
 
-    item.appendChild(header);
-    item.appendChild(text);
     item.appendChild(keywords);
     container.appendChild(item);
   });
@@ -588,6 +751,10 @@ function wireTabs() {
     switchTab(tab);
     if (tab === 'journal') {
       await loadJournal(true);
+    } else if (tab === 'brain') {
+      await loadBrainInsights();
+    } else if (tab === 'stats') {
+      await renderProgressDashboard();
     }
   }));
 }
@@ -599,8 +766,16 @@ function wireChat() {
     const input = $('#chat-input');
     const msg = input.value.trim();
     if (!msg) return;
+    
+    lastUserMessage = msg;
     addMessage('user', msg);
     input.value = '';
+    
+    // Disable input while waiting for response
+    input.disabled = true;
+    input.placeholder = 'Pal is thinking...';
+    
+    const indicator = showTyping();
     try {
       const res = await sendChat(msg);
       const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
@@ -619,57 +794,117 @@ function wireChat() {
         await loadJournal(true);
       }
     } catch (e) {
-      addMessage('pal', backendHealthy ? 'Sorry, I had trouble responding.' : 'Server not running. Please start backend.');
-      if (!backendHealthy) showStatusModal();
+      console.error('Chat error:', e);
+      let errorMsg = 'Sorry, I had trouble responding.';
+      
+      // Provide more specific error messages
+      if (!backendHealthy) {
+        errorMsg = 'Server not running. Please start the backend.';
+        showStatusModal();
+      } else if (e.message?.includes('fetch') || e.message?.includes('network')) {
+        errorMsg = 'Network error. Please check your connection.';
+      } else if (e.message?.includes('timeout')) {
+        errorMsg = 'Response timed out. Please try again.';
+      } else if (e.message?.includes('Chat failed')) {
+        errorMsg = 'Unable to generate response. Please try again.';
+      }
+      
+      addMessage('pal', errorMsg);
+    } finally {
+      hideTyping(indicator);
+      // Re-enable input
+      input.disabled = false;
+      input.placeholder = 'Type a message...';
+      input.focus();
     }
   });
 }
 
 function wireSettings() {
   $('#save-settings').addEventListener('click', async () => {
-    const mult = parseInt($('#xp-multiplier').value, 10) || 1;
-    const provider = ($('#api-provider').value || 'local');
-    const keyRaw = ($('#api-key').value || '').trim();
-    const telemetry = !!$('#telemetry').checked;
-    const authRequired = !!$('#auth-required').checked;
-    await saveSettings(mult, provider, keyRaw ? keyRaw : undefined, telemetry, authRequired);
-    if (keyRaw) $('#api-key').value = '';
-    multiplierDirty = false;
-    await refreshStats();
+    const saveBtn = $('#save-settings');
+    const originalText = saveBtn.textContent;
+    
+    // Show loading state
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    
+    try {
+      const mult = parseInt($('#xp-multiplier').value, 10) || 1;
+      const provider = ($('#api-provider').value || 'local');
+      const keyRaw = ($('#api-key').value || '').trim();
+      const telemetry = !!$('#telemetry').checked;
+      const authRequired = !!$('#auth-required').checked;
+      
+      await saveSettings(mult, provider, keyRaw ? keyRaw : undefined, telemetry, authRequired);
+      if (keyRaw) $('#api-key').value = '';
+      multiplierDirty = false;
+      await refreshStats();
+      
+      // Show success feedback
+      saveBtn.textContent = '✓ Saved!';
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      saveBtn.textContent = '✗ Failed';
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+      }, 2000);
+    } finally {
+      saveBtn.disabled = false;
+    }
   });
   $('#reset-pal').addEventListener('click', async () => {
     const confirmed = confirm('Are you sure? Doing this will wipe your Pal forever.');
     if (!confirmed) return;
+    
+    const resetBtn = $('#reset-pal');
+    const originalText = resetBtn.textContent;
+    resetBtn.disabled = true;
+    resetBtn.textContent = 'Resetting...';
+    
     try {
       await doReset();
+      
+      const chatWindow = $('#chat-window');
+      if (chatWindow) chatWindow.innerHTML = '';
+
+      const memoryList = $('#memory-list');
+      if (memoryList) memoryList.innerHTML = '<p class="memory-empty">No memories yet — start chatting to create them.</p>';
+      latestMemoryTotal = 0;
+      updateBrainSummary({ nodeCount: 0, edgeCount: 0, conceptCount: 0, memoriesTotal: latestMemoryTotal });
+
+      const brainGraph = document.getElementById('brain-graph');
+      if (brainGraph) brainGraph.innerHTML = '<div class="graph-empty">Teach Pal new ideas to grow this graph.</div>';
+
+      const journalEntries = document.getElementById('journal-entries');
+      if (journalEntries) journalEntries.innerHTML = '<p class="memory-empty">No thoughts yet — keep chatting to spark new ones.</p>';
+      const journalSummary = document.getElementById('journal-summary');
+      if (journalSummary) journalSummary.textContent = 'Thoughts: 0';
+      latestJournalTotal = 0;
+      journalLoaded = false;
+
+      authToken = null;
+      localStorage.removeItem('mypal_token');
+      const authStatus = document.getElementById('auth-status');
+      if (authStatus) authStatus.textContent = 'Not logged in';
+      
+      resetBtn.textContent = '✓ Reset complete';
+      setTimeout(() => {
+        resetBtn.textContent = originalText;
+        resetBtn.disabled = false;
+      }, 2000);
     } catch (err) {
-      console.error('Failed to reset Pal', err);
+      console.error('Failed to reset Pal:', err);
       alert('Unable to reset Pal. Please ensure you are logged in if authentication is required.');
-      return;
+      resetBtn.textContent = '✗ Failed';
+      setTimeout(() => {
+        resetBtn.textContent = originalText;
+        resetBtn.disabled = false;
+      }, 2000);
     }
-
-    const chatWindow = $('#chat-window');
-    if (chatWindow) chatWindow.innerHTML = '';
-
-    const memoryList = $('#memory-list');
-    if (memoryList) memoryList.innerHTML = '<p class="memory-empty">No memories yet — start chatting to create them.</p>';
-    latestMemoryTotal = 0;
-    updateBrainSummary({ nodeCount: 0, edgeCount: 0, conceptCount: 0, memoriesTotal: latestMemoryTotal });
-
-    const brainGraph = document.getElementById('brain-graph');
-    if (brainGraph) brainGraph.innerHTML = '<div class="graph-empty">Teach Pal new ideas to grow this graph.</div>';
-
-    const journalEntries = document.getElementById('journal-entries');
-    if (journalEntries) journalEntries.innerHTML = '<p class="memory-empty">No thoughts yet — keep chatting to spark new ones.</p>';
-    const journalSummary = document.getElementById('journal-summary');
-    if (journalSummary) journalSummary.textContent = 'Thoughts: 0';
-    latestJournalTotal = 0;
-    journalLoaded = false;
-
-    authToken = null;
-    localStorage.removeItem('mypal_token');
-    const authStatus = document.getElementById('auth-status');
-    if (authStatus) authStatus.textContent = 'Not logged in';
 
     multiplierDirty = false;
     await refreshStats();
@@ -691,11 +926,11 @@ function wireSettings() {
 async function init() {
   wireTabs();
   wireChat();
+  wireChatSearch();
   wireSettings();
   await checkHealth();
   if (backendHealthy) {
     await refreshStats();
-    await loadBrainInsights();
   } else {
     showStatusModal();
   }
@@ -706,7 +941,6 @@ async function init() {
     if (ok) {
       hideStatusModal();
       await refreshStats();
-      await loadBrainInsights();
     }
   });
   dismiss?.addEventListener('click', hideStatusModal);
@@ -804,4 +1038,100 @@ function updateDevPanel() {
     const prov = document.getElementById('dev-api-provider');
     if (prov) prov.textContent = s.settings?.apiProvider || 'local';
   }).catch(() => {});
+}
+
+// --- Chat search ---
+function renderSearchResults(matches = []) {
+  const panel = document.getElementById('chat-search-results');
+  if (!panel) return;
+  if (!matches.length) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    return;
+  }
+  panel.classList.remove('hidden');
+  panel.innerHTML = '';
+  for (const m of matches) {
+    const row = document.createElement('div');
+    row.className = 'search-row';
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = formatTimestamp(m.ts);
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = m.role === 'pal' ? 'Pal' : 'You';
+    const text = document.createElement('span');
+    text.className = 'text';
+    text.textContent = m.text;
+    row.appendChild(when);
+    row.appendChild(who);
+    row.appendChild(text);
+    panel.appendChild(row);
+  }
+}
+
+function wireChatSearch() {
+  const input = document.getElementById('chat-search');
+  const btn = document.getElementById('chat-search-btn');
+  const clear = document.getElementById('chat-search-clear');
+  const perform = async () => {
+    const q = (input?.value || '').trim();
+    if (!q) { renderSearchResults([]); return; }
+    try {
+      const { messages = [] } = await fetchChatLog(300);
+      const lower = q.toLowerCase();
+      const matches = messages.filter(m => String(m.text || '').toLowerCase().includes(lower));
+      renderSearchResults(matches.slice(-100));
+    } catch (err) {
+      console.error('Chat search failed', err);
+      renderSearchResults([]);
+    }
+  };
+  btn?.addEventListener('click', perform);
+  input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); perform(); } });
+  clear?.addEventListener('click', () => { if (input) input.value = ''; renderSearchResults([]); });
+}
+
+// --- Progress dashboard (stats tab) ---
+let xpChartEl = null;
+let convoChartEl = null;
+async function renderProgressDashboard() {
+  let payload;
+  try {
+    payload = await fetchMemories(400);
+  } catch { return; }
+  const memories = payload?.memories || [];
+  if (!memories.length) return;
+
+  const byDay = new Map();
+  const xpSeries = [];
+  for (const m of memories) {
+    const day = new Date(m.ts).toLocaleDateString();
+    byDay.set(day, (byDay.get(day) || 0) + 1);
+    xpSeries.push({ t: m.ts, v: (m?.xp?.total ?? 0) });
+  }
+  xpSeries.sort((a,b) => a.t - b.t);
+  const xpLabels = xpSeries.map(p => new Date(p.t).toLocaleTimeString());
+  const xpData = xpSeries.map(p => p.v);
+  const convoLabels = Array.from(byDay.keys());
+  const convoData = Array.from(byDay.values());
+
+  const xpCtx = document.getElementById('xpChart')?.getContext('2d');
+  if (xpCtx) {
+    if (xpChartEl) xpChartEl.destroy();
+    xpChartEl = new Chart(xpCtx, {
+      type: 'line',
+      data: { labels: xpLabels, datasets: [{ label: 'XP Over Time', data: xpData, borderColor: '#9ab4ff', backgroundColor: 'rgba(154,180,255,0.2)', tension: 0.25 }] },
+      options: { plugins: { legend: { labels: { color: '#dfe3ff' } } }, scales: { x: { ticks: { color: '#dfe3ff' } }, y: { ticks: { color: '#dfe3ff' } } } }
+    });
+  }
+  const convoCtx = document.getElementById('convoChart')?.getContext('2d');
+  if (convoCtx) {
+    if (convoChartEl) convoChartEl.destroy();
+    convoChartEl = new Chart(convoCtx, {
+      type: 'bar',
+      data: { labels: convoLabels, datasets: [{ label: 'Conversations per day', data: convoData, backgroundColor: 'rgba(50,64,168,0.5)', borderColor: '#9ab4ff' }] },
+      options: { plugins: { legend: { labels: { color: '#dfe3ff' } } }, scales: { x: { ticks: { color: '#dfe3ff' } }, y: { ticks: { color: '#dfe3ff' } } } }
+    });
+  }
 }
