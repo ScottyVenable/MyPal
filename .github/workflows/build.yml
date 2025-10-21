@@ -15,15 +15,15 @@ jobs:
         with:
           node-version: '20'
       - name: Install backend deps
-        working-directory: MyPal/app/backend
+        working-directory: app/backend
         run: npm ci
       - name: Lint/Type (placeholder)
         run: echo "No lint configured"
       - name: Package artifact
         run: |
           mkdir -p dist
-          cp -R MyPal/app/backend dist/backend
-          cp -R MyPal/app/frontend dist/frontend
+          cp -R app/backend dist/backend
+          cp -R app/frontend dist/frontend
           (cd dist && zip -r mypal_mvp.zip backend frontend)
       - uses: actions/upload-artifact@v4
         with:

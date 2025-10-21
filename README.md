@@ -6,7 +6,8 @@
 
 **MyPal** (internally "Pal") is an ambitious, privacy-first AI companion application that simulates human cognitive and linguistic development through conversational interaction. Unlike traditional chatbots that rely on vast pre-existing datasets, MyPal starts as a digital *tabula rasa*—a blank slate—and learns exclusively from its interactions with you, the user.
 
-> **Repository layout:** The Git repository root now contains two sibling directories. This README lives inside `MyPal/` (the folder that is pushed to GitHub). Developer-only assets live in `Developer Files/`, which is ignored by git. Unless stated otherwise, all relative paths and commands below assume you are in this `MyPal/` directory; use `<pal-root>` to represent its absolute path (for example `C:\path\to\repo\MyPal\MyPal`).
+> **Repository layout:** The Git repository root now contains the full public project alongside a single local-only folder. Developer-only assets live in `Developer Files/`, which is ignored by git. Unless stated otherwise, all relative paths and commands below assume you are in the repository root; use `<pal-root>` to represent that absolute path (for example `C:\path\to\repo\MyPal`).
+
 
 ---
 
@@ -185,20 +186,19 @@ See **[`docs/updates/V1.0_ROADMAP.md`](docs/updates/V1.0_ROADMAP.md)** for compl
 ### Project Structure
 ```
 Repository root/
-├── MyPal/                       # Public project (pushed to GitHub)
-│   ├── app/                     # Application runtime
-│   │   ├── backend/
-│   │   └── frontend/
-│   ├── launcher/                # Electron desktop launcher
-│   ├── docs/                    # Design docs, plans, roadmaps
-│   ├── README.md                # Project overview (this file lives here)
-│   └── REORGANIZATION_SUMMARY.md
-├── Developer Files/             # Local-only assets (ignored by git)
-│   ├── dev/                     # Private development workspace
-│   ├── logs/                    # Local logs and run artifacts
-│   ├── server_err.txt
-│   └── server_out.txt
-└── .github/                     # GitHub workflows and metadata
+├── app/                         # Application runtime (backend + frontend)
+│   ├── backend/
+│   └── frontend/
+├── launcher/                    # Electron desktop launcher
+├── docs/                        # Design docs, plans, roadmaps
+├── README.md                    # Project overview (this file)
+├── REORGANIZATION_SUMMARY.md
+├── .github/                     # GitHub workflows and metadata
+└── Developer Files/             # Local-only assets (ignored by git)
+  ├── dev/                     # Private development workspace
+  ├── logs/                    # Local logs and run artifacts
+  ├── server_err.txt
+  └── server_out.txt
 ```
 
 ### Key Documentation

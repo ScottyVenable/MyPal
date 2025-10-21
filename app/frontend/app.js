@@ -57,7 +57,7 @@ function updateBrainSummary({ nodeCount = 0, edgeCount = 0, conceptCount = 0, me
   const parts = [`Nodes: ${nodeCount}`, `Links: ${edgeCount}`];
   if (conceptCount > 0) parts.push(`Concepts: ${conceptCount}`);
   parts.push(`Memories: ${memoriesTotal}`);
-  summary.textContent = parts.join(' · ');
+  summary.textContent = parts.join(' | ');
 }
 
 function formatTimestamp(ts) {
@@ -65,7 +65,7 @@ function formatTimestamp(ts) {
   if (Number.isNaN(date.getTime())) return '';
   const day = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  return `${day} · ${time}`;
+  return `${day} | ${time}`;
 }
 
 function switchTab(name) {
@@ -100,7 +100,7 @@ function addMessage(role, text, metaText) {
   wrap.className = `msg ${role}`;
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text && String(text).trim().length ? text : '…';
+  bubble.textContent = text && String(text).trim().length ? text : '?';
   wrap.appendChild(bubble);
   if (metaText) {
     const meta = document.createElement('div');
@@ -275,6 +275,7 @@ function renderBrain(data) {
   container.innerHTML = '';
 
   const options = {
+    layout: { improvedLayout: true },
     nodes: {
       shape: 'dot',
       scaling: { min: 4, max: 24 },
@@ -283,10 +284,39 @@ function renderBrain(data) {
         border: '#9ab4ff',
         highlight: { background: '#3240a8', border: '#dfe3ff' }
       },
-      font: { color: '#dfe3ff' }
+      font: { color: '#dfe3ff' },
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.35)',
+        size: 8,
+        x: 2,
+        y: 2
+      }
     },
-    edges: { color: { color: '#2a306b', highlight: '#9ab4ff' } },
-    physics: { stabilization: true },
+    edges: {
+      color: { color: '#2a306b', highlight: '#9ab4ff' },
+      smooth: { type: 'continuous', roundness: 0.15 }
+    },
+    physics: {
+      enabled: true,
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: {
+        gravitationalConstant: -45,
+        centralGravity: 0.012,
+        springLength: 180,
+        springConstant: 0.055,
+        avoidOverlap: 0.6
+      },
+      maxVelocity: 20,
+      minVelocity: 0.4,
+      timestep: 0.4,
+      stabilization: { iterations: 250, updateInterval: 25, fit: true }
+    },
+    interaction: {
+      hover: true,
+      zoomView: true,
+      dragNodes: true
+    },
     groups: {
       concept: {
         shape: 'diamond',
@@ -525,7 +555,9 @@ function wireChat() {
       const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
       const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
       addMessage('pal', replyText, meta);
+      const wasDirty = multiplierDirty;
       await refreshStats();
+      multiplierDirty = wasDirty;
       if (journalLoaded) {
         await loadJournal(true);
       }
@@ -549,14 +581,43 @@ function wireSettings() {
     await refreshStats();
   });
   $('#reset-pal').addEventListener('click', async () => {
-    const ok = confirm('Reset Pal to Level 0 and wipe memory? Type RESET to confirm.');
-    if (!ok) return;
-    const word = prompt('Type RESET to confirm');
-    if (word !== 'RESET') return;
-    await doReset();
-    $('#chat-window').innerHTML = '';
+    const confirmed = confirm('Are you sure? Doing this will wipe your Pal forever.');
+    if (!confirmed) return;
+    try {
+      await doReset();
+    } catch (err) {
+      console.error('Failed to reset Pal', err);
+      alert('Unable to reset Pal. Please ensure you are logged in if authentication is required.');
+      return;
+    }
+
+    const chatWindow = $('#chat-window');
+    if (chatWindow) chatWindow.innerHTML = '';
+
+    const memoryList = $('#memory-list');
+    if (memoryList) memoryList.innerHTML = '<p class="memory-empty">No memories yet — start chatting to create them.</p>';
+    latestMemoryTotal = 0;
+    updateBrainSummary({ nodeCount: 0, edgeCount: 0, conceptCount: 0, memoriesTotal: latestMemoryTotal });
+
+    const brainGraph = document.getElementById('brain-graph');
+    if (brainGraph) brainGraph.innerHTML = '<div class="graph-empty">Teach Pal new ideas to grow this graph.</div>';
+
+    const journalEntries = document.getElementById('journal-entries');
+    if (journalEntries) journalEntries.innerHTML = '<p class="memory-empty">No thoughts yet — keep chatting to spark new ones.</p>';
+    const journalSummary = document.getElementById('journal-summary');
+    if (journalSummary) journalSummary.textContent = 'Thoughts: 0';
+    latestJournalTotal = 0;
+    journalLoaded = false;
+
+    authToken = null;
+    localStorage.removeItem('mypal_token');
+    const authStatus = document.getElementById('auth-status');
+    if (authStatus) authStatus.textContent = 'Not logged in';
+
     multiplierDirty = false;
     await refreshStats();
+    await loadBrainInsights();
+    updateDevPanel();
   });
   $('#export-memory').addEventListener('click', doExport);
 

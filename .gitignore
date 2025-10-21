@@ -32,12 +32,12 @@ __pycache__/
 **/src/data/**
 **/src/logs/**
 **/src/temp/**
-MyPal/app/backend/data/*.json
-MyPal/dev-data/
-MyPal/dev-logs/
+app/backend/data/*.json
+dev-data/
+dev-logs/
 
 # Development-only files (not for GitHub)
 Developer Files/
 
 # Generated hardware specs
-MyPal/docs/detect_user_specs/user_hardware.json
+docs/detect_user_specs/user_hardware.json

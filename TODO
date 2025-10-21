@@ -1,0 +1,180 @@
+# Next Build & Bug Fix TODO List (Prioritized)
+
+## CRITICAL PRIORITY - Core Functionality
+### Must fix for basic app operation
+  ☐ Fix dependency installation error - Express module not found (ERR_MODULE_NOT_FOUND)
+  ☐ Resolve Google Drive sync conflicts causing EBADF/EPERM npm install errors
+  ⏳ Create a plan for AI to respond to user messages. Right now the AI does not appropriately respond to user inputs in a meaningful way.
+     → IN PROGRESS: Implemented training on USER messages only (breaks gibberish feedback loop)
+     → Added quality checks to Markov chain output
+     → Added template-based fallback responses
+     → Need to test and iterate based on results
+  ☐ Patch race condition when multiple chats arrive before data save completes
+  ☐ Implement proper concurrency handling for JSON file operations
+
+## HIGH PRIORITY - Essential Features
+### Core communication and user experience
+  ☐ Implement vocabulary teaching flow with user-defined meanings
+  ☐ Add single-word constraint from learned vocabulary list
+  ☐ Create proper local database (lowdb or nedb) to replace JSON file persistence
+  ☐ Design telegraphic speech (2-3 word utterances) system
+  ☐ Implement S-V-O schema validation for speech construction
+  ☐ Implement proper loading states for all async operations
+  ☐ Add better error messages and user feedback
+  ☐ Fix development setup documentation for path issues
+
+## MEDIUM PRIORITY - User Experience & Stability
+### Important for usability and reliability
+  ☐ Investigate duplicate keyword echoing in journal focus selection
+  ☐ Track down intermittent telemetry write failures on Windows sandboxed installs
+  ☐ Add vocabulary.json structure with associations to concepts
+  ☐ Build teach word UI components and validation
+  ☐ Add egocentric persona prompts and "Why?" question system
+  ☐ Build dynamic Brain graph with strength/opacity edges
+  ☐ Double clicking on a node in the brain visualization should zoom in on it and isolate it
+  ☐ Implement conversation history pagination
+  ☐ Add keyboard shortcuts and accessibility improvements
+  ☐ Improve responsive design for different screen sizes
+  ☐ Add request rate limiting and validation
+  ☐ Implement backup/restore functionality for data files
+
+## MEDIUM-LOW PRIORITY - Enhanced Features
+### Nice-to-have functionality improvements
+  ☐ Add streaming response capabilities with cancellation
+  ☐ Prototype daydream mode that produces idle thoughts when user is silent
+  ☐ Layer curiosity heuristics so Pal asks clarifying follow-up automatically
+  ☐ Add conversation style presets (coach, listener, playful) with toggles
+  ☐ Create shared phrase bank seeded from Pal-generated sentences only
+  ☐ Add user feedback loop for correcting Pal phrasing and pronunciations
+  ☐ Implement contextual synonym suggestions tied to concept categories
+  ☐ Implement lobe coloring for brain visualization
+  ☐ Build journal filters for sentiment, concept, and memory linkage
+  ☐ Add timeline view that combines chat, memories, and journal entries
+  ☐ Implement theme selector (light/dark/colorblind friendly)
+
+## LOW PRIORITY - Development & Tooling
+### Developer experience and testing
+  ☐ Add automated testing framework (unit tests for XP/level logic)
+  ☐ Implement proper environment variable validation
+  ☐ Add development mode with hot reload capability
+  ☐ Create debugging helpers for personality state inspection
+  ☐ Add performance monitoring and metrics collection
+  ☐ Build seed data generators for scripted demo conversations
+  ☐ Add CLI for migrating and inspecting data files quickly
+  ☐ Integrate linting/formatting checks into pre-commit hooks
+  ☐ Add lazy loading for brain graph visualization
+  ☐ Optimize JSON file I/O operations
+  ☐ Implement caching for frequently accessed data
+  ☐ Add memory usage monitoring and cleanup
+
+## FUTURE ROADMAP - Advanced Features
+### Long-term development goals
+  ☐ Draft roadmap for Pal-native language generation (n-gram + concept blending phases)
+  ☐ Define milestones for emotional intelligence maturity across level tiers
+  ☐ Outline experimentation cadence for on-device vs. cloud-assisted cognition features
+  ☐ Create models directory structure in app/backend/models/
+  ☐ Implement models.json manifest system
+  ☐ Add GET /api/models endpoint for listing installed models
+  ☐ Implement basic model adapter interface/stub
+  ☐ Add hardware detection integration (detect_user_specs)
+  ☐ Create model selection heuristics based on hardware
+  ☐ Package lightweight local text generator tuned for Pal vocabulary
+  ☐ Add model download manager UI with progress tracking
+  ☐ Implement sandbox execution guardrails for third-party models
+
+## DEPLOYMENT & DISTRIBUTION
+### Build and release preparation
+  ☐ Fix Electron builder configuration for all platforms
+  ☐ Add automated testing to GitHub Actions workflow
+  ☐ Implement proper version management and migration system
+  ☐ Create Windows installer (.exe) for easy installation
+  ☐ Create installer packages for macOS and Linux
+  ☐ Add digital signing for Windows installer
+  ☐ Implement update mechanism for future releases
+  ☐ Automate nightly dev builds with auto-version bumping
+
+## SECURITY & PRIVACY
+### Important but not immediately blocking
+  ☐ Implement proper API key masking in settings UI
+  ☐ Add content filtering for user inputs
+  ☐ Implement proper secrets management for local storage
+  ☐ Add data export/import validation and sanitization
+  ☐ Implement session management for multi-user scenarios
+  ☐ Add parental consent flow for youth-oriented deployments
+  ☐ Implement per-user encryption keys for saved conversations
+  ☐ Create privacy mode that disables telemetry and sensitive logging entirely
+
+## GAMIFICATION & PROGRESSION
+### Enhancement features for engagement
+  ☐ Design CP (Cognition Points) spending store/menu
+  ☐ Implement personality boost purchases (temporary trait enhancements)
+  ☐ Add cosmetic unlocks (avatar accessories, backgrounds, themes)
+  ☐ Create learning speed multiplier purchases
+  ☐ Design special interaction unlocks (games, activities, topics)
+  ☐ Add XP booster items and streak multipliers
+  ☐ Implement gift/treat system for pal happiness
+  ☐ Create milestone rewards and achievement system
+  ☐ Add CP earning through mini-games and challenges
+  ☐ Build weekly quests that encourage teaching Pal new topics
+  ☐ Implement gratitude journal bonus rewards when user checks in daily
+  ☐ Add surprise events that temporarily boost XP gain
+
+## PERSONALIZATION & ARCHETYPES
+### Advanced customization features
+  ☐ Design multiple pal personality archetypes (curious scholar, playful companion, wise mentor, etc.)
+  ☐ Create unique personality traits and behaviors per pal type
+  ☐ Implement pal type selection during initial setup
+  ☐ Design pal-specific visual avatars and evolution stages
+  ☐ Add pal type switching capability (with data migration)
+  ☐ Create pal-specific vocabulary and interaction styles
+  ☐ Implement memory recall rituals unique to each archetype
+  ☐ Add customizable catchphrases and intro greetings per pal
+  ☐ Build wardrobe/inventory system for avatar accessories
+
+## DOCUMENTATION & TRAINING
+### Supporting materials
+  ☐ Update API documentation for new endpoints
+  ☐ Create brief user tutorial/onboarding guide
+  ☐ Create troubleshooting guide for common setup issues
+  ☐ Add developer setup guide for different operating systems
+  ☐ Document personality system mechanics for users
+  ☐ Create plugin development documentation (future)
+  ☐ Record short loom videos demonstrating new UI features
+  ☐ Publish style guide for thought journal copywriting
+  ☐ Maintain changelog synced with release plan milestones
+
+## RESEARCH & EXPERIMENTATION
+### Exploratory development
+  ☐ Collect corpus of Pal's existing replies to seed generative models
+  ☐ Implement weighted n-gram generator tuned by concept valence
+  ☐ Prototype Markov + template hybrid for higher-level pals
+  ☐ Evaluate lightweight transformer options for offline phrasing
+  ☐ Create evaluation rubric for "Pal-sounding" thoughts vs. canned text
+  ☐ Benchmark new language generation pipeline under stress scenarios
+  ☐ Introduce synthetic load tests for chat throughput
+  ☐ Add watchdog to restart backend if critical operations hang
+  ☐ Design plugin system architecture and hooks
+  ☐ Plan cloud sync data structures and APIs
+  ☐ Design avatar evolution visual system
+  ☐ Plan CP (Cognition Points) spending mechanics
+  ☐ Design telemetry system with privacy controls
+  ☐ Explore sandboxed third-party tool integrations (calendar, notes, smart home)
+  ☐ Map out pathway to shared memory across multiple devices
+  ☐ Research ethical guardrails and transparency UX for on-device models
+
+## COMPLETED ✓
+  ☑ Fix launcher path resolution for backend entry point
+  ☑ Address empty server output logs (server_out.txt)
+  ☑ Implement proper error handling for backend crashes in launcher
+  ☑ Fix menu tab switching so selected menu renders correctly
+  ☑ Resolve chat response rendering issue (messages not appearing in conversation)
+  ☑ Learning speed slider no longer resets when sending message
+  ☑ Fix the reset Pal button not clearing all data files
+  ☑ Improve reset confirmation to use clear dialogue instead of typing "RESET"
+  ☑ Implement concept valence/strength for improved reinforcement
+  ☑ Add comprehensive error logging to replace empty server logs
+  ☑ Implement proper shutdown handling in backend server
+  ☑ Add confirmation dialogs for destructive operations (reset, etc.)
+  ☑ Implement conversation history pruning to prevent memory bloat
+  ☑ Create dedicated Settings tab for easy access to configuration
+  ☑ Fix environment variable handling (MYPAL_DATA_DIR, MYPAL_LOGS_DIR, etc.)

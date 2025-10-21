@@ -16,6 +16,7 @@
       <button type="button" data-tab="stats">Stats</button>
       <button type="button" data-tab="brain">Brain</button>
       <button type="button" data-tab="journal">Journal</button>
+      <button type="button" data-tab="settings">Settings</button>
     </nav>
   </header>
 
@@ -26,28 +27,6 @@
         <input id="chat-input" placeholder="Teach Pal…" autocomplete="off" />
         <button type="submit">Send</button>
       </form>
-      <div class="settings">
-        <label class="slider-group">Learning Speed Multiplier
-          <input id="xp-multiplier" type="range" min="1" max="250" value="1" />
-          <span id="xp-multiplier-value">1x</span>
-        </label>
-        <label>API Provider
-          <select id="api-provider">
-            <option value="local">Local Only (default)</option>
-            <option value="openai">OpenAI</option>
-            <option value="azure">Azure OpenAI</option>
-            <option value="gemini">Google Gemini</option>
-          </select>
-        </label>
-        <label>API Key
-          <input id="api-key" type="password" placeholder="Optional — stored locally" />
-        </label>
-        <label><input id="telemetry" type="checkbox" /> Telemetry (opt-in)</label>
-        <label><input id="auth-required" type="checkbox" /> Require login for sensitive actions</label>
-        <button id="save-settings">Save</button>
-        <button id="reset-pal" class="danger">Reset Pal</button>
-        <button id="export-memory">Export Memory</button>
-      </div>
     </section>
 
     <section id="tab-stats" class="tab">
@@ -107,6 +86,63 @@
         <span id="journal-summary">Thoughts: 0</span>
       </div>
       <div id="journal-entries" class="journal-list"></div>
+    </section>
+
+    <section id="tab-settings" class="tab">
+      <div class="settings-container">
+        <h2>Settings</h2>
+        
+        <div class="settings-section">
+          <h3>Learning & Development</h3>
+          <label class="slider-group">
+            <span>Learning Speed Multiplier</span>
+            <input id="xp-multiplier" type="range" min="1" max="250" value="1" />
+            <span id="xp-multiplier-value">1x</span>
+          </label>
+          <p class="help-text">Controls how quickly Pal gains XP and levels up. Higher values = faster development.</p>
+        </div>
+
+        <div class="settings-section">
+          <h3>AI Provider</h3>
+          <label>
+            <span>Provider</span>
+            <select id="api-provider">
+              <option value="local">Local Only (default)</option>
+              <option value="openai">OpenAI</option>
+              <option value="azure">Azure OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+          </label>
+          <label>
+            <span>API Key</span>
+            <input id="api-key" type="password" placeholder="Optional — stored locally" />
+          </label>
+          <p class="help-text">Optional: Configure external AI provider for enhanced responses at higher levels.</p>
+        </div>
+
+        <div class="settings-section">
+          <h3>Privacy & Security</h3>
+          <label class="checkbox-label">
+            <input id="telemetry" type="checkbox" />
+            <span>Enable Telemetry (opt-in)</span>
+          </label>
+          <label class="checkbox-label">
+            <input id="auth-required" type="checkbox" />
+            <span>Require login for sensitive actions</span>
+          </label>
+          <p class="help-text">Telemetry helps improve MyPal. All data stays local unless explicitly enabled.</p>
+        </div>
+
+        <div class="settings-section">
+          <h3>Actions</h3>
+          <div class="settings-actions">
+            <button id="save-settings" class="primary">Save Settings</button>
+            <button id="export-memory">Export Memory</button>
+            <button id="reset-pal" class="danger">Reset Pal</button>
+          </div>
+          <p class="help-text danger-text">⚠️ Reset Pal will permanently delete all data, conversations, and progress.</p>
+        </div>
+      </div>
     </section>
   </main>
 

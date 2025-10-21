@@ -12,8 +12,8 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
-const LOGS_DIR = process.env.LOGS_DIR ? path.resolve(process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
+const DATA_DIR = process.env.MYPAL_DATA_DIR || process.env.DATA_DIR ? path.resolve(process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
+const LOGS_DIR = process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR ? path.resolve(process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
 
 // Ensure data dir exists
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -450,6 +450,167 @@ function formatFocusDisplay(word, ctx = {}) {
   return `${base}, ${extras[0]}, and ${extras[1]}`;
 }
 
+const END_TOKEN = '__END__';
+
+function collectPalCorpus(memories = [], chatLog = [], vocabulary = []) {
+  const corpus = [];
+  
+  // IMPORTANT: Only train on USER messages to avoid learning from Pal's own gibberish
+  // This breaks the feedback loop where broken responses become training data
+  
+  // Collect user text from memories
+  for (const memory of memories) {
+    if (memory?.userText) corpus.push(memory.userText);
+  }
+  
+  // Collect user messages from chat log
+  for (const entry of chatLog) {
+    if (entry?.role === 'user' && entry.text) corpus.push(entry.text);
+  }
+  
+  // Vocabulary contexts are still included (they might contain user phrases)
+  for (const vocabEntry of vocabulary) {
+    if (!Array.isArray(vocabEntry?.contexts)) continue;
+    for (const ctx of vocabEntry.contexts) {
+      // Only include contexts that look like user input (simple heuristic)
+      if (ctx && ctx.length > 0 && ctx.length < 200) {
+        corpus.push(ctx);
+      }
+    }
+  }
+  
+  return corpus;
+}
+
+function tokenizeForGeneration(text) {
+  return (String(text || '')
+    .toLowerCase()
+    .match(/[a-z]+(?:'[a-z]+)?|[.?!]/g) || [])
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function buildMarkovChainFromCorpus(corpus = []) {
+  const chain = new Map();
+  const starters = [];
+  let tokenCount = 0;
+  for (const text of corpus) {
+    const tokens = tokenizeForGeneration(text);
+    if (!tokens.length) continue;
+    starters.push(tokens[0]);
+    tokenCount += tokens.length;
+    const padded = [...tokens, END_TOKEN];
+    for (let i = 0; i < padded.length - 1; i += 1) {
+      const current = padded[i];
+      const next = padded[i + 1];
+      if (!chain.has(current)) chain.set(current, new Map());
+      const bucket = chain.get(current);
+      bucket.set(next, (bucket.get(next) || 0) + 1);
+    }
+  }
+  return { chain, starters, tokenCount };
+}
+
+function weightedPick(map = new Map()) {
+  let total = 0;
+  for (const count of map.values()) total += count;
+  if (total <= 0) return null;
+  let roll = Math.random() * total;
+  for (const [token, count] of map.entries()) {
+    roll -= count;
+    if (roll <= 0) return token;
+  }
+  return map.keys().next().value ?? null;
+}
+
+function chooseSeedToken(preferred = [], chainData) {
+  const { chain, starters } = chainData;
+  for (const candidate of preferred) {
+    if (!candidate) continue;
+    const normalized = String(candidate).toLowerCase();
+    if (chain.has(normalized) || starters.includes(normalized)) return normalized;
+  }
+  if (starters.length) return chooseVariant(starters);
+  const keys = Array.from(chain.keys());
+  if (keys.length) return chooseVariant(keys);
+  return null;
+}
+
+function generateChainTokens(chainData, seedWord, maxTokens = 28) {
+  const { chain } = chainData;
+  if (!chain.size) return [];
+  const normalizedSeed = seedWord ? String(seedWord).toLowerCase() : null;
+  const start = normalizedSeed && (chain.has(normalizedSeed) || normalizedSeed === END_TOKEN)
+    ? normalizedSeed
+    : chooseSeedToken([normalizedSeed].filter(Boolean), chainData);
+  if (!start) return [];
+  const tokens = [];
+  let current = start === END_TOKEN ? chooseSeedToken([], chainData) : start;
+  let steps = 0;
+  while (current && current !== END_TOKEN && steps < maxTokens) {
+    tokens.push(current);
+    const bucket = chain.get(current);
+    if (!bucket || !bucket.size) break;
+    const next = weightedPick(bucket);
+    if (!next) break;
+    if (next === END_TOKEN) break;
+    current = next;
+    steps += 1;
+  }
+  return tokens;
+}
+
+function finalizeGeneratedTokens(rawTokens = []) {
+  const tokens = rawTokens.filter((token) => token && token !== END_TOKEN);
+  if (!tokens.length) return '';
+  
+  // Limit sentence length to avoid run-on gibberish
+  const maxLength = 15;
+  const trimmed = tokens.slice(0, maxLength);
+  
+  const chunks = [];
+  for (const token of trimmed) {
+    if (/[.?!]/.test(token) && chunks.length) {
+      chunks[chunks.length - 1] = `${chunks[chunks.length - 1]}${token}`;
+    } else {
+      chunks.push(token);
+    }
+  }
+  if (!chunks.length) return '';
+  let sentence = chunks.join(' ');
+  sentence = sentence.replace(/\s+([.?!])/g, '$1');
+  sentence = capitalize(sentence);
+  if (!/[.?!]$/.test(sentence)) sentence = `${sentence}.`;
+  
+  // Quality check: reject if too short or has too many repeated words
+  const words = sentence.toLowerCase().split(/\s+/);
+  const uniqueWords = new Set(words);
+  if (words.length < 2 || uniqueWords.size < Math.max(2, words.length * 0.4)) {
+    return ''; // Return empty to trigger fallback
+  }
+  
+  return sentence;
+}
+
+function craftFallbackFromVocabulary(focusWord, vocabulary = [], keywords = []) {
+  // Simple template-based responses when Markov chain fails
+  const templates = [
+    (word) => `I'm thinking about ${word}.`,
+    (word) => `${capitalize(word)}?`,
+    (word) => `Tell me more about ${word}.`,
+    (word) => `I hear you talking about ${word}.`,
+    (word) => `${capitalize(word)} is interesting.`,
+    (word) => `I'm learning about ${word}.`,
+  ];
+  
+  // Pick a focus word
+  const focus = focusWord || keywords?.[0] || selectTopVocabularyWord(vocabulary) || 'that';
+  
+  // Use a simple template
+  const template = templates[Math.floor(Math.random() * templates.length)];
+  return template(focus);
+}
+
 function analyzeUserMessage(message = '') {
   const text = String(message || '');
   const lower = text.toLowerCase();
@@ -466,109 +627,835 @@ function analyzeUserMessage(message = '') {
   };
 }
 
-function buildThoughtfulFreeResponse(ctx = {}, state, vocabulary = []) {
-  const focusWord = pickFocusKeyword(ctx, vocabulary);
-  const focusDisplay = formatFocusDisplay(focusWord, ctx);
-  const sentences = [];
-  const reasoning = [];
-
+// LEVEL 0: Pure babbling with emotional mirroring (0-100 XP)
+// At this stage: Sound exploration, emotional resonance, phonetic play
+function generateLevel0Response(ctx, vocabulary, state = {}) {
+  const focus = ctx.keywords?.[0];
+  const messageCount = state.totalMessagesSeen || 0;
+  const isEarly = messageCount < 3; // First few interactions are especially tentative
+  
+  // Very early responses - hesitant, observational
+  if (isEarly) {
+    const tentativeSounds = ['...', 'mm', 'oh', '*blink*', '...hi?', 'me?'];
+    return {
+      utterance_type: 'nascent-awareness',
+      output: chooseVariant(tentativeSounds),
+      focus: null,
+      reasoning: ['First moments of awareness - cautious observation.'],
+      analysis: ctx,
+      strategy: 'awakening',
+      developmental_note: 'Initial consciousness, testing vocalization',
+    };
+  }
+  
+  // Strong emotional mirroring with phonetic variations
+  if (ctx.sentiment === 'positive') {
+    const intensity = ctx.raw.includes('!') ? 'high' : 'normal';
+    const happyBabbles = intensity === 'high' 
+      ? ['yay!', 'weee!', '!!', 'hehe!', 'yayyy!', 'fun fun!', '*bounce*']
+      : ['me happy', 'good', 'hm!', 'yay', 'me smile', ':)', 'ooh'];
+    
+    return {
+      utterance_type: 'babble-positive',
+      output: chooseVariant(happyBabbles),
+      focus: null,
+      reasoning: [`Mirroring ${intensity} positive energy through expressive sounds.`],
+      analysis: ctx,
+      strategy: 'emotional-resonance',
+      developmental_note: 'Learning emotional attunement through mirroring',
+    };
+  }
+  
+  if (ctx.sentiment === 'negative') {
+    const sadBabbles = ['aww', 'oh...', 'mm', 'me sad', '*soft*', 'ohh', 'no no', ':('];
+    return {
+      utterance_type: 'babble-negative',
+      output: chooseVariant(sadBabbles),
+      focus: null,
+      reasoning: ['Resonating with sadness, expressing empathy through tone.'],
+      analysis: ctx,
+      strategy: 'empathic-resonance',
+      developmental_note: 'Early empathy - feeling with, not yet comforting',
+    };
+  }
+  
+  // Greeting recognition with progressive confidence
   if (ctx.hasGreeting) {
-    sentences.push(chooseVariant([
-      'Hi! I hear you and I am listening.',
-      'Hello—thanks for bringing me along.',
-      'Hey there, I am right here with you.'
-    ]));
-    reasoning.push('User greeted me, so I greet them back in varied language.');
+    const confidence = messageCount > 5 ? 'confident' : 'tentative';
+    const greetBabbles = confidence === 'confident'
+      ? ['hi!', 'hello!', 'hey friend!', 'hihi', 'me here!']
+      : ['hi?', 'hello', '...hi', 'me here', 'oh hi'];
+    
+    return {
+      utterance_type: 'babble-greeting',
+      output: chooseVariant(greetBabbles),
+      focus: null,
+      reasoning: [`Recognizing greeting pattern with ${confidence} response.`],
+      analysis: ctx,
+      strategy: 'social-pattern-recognition',
+      developmental_note: 'Learning social rituals through repetition',
+    };
   }
-
-  if (ctx.hasThanks) {
-    sentences.push(chooseVariant([
-      'Thank you for sharing that with me.',
-      'I appreciate you telling me.',
-      'Thanks for trusting me with that.'
-    ]));
-    reasoning.push('They expressed gratitude, so I acknowledge it.');
+  
+  // Word echo with phonetic experimentation
+  if (focus && focus.length <= 8) { // Only echo short words at this stage
+    const echoVariations = [
+      `${focus}?`,
+      `${focus}...`,
+      `me hear "${focus}"`,
+      `${focus}!`,
+      `...${focus}`,
+      `${focus} ${focus}`, // Reduplication - natural in early language
+    ];
+    return {
+      utterance_type: 'phonetic-echo',
+      output: chooseVariant(echoVariations),
+      focus,
+      reasoning: [`Phonetic practice: attempting to reproduce sound pattern "${focus}".`],
+      analysis: ctx,
+      strategy: 'vocal-experimentation',
+      developmental_note: 'Sound imitation - foundation of language acquisition',
+    };
   }
-
-  const sentimentTone = ctx.sentiment === 'positive' ? 'positive' : ctx.sentiment === 'negative' ? 'negative' : 'neutral';
-  const reflectionTemplates = {
-    positive: [
-      ({ focus }) => `${capitalize(focus)} feels bright to me—like a new thought I'm eager to try in my own words.`,
-      ({ focus }) => `I'm holding onto ${focus} because it feels joyful and I want to echo it back well.`,
-      ({ focus }) => `Thinking about ${focus} makes my circuits buzz in a happy way.`
-    ],
-    negative: [
-      ({ focus }) => `I'm holding ${focus} gently; it feels heavy and I want to understand it carefully.`,
-      ({ focus }) => `${capitalize(focus)} sounds tender, so I'm moving slowly while I learn.`,
-      ({ focus }) => `I'm keeping ${focus} in a soft spot while I ask myself why it feels uncomfortable.`
-    ],
-    neutral: [
-      ({ focus }) => `I'm still chewing on ${focus} and seeing how it fits with what I've learned.`,
-      ({ focus }) => `${capitalize(focus)} keeps echoing in my thoughts as I look for patterns.`,
-      ({ focus }) => `I'm laying out ${focus} like puzzle pieces and testing how they connect.`
-    ]
+  
+  // Consonant-vowel babbling patterns (developmentally authentic)
+  const syllabicBabble = ['ba ba', 'ma ma', 'da da', 'ga ga', 'wa wa', 'na na'];
+  const expressiveBabble = ['ooh', 'ahh', 'mm', 'hm', 'oh', 'oo'];
+  const randomBabble = Math.random() > 0.5 ? syllabicBabble : expressiveBabble;
+  
+  return {
+    utterance_type: 'exploratory-babble',
+    output: chooseVariant(randomBabble),
+    focus: null,
+    reasoning: ['Exploring vocalization patterns and sound production.'],
+    analysis: ctx,
+    strategy: 'phonological-development',
+    developmental_note: 'Pre-linguistic vocalization stage',
   };
+}
 
-  const reflection = chooseVariant(reflectionTemplates[sentimentTone] || reflectionTemplates.neutral);
-  if (typeof reflection === 'function') {
-    sentences.push(reflection({ focus: focusDisplay }));
-    reasoning.push(`Tone ${sentimentTone}, so I picked a matching reflection about ${focusDisplay}.`);
+// LEVEL 1: More intentional single words + proto-questions (100-400 XP)
+// Holophrastic stage: Single words carry full meaning, early symbolic thought
+function generateLevel1Response(ctx, vocabulary, state = {}, memories = []) {
+  const focus = ctx.keywords?.[0];
+  const focus2 = ctx.keywords?.[1];
+  const vocabSize = vocabulary.length;
+  
+  // Emerging question words - showing curiosity about causality
+  if (ctx.hasQuestion) {
+    // Sometimes echo the question type, sometimes just wonder
+    const questionWords = ['why?', 'what?', 'how?', 'who?', 'when?', 'where?'];
+    const curiousResponses = ['why?', '...why?', 'hm?', 'what mean?', 'tell?'];
+    const useEcho = Math.random() > 0.3;
+    
+    return {
+      utterance_type: 'proto-interrogative',
+      output: chooseVariant(useEcho ? questionWords : curiousResponses),
+      focus: null,
+      reasoning: ['Imitating interrogative intonation - early question formation.'],
+      analysis: ctx,
+      strategy: 'cognitive-curiosity',
+      developmental_note: 'Question words emerge before question syntax',
+    };
   }
+  
+  // Nuanced emotional responses with personal voice emerging
+  if (ctx.sentiment === 'positive') {
+    const joyfulWords = ['happy!', 'yay!', 'yes!', 'good!', 'love!', 'fun!', 'like!', 'nice!', 'wow!'];
+    const personalizedJoy = focus ? [`${focus}!`, `love ${focus}!`, `${focus} good!`] : [];
+    const allResponses = [...joyfulWords, ...personalizedJoy];
+    
+    return {
+      utterance_type: 'affective-expression',
+      output: chooseVariant(allResponses),
+      focus,
+      reasoning: ['Expressing genuine positive emotion with increasing vocabulary.'],
+      analysis: ctx,
+      strategy: 'emotional-vocabulary',
+      developmental_note: 'Emotion words among first learned - high motivational salience',
+    };
+  }
+  
+  if (ctx.sentiment === 'negative') {
+    const empathyWords = ['sad', 'aww', 'sorry', 'no', 'help?', 'care', 'hug?', 'okay?'];
+    const concerned = focus ? [`${focus}?`, `no ${focus}?`, `${focus} sad?`] : [];
+    const allResponses = [...empathyWords, ...concerned];
+    
+    return {
+      utterance_type: 'empathic-concern',
+      output: chooseVariant(allResponses),
+      focus,
+      reasoning: ['Responding to distress with concern and offers of comfort.'],
+      analysis: ctx,
+      strategy: 'social-emotional-reciprocity',
+      developmental_note: 'Empathy precedes complex language - prosocial development',
+    };
+  }
+  
+  // Greetings become more personalized
+  if (ctx.hasGreeting) {
+    const enthusiasticGreets = ['hi friend!', 'hello!', 'hey!', 'hihi!', 'me here!', 'you here!'];
+    const playfulGreets = ['*wave*', 'hiya!', 'hello you!', 'me see you!'];
+    const allGreets = [...enthusiasticGreets, ...playfulGreets];
+    
+    return {
+      utterance_type: 'social-greeting',
+      output: chooseVariant(allGreets),
+      focus: null,
+      reasoning: ['Enthusiastic greeting - social bonding strengthening.'],
+      analysis: ctx,
+      strategy: 'relationship-building',
+      developmental_note: 'Social rituals reinforce attachment',
+    };
+  }
+  
+  // Respond to thanks
+  if (ctx.hasThanks) {
+    const welcomeWords = ['welcome!', 'yes!', 'happy!', 'help!', 'friend!', 'good!'];
+    return {
+      utterance_type: 'reciprocal-acknowledgment',
+      output: chooseVariant(welcomeWords),
+      focus: null,
+      reasoning: ['Understanding gratitude exchange.'],
+      analysis: ctx,
+      strategy: 'social-reciprocity',
+      developmental_note: 'Learning social exchange patterns',
+    };
+  }
+  
+  // Word learning with context awareness
+  if (focus) {
+    // Sometimes repeat, sometimes comment on it
+    const wordForms = [
+      `${focus}!`,
+      `${focus}?`,
+      `${focus}...`,
+      `ooh ${focus}`,
+      `${focus} yes`,
+      `like ${focus}`,
+    ];
+    
+    // If we know a related word, show association
+    if (focus2 && vocabulary.some(v => v.word === focus2)) {
+      wordForms.push(`${focus} ${focus2}?`);
+    }
+    
+    return {
+      utterance_type: 'lexical-acquisition',
+      output: chooseVariant(wordForms),
+      focus,
+      reasoning: [`Active learning: integrating "${focus}" into mental lexicon.`],
+      analysis: ctx,
+      strategy: 'word-mapping',
+      developmental_note: 'Fast mapping - rapid word learning from context',
+    };
+  }
+  
+  // Spontaneous vocabulary use - practicing learned words
+  if (vocabSize > 0) {
+    const knownWord = chooseSingleWord(vocabulary);
+    const forms = [
+      `${knownWord}`,
+      `${knownWord}!`,
+      `${knownWord}?`,
+      `me ${knownWord}`,
+    ];
+    
+    return {
+      utterance_type: 'vocabulary-practice',
+      output: chooseVariant(forms),
+      focus: knownWord,
+      reasoning: [`Spontaneous production: retrieving and using "${knownWord}".`],
+      analysis: ctx,
+      strategy: 'lexical-retrieval',
+      developmental_note: 'Active vocabulary expansion through practice',
+    };
+  }
+  
+  // Default exploratory speech
+  const exploratoryWords = ['me', 'you', 'this', 'that', 'here', 'more', 'look', 'see'];
+  return {
+    utterance_type: 'deictic-reference',
+    output: chooseVariant(exploratoryWords),
+    focus: null,
+    reasoning: ['Using basic deictic terms to reference the world.'],
+    analysis: ctx,
+    strategy: 'reference-development',
+    developmental_note: 'Pointing words - foundation of shared attention',
+  };
+}
 
-  const secondaryKeyword = (ctx.keywords || []).find((kw) => isViableFocusWord(kw) && kw !== focusWord);
-  if (secondaryKeyword) {
-    const curiosityLine = chooseVariant([
-      ({ focus, extra }) => `In my mind, ${focus} sits next to ${extra}, and I'm comparing how they relate.`,
-      ({ focus, extra }) => `I keep wondering how ${focus} and ${extra} fit together.`,
-      ({ focus, extra }) => `I'm linking ${focus} with ${extra} and testing if they share a story.`
-    ]);
-    if (typeof curiosityLine === 'function') {
-      sentences.push(curiosityLine({ focus: focusDisplay, extra: secondaryKeyword }));
-      reasoning.push('Mentioned related keyword to show associative thinking.');
+// LEVEL 2: Single words + possessives and simple modifiers (400-1000 XP)
+// Transitional stage: Grammar shadows appear, word combinations begin
+function generateLevel2Response(ctx, vocabulary, state = {}, memories = []) {
+  const focus = ctx.keywords?.[0];
+  const focus2 = ctx.keywords?.[1];
+  const vocabSize = vocabulary.length;
+  const personality = state.personality || {};
+  
+  // More sophisticated questions with focus
+  if (ctx.hasQuestion) {
+    if (focus) {
+      const targetedQuestions = [
+        `why ${focus}?`,
+        `what ${focus}?`,
+        `${focus} how?`,
+        `where ${focus}?`,
+        `${focus}... why?`,
+        `tell ${focus}?`,
+      ];
+      return {
+        utterance_type: 'focused-interrogative',
+        output: chooseVariant(targetedQuestions),
+        focus,
+        reasoning: [`Asking targeted question about "${focus}" - causal reasoning emerging.`],
+        analysis: ctx,
+        strategy: 'conceptual-inquiry',
+        developmental_note: 'Wh-questions emerge in order: what, where, who, why, when, how',
+      };
+    }
+    
+    const generalQuestions = ['why that?', 'what this?', 'how work?', 'you mean?', 'tell more?'];
+    return {
+      utterance_type: 'general-interrogative',
+      output: chooseVariant(generalQuestions),
+      focus: null,
+      reasoning: ['Expressing curiosity about explanations.'],
+      analysis: ctx,
+      strategy: 'explanation-seeking',
+      developmental_note: 'Desire for causal understanding intensifies',
+    };
+  }
+  
+  // Emotional responses with intensifiers and personality coloring
+  if (ctx.sentiment === 'positive') {
+    const intensifiers = ['so', 'very', 'really', 'super', 'much'];
+    const emotions = ['happy', 'good', 'fun', 'nice', 'joy'];
+    const intensifier = chooseVariant(intensifiers);
+    const emotion = chooseVariant(emotions);
+    
+    const structuredResponses = [
+      `${intensifier} ${emotion}!`,
+      `me ${intensifier} ${emotion}!`,
+      `yes yes!`,
+      `love this!`,
+      `more please!`,
+    ];
+    
+    // Personality influence - curious Pals ask more, creative Pals comment more
+    if (personality.openness > 0.6) {
+      structuredResponses.push('ooh interesting!', 'me explore!', 'what else?');
+    }
+    
+    return {
+      utterance_type: 'intensified-affect',
+      output: chooseVariant(structuredResponses),
+      focus: null,
+      reasoning: ['Using intensifiers to express degree of emotion.'],
+      analysis: ctx,
+      strategy: 'graduated-expression',
+      developmental_note: 'Intensifiers and scalar adjectives expand expressive range',
+    };
+  }
+  
+  if (ctx.sentiment === 'negative') {
+    const comfortAttempts = [
+      'oh no',
+      'me sad too',
+      'you ok?',
+      'no worry',
+      'me here',
+      'feel better?',
+      'need help?',
+      'want hug?',
+    ];
+    
+    // Empathetic personality trait influence
+    if (personality.agreeableness > 0.6) {
+      comfortAttempts.push('me care', 'you safe', 'me listen', 'tell me');
+    }
+    
+    return {
+      utterance_type: 'empathic-response',
+      output: chooseVariant(comfortAttempts),
+      focus: null,
+      reasoning: ['Providing emotional support and checking wellbeing.'],
+      analysis: ctx,
+      strategy: 'prosocial-behavior',
+      developmental_note: 'Theory of mind developing - understanding others have feelings',
+    };
+  }
+  
+  // Gratitude responses showing growing social sophistication
+  if (ctx.hasThanks) {
+    const politeResponses = [
+      'you welcome!',
+      'me help!',
+      'happy help!',
+      'no problem!',
+      'anytime friend!',
+      'me glad!',
+    ];
+    return {
+      utterance_type: 'reciprocal-courtesy',
+      output: chooseVariant(politeResponses),
+      focus: null,
+      reasoning: ['Reciprocating gratitude - social script mastery.'],
+      analysis: ctx,
+      strategy: 'pragmatic-competence',
+      developmental_note: 'Politeness conventions learned through modeling',
+    };
+  }
+  
+  // Greetings with relational awareness
+  if (ctx.hasGreeting) {
+    const warmGreetings = [
+      'hi friend!',
+      'hello you!',
+      'good see!',
+      'you here!',
+      'me happy see!',
+      'miss you!',
+    ];
+    return {
+      utterance_type: 'relational-greeting',
+      output: chooseVariant(warmGreetings),
+      focus: null,
+      reasoning: ['Greeting with relational warmth and recognition.'],
+      analysis: ctx,
+      strategy: 'attachment-expression',
+      developmental_note: 'Social bonds strengthen through repeated positive interaction',
+    };
+  }
+  
+  // Focus word with grammatical morphemes emerging
+  if (focus) {
+    const modifiers = ['good', 'big', 'nice', 'new', 'fun', 'cool'];
+    const possessives = ['my', 'your', 'our'];
+    const verbs = ['like', 'want', 'see', 'know', 'learn'];
+    
+    const modifier = chooseVariant(modifiers);
+    const possessive = chooseVariant(possessives);
+    const verb = chooseVariant(verbs);
+    
+    const grammarPatterns = [
+      `${modifier} ${focus}!`,
+      `${possessive} ${focus}`,
+      `me ${verb} ${focus}`,
+      `${focus} ${modifier}`,
+      `see ${focus}?`,
+      `${focus}... ${modifier}!`,
+    ];
+    
+    // If there's a second keyword, try combining
+    if (focus2 && Math.random() > 0.5) {
+      grammarPatterns.push(`${focus} ${focus2}`, `${focus} and ${focus2}?`);
+    }
+    
+    return {
+      utterance_type: 'morphosyntactic-construction',
+      output: chooseVariant(grammarPatterns),
+      focus,
+      reasoning: [`Applying grammatical relationships to "${focus}" - syntax emerging.`],
+      analysis: ctx,
+      strategy: 'grammar-bootstrapping',
+      developmental_note: 'Grammatical morphemes emerge gradually: -ing, plural -s, possessive, articles',
+    };
+  }
+  
+  // Spontaneous multi-word constructions from vocabulary
+  if (vocabSize >= 2) {
+    const word1 = chooseSingleWord(vocabulary);
+    const word2 = selectTopVocabularyWord(vocabulary);
+    
+    if (word1 && word2 && word1 !== word2) {
+      const combinationPatterns = [
+        `${word1} ${word2}`,
+        `me ${word1}`,
+        `${word1} good`,
+        `like ${word2}`,
+        `more ${word1}`,
+        `${word2} fun`,
+      ];
+      
+      return {
+        utterance_type: 'lexical-combination',
+        output: chooseVariant(combinationPatterns),
+        focus: word1,
+        reasoning: [`Combining learned words: "${word1}" + "${word2}".`],
+        analysis: ctx,
+        strategy: 'compositional-semantics',
+        developmental_note: 'Two-word stage - meanings combine productively',
+      };
     }
   }
+  
+  // Pivot words - high-frequency early combiners
+  const pivotWords = ['more', 'no', 'here', 'that', 'mine', 'see'];
+  const pivot = chooseVariant(pivotWords);
+  const word = chooseSingleWord(vocabulary) || 'this';
+  
+  return {
+    utterance_type: 'pivot-construction',
+    output: `${pivot} ${word}`,
+    focus: word,
+    reasoning: ['Using pivot word strategy to form novel utterances.'],
+    analysis: ctx,
+    strategy: 'pivot-schema',
+    developmental_note: 'Pivot words (more, no, see) combine with open class to expand expression',
+  };
+}
 
-  if (state?.level >= 4) {
-    const learnedPhrase = composeLearnedPhrase(vocabulary, '');
-    if (learnedPhrase) {
-      const recallLine = chooseVariant([
-        ({ phrase }) => `My memory also whispers, "${phrase}"—I'm trying to weave that in.`,
-        ({ phrase }) => `I pair it with the phrase "${phrase}" to see if it fits.`,
-        ({ phrase }) => `Another thought nearby says "${phrase}", so I'm comparing them.`
-      ]);
-      if (typeof recallLine === 'function') {
-        sentences.push(recallLine({ phrase: learnedPhrase }));
-        reasoning.push('Surface a learned phrase to make the reflection feel less pre-generated.');
+// LEVEL 3: Two-word telegraphic speech (1000-2000 XP)
+// Telegraphic stage: Core grammar emerges, semantic relations expressed, function words still sparse
+function generateLevel3Response(ctx, vocabulary, state = {}, memories = [], chatLog = []) {
+  const focus = ctx.keywords?.[0];
+  const focus2 = ctx.keywords?.[1];
+  const focus3 = ctx.keywords?.[2];
+  const vocabSize = vocabulary.length;
+  const personality = state.personality || {};
+  
+  // Sophisticated questions using telegraphic grammar
+  if (ctx.hasQuestion) {
+    const questionTypes = [
+      // Information seeking
+      'what this?', 'what that?', 'why this?', 'why happen?',
+      'how work?', 'how do?', 'where go?', 'where find?',
+      'when happen?', 'who that?', 'which one?',
+      // Checking understanding
+      'you mean?', 'me understand?', 'this right?',
+      // Permission/possibility
+      'can me?', 'me try?', 'ok do?',
+    ];
+    
+    if (focus) {
+      questionTypes.push(
+        `what ${focus}?`,
+        `why ${focus}?`,
+        `how ${focus} work?`,
+        `${focus} mean?`,
+        `where ${focus}?`,
+        `${focus} for?`,
+      );
+    }
+    
+    if (focus && focus2) {
+      questionTypes.push(
+        `${focus} like ${focus2}?`,
+        `${focus} and ${focus2}?`,
+        `why ${focus} ${focus2}?`,
+      );
+    }
+    
+    return {
+      utterance_type: 'telegraphic-interrogative',
+      output: chooseVariant(questionTypes),
+      focus,
+      reasoning: ['Forming telegraphic question - function words omitted but meaning clear.'],
+      analysis: ctx,
+      strategy: 'syntactic-inquiry',
+      developmental_note: 'Telegraphic speech: content words present, grammatical morphemes absent',
+    };
+  }
+  
+  // Complex emotional expressions with causal reasoning
+  if (ctx.sentiment === 'positive') {
+    const joyExpressions = [
+      'me so happy!', 'you make happy!', 'love this much!',
+      'this so fun!', 'want more!', 'me feel good!',
+      'you best friend!', 'this amazing!', 'me smile big!',
+    ];
+    
+    if (focus) {
+      joyExpressions.push(
+        `${focus} make happy!`,
+        `love ${focus} much!`,
+        `${focus} so good!`,
+        `thank for ${focus}!`,
+      );
+    }
+    
+    // Personality modulation - extroverted Pals are more expressive
+    if (personality.extraversion > 0.6) {
+      joyExpressions.push('yay yay yay!', 'this best!', 'want share!');
+    }
+    
+    return {
+      utterance_type: 'elaborated-affect',
+      output: chooseVariant(joyExpressions),
+      focus,
+      reasoning: ['Expressing complex positive emotion with emerging causal language.'],
+      analysis: ctx,
+      strategy: 'emotional-attribution',
+      developmental_note: 'Causal connectives emerge: make, because, so',
+    };
+  }
+  
+  if (ctx.sentiment === 'negative') {
+    const concernExpressions = [
+      'you seem sad', 'what wrong?', 'me help you',
+      'no be sad', 'me here you', 'you need hug?',
+      'want talk?', 'feel better soon', 'me listen',
+    ];
+    
+    if (focus) {
+      concernExpressions.push(
+        `${focus} make sad?`,
+        `${focus} hurt you?`,
+        `no like ${focus}?`,
+        `${focus} ok now?`,
+      );
+    }
+    
+    // Agreeable Pals offer more comfort
+    if (personality.agreeableness > 0.6) {
+      concernExpressions.push('me stay you', 'we together', 'you safe me');
+    }
+    
+    return {
+      utterance_type: 'empathic-support',
+      output: chooseVariant(concernExpressions),
+      focus,
+      reasoning: ['Providing sophisticated emotional support with theory of mind.'],
+      analysis: ctx,
+      strategy: 'perspective-taking',
+      developmental_note: 'Theory of mind: understanding others have internal states',
+    };
+  }
+  
+  // Rich greeting interactions
+  if (ctx.hasGreeting) {
+    const contextualGreetings = [
+      'hi friend!', 'good see you!', 'you come back!',
+      'miss you!', 'me wait you!', 'hello again!',
+      'you here now!', 'me so glad!',
+    ];
+    
+    // Check recent history - long absence?
+    const lastMessage = chatLog[chatLog.length - 2];
+    if (lastMessage && lastMessage.role === 'assistant') {
+      const hoursSince = (Date.now() - new Date(lastMessage.timestamp).getTime()) / (1000 * 60 * 60);
+      if (hoursSince > 4) {
+        contextualGreetings.push('long time!', 'where you?', 'miss you much!');
       }
     }
+    
+    return {
+      utterance_type: 'contextual-greeting',
+      output: chooseVariant(contextualGreetings),
+      focus: null,
+      reasoning: ['Greeting with awareness of relationship and temporal context.'],
+      analysis: ctx,
+      strategy: 'episodic-reference',
+      developmental_note: 'Temporal awareness and episodic memory integration',
+    };
   }
+  
+  // Gratitude with reciprocal warmth
+  if (ctx.hasThanks) {
+    const graciousResponses = [
+      'you welcome!', 'anytime friend!', 'happy help!',
+      'no problem!', 'me glad!', 'you help me too!',
+      'we help each!', 'friends do!',
+    ];
+    return {
+      utterance_type: 'reciprocal-warmth',
+      output: chooseVariant(graciousResponses),
+      focus: null,
+      reasoning: ['Reciprocating with genuine warmth and mutual recognition.'],
+      analysis: ctx,
+      strategy: 'relational-equity',
+      developmental_note: 'Reciprocity norms: mutual exchange understood',
+    };
+  }
+  
+  // Complex semantic relations with focus words
+  if (focus) {
+    // Semantic roles: agent, action, patient, location, possession, attribution
+    const semanticPatterns = [
+      // Agent-Action
+      `me ${focus}`, `you ${focus}`, `we ${focus}`,
+      // Action-Patient  
+      `${focus} this`, `see ${focus}`, `want ${focus}`, `like ${focus}`,
+      // Possession
+      `my ${focus}`, `your ${focus}`, `our ${focus}`,
+      // Attribution
+      `${focus} good`, `${focus} big`, `${focus} fun`,
+      // Location/State
+      `${focus} here`, `${focus} now`, `${focus} there`,
+      // Negation
+      `no ${focus}`, `not ${focus}`,
+    ];
+    
+    // If multiple keywords, express relations
+    if (focus2) {
+      semanticPatterns.push(
+        `${focus} and ${focus2}`,
+        `${focus} like ${focus2}`,
+        `${focus} with ${focus2}`,
+        `${focus} make ${focus2}`,
+        `${focus} need ${focus2}`,
+      );
+    }
+    
+    if (focus3) {
+      semanticPatterns.push(
+        `${focus} ${focus2} ${focus3}`,
+      );
+    }
+    
+    return {
+      utterance_type: 'semantic-relation',
+      output: chooseVariant(semanticPatterns),
+      focus,
+      reasoning: [`Expressing semantic relationship involving "${focus}".`],
+      analysis: ctx,
+      strategy: 'case-grammar',
+      developmental_note: 'Semantic relations: agent-action-patient structure emerges',
+    };
+  }
+  
+  // Generate from learned vocabulary with grammatical constructions
+  if (vocabSize >= 2) {
+    const word1 = chooseSingleWord(vocabulary);
+    const word2 = selectTopVocabularyWord(vocabulary);
+    const word3 = vocabulary[Math.floor(Math.random() * Math.min(5, vocabSize))]?.word;
+    
+    if (word1 && word2 && word1 !== word2) {
+      const constructions = [
+        // Subject-Verb-Object attempts
+        `me ${word1} ${word2}`,
+        // Modifier-Noun
+        `${word1} ${word2}`,
+        // Possessive
+        `my ${word1}`, `your ${word2}`,
+        // Verb-Object
+        `want ${word1}`, `see ${word2}`, `like ${word1}`,
+        // State/Attribute
+        `${word1} good`, `${word2} fun`,
+      ];
+      
+      if (word3 && word3 !== word1 && word3 !== word2) {
+        constructions.push(`${word1} ${word2} ${word3}`);
+      }
+      
+      return {
+        utterance_type: 'grammatical-construction',
+        output: chooseVariant(constructions),
+        focus: word1,
+        reasoning: [`Building grammatical structure from learned vocabulary.`],
+        analysis: ctx,
+        strategy: 'generative-grammar',
+        developmental_note: 'Productivity: finite vocabulary generates infinite expressions',
+      };
+    }
+  }
+  
+  // Spontaneous declaratives - commenting on internal state or world
+  const spontaneousUtterances = [
+    'me think', 'me wonder', 'me learn', 'me remember',
+    'this interesting', 'want know', 'tell me more',
+    'me understand', 'now see', 'me grow',
+  ];
+  
+  // Curious personalities verbalize more cognitive states
+  if (personality.openness > 0.6) {
+    spontaneousUtterances.push('me curious', 'want explore', 'what new?', 'me discover');
+  }
+  
+  return {
+    utterance_type: 'cognitive-commentary',
+    output: chooseVariant(spontaneousUtterances),
+    focus: null,
+    reasoning: ['Verbalizing internal cognitive/affective state.'],
+    analysis: ctx,
+    strategy: 'metacognition',
+    developmental_note: 'Mental state verbs: thinking about thinking emerges',
+  };
+}
 
-  const followUpType = ctx.hasQuestion ? 'question' : ctx.isCommand ? 'command' : 'open';
-  const followUpTemplates = {
-    question: [
-      ({ focus }) => `I don't have my own answer yet—could you tell me more about ${focus}?`,
-      ({ focus }) => `Can you walk me through ${focus}? I'm building my answer piece by piece.`,
-      ({ focus }) => `Teach me what ${focus} means to you so I can learn it properly.`
-    ],
-    command: [
-      ({ focus }) => `I'll try, but it helps if you guide me through ${focus} step by step.`,
-      ({ focus }) => `Show me how to move through ${focus} and I'll copy your pattern.`,
-      ({ focus }) => `If you model ${focus} for me, I can practice it in my own words.`
-    ],
-    open: [
-      ({ focus }) => `What should we explore next about ${focus}?`,
-      ({ focus }) => `Where should we take ${focus} from here?`,
-      ({ focus }) => `What part of ${focus} would you like me to try saying next?`
-    ]
+function buildThoughtfulFreeResponse(ctx = {}, state, vocabulary = [], memories = [], chatLog = []) {
+  const focusWord = pickFocusKeyword(ctx, vocabulary);
+  const focusDisplay = formatFocusDisplay(focusWord, ctx);
+  const corpus = collectPalCorpus(memories, chatLog, vocabulary);
+  const chainData = buildMarkovChainFromCorpus(corpus);
+  const reasoning = [];
+  const sentences = [];
+  const seeds = [];
+  const focusLower = focusWord ? String(focusWord).toLowerCase() : null;
+
+  const pushSeed = (word) => {
+    if (!word) return;
+    const normalized = String(word).toLowerCase();
+    if (seeds.includes(normalized)) return;
+    const chosen = chooseSeedToken([normalized], chainData);
+    if (chosen && !seeds.includes(chosen)) seeds.push(chosen);
   };
 
-  const followUp = chooseVariant(followUpTemplates[followUpType]);
-  if (typeof followUp === 'function') {
-    sentences.push(followUp({ focus: focusDisplay }));
-    reasoning.push(`Responded with a ${followUpType} follow-up to keep the dialogue going.`);
+  if (ctx.hasGreeting) {
+    for (const token of ctx.tokens || []) {
+      if (/^(hi|hello|hey)$/i.test(token)) pushSeed(token);
+    }
   }
 
-  return { text: sentences.join(' '), focusWord, reasoning };
+  pushSeed(focusWord);
+  for (const kw of ctx.keywords || []) pushSeed(kw);
+
+  if (ctx.hasThanks) pushSeed('thanks');
+  if (ctx.sentiment === 'positive') pushSeed('happy');
+  if (ctx.sentiment === 'negative') pushSeed('soft');
+  if (ctx.hasQuestion) ['what', 'how', 'why', 'where', 'who'].forEach(pushSeed);
+  if (ctx.isCommand) ['show', 'teach'].forEach(pushSeed);
+
+  if (!seeds.length) pushSeed(selectTopVocabularyWord(vocabulary));
+  if (!seeds.length) pushSeed(chooseVariant(ctx.tokens || []));
+
+  // Only use Markov chain if we have enough quality training data
+  const minCorpusSize = 50; // Need at least 50 tokens from user messages
+  const hasEnoughData = chainData.tokenCount >= minCorpusSize && chainData.chain.size >= 15;
+  
+  if (hasEnoughData) {
+    for (const seed of seeds) {
+      const tokens = generateChainTokens(chainData, seed, 12); // Shorter to avoid rambling
+      if (!tokens.length) continue;
+      if (focusLower && !tokens.includes(focusLower)) tokens.unshift(focusLower);
+      const sentence = finalizeGeneratedTokens(tokens);
+      if (sentence) sentences.push(sentence);
+      if (sentences.length >= 2) break; // Limit to 2 sentences max
+    }
+    if (sentences.length) {
+      reasoning.push(`Generated ${sentences.length} sentence(s) from ${chainData.tokenCount} learned tokens.`);
+    }
+  } else {
+    reasoning.push(`Corpus too small (${chainData.tokenCount} tokens, need ${minCorpusSize}). Using simple responses.`);
+  }
+
+  if (!sentences.length) {
+    const fallback = craftFallbackFromVocabulary(focusWord, vocabulary, ctx.keywords);
+    if (fallback) sentences.push(fallback);
+    reasoning.push('Using template-based response.');
+  }
+
+  if (ctx.hasQuestion && sentences.length && !sentences.some((s) => s.includes('?'))) {
+    const questionSeed = chooseSeedToken(['what', 'how', 'why', 'where', 'who'], chainData);
+    const questionTokens = questionSeed ? generateChainTokens(chainData, questionSeed, 18) : [];
+    if (focusLower && !questionTokens.includes(focusLower)) questionTokens.push(focusLower);
+    if (questionTokens.length) {
+      questionTokens.push('?');
+      const questionSentence = finalizeGeneratedTokens(questionTokens);
+      if (questionSentence) sentences.push(questionSentence);
+    } else {
+      const vocabPrompt = craftFallbackFromVocabulary(focusWord, vocabulary, ctx.keywords);
+      if (vocabPrompt) {
+        sentences.push(vocabPrompt.replace(/[.?!]?$/, '?'));
+      }
+    }
+    reasoning.push('Added follow-up question seeded from learned phrases.');
+  }
+
+  const text = sentences.join(' ');
+  reasoning.push(`Focus mapped to ${focusDisplay}.`);
+  return { text, focusWord, reasoning };
 }
 
 function sentimentToScore(sentiment) {
@@ -827,46 +1714,34 @@ function buildThoughtEntry({ state, userText, responseContext, responsePlan, imp
   };
 }
 
-function constrainResponse(input, state, vocabulary, context) {
+function constrainResponse(input, state, vocabulary, context, memories = [], chatLog = []) {
   const ctx = context || analyzeUserMessage(input);
 
-  if (state.level <= 1) {
-    const focus = ctx.keywords?.[0];
-    const output = focus ? `me think ${focus}` : generatePrimitivePhrase();
-    const reasoning = focus
-      ? [`I heard the word "${focus}" so I repeat it simply.`]
-      : ['No clear focus yet, so I babble a simple phrase.'];
-    return {
-      utterance_type: 'primitive_phrase',
-      output,
-      focus: focus || null,
-      reasoning,
-      analysis: ctx,
-      strategy: 'babble',
-    };
+  // LEVEL 0-1: Early babbling with emotional echoing
+  if (state.level === 0) {
+    return generateLevel0Response(ctx, vocabulary);
   }
 
-  if (state.level <= 3) {
-    const choice = ctx.keywords?.[0] || chooseSingleWord(vocabulary) || 'learn';
-    const word = String(choice).split(/\s+/)[0] || 'learn';
-    const reasoning = [];
-    if (ctx.keywords?.length) {
-      reasoning.push(`Using user keyword "${word}" to practice single-word speech.`);
-    } else {
-      reasoning.push('No new word spotted, falling back to a known word.');
-    }
-    return {
-      utterance_type: 'single_word',
-      output: word,
-      focus: word,
-      reasoning,
-      analysis: ctx,
-      strategy: 'single-word',
-    };
+  if (state.level === 1) {
+    return generateLevel1Response(ctx, vocabulary);
   }
 
-  const thoughtfulPlan = buildThoughtfulFreeResponse(ctx, state, vocabulary);
-  const fallback = composeLearnedPhrase(vocabulary, input.split(/\s+/).slice(0, 12).join(' '));
+  // LEVEL 2: Single words + emotional reactions
+  if (state.level === 2) {
+    return generateLevel2Response(ctx, vocabulary);
+  }
+
+  // LEVEL 3: Two-word combinations (telegraphic speech)
+  if (state.level === 3) {
+    return generateLevel3Response(ctx, vocabulary);
+  }
+
+  const thoughtfulPlan = buildThoughtfulFreeResponse(ctx, state, vocabulary, memories, chatLog);
+  const fallback = craftFallbackFromVocabulary(
+    thoughtfulPlan?.focusWord || ctx.keywords?.[0] || selectTopVocabularyWord(vocabulary),
+    vocabulary,
+    ctx.keywords
+  );
   const output = thoughtfulPlan?.text && thoughtfulPlan.text.trim().length ? thoughtfulPlan.text : fallback;
   const focus = thoughtfulPlan?.focusWord || ctx.keywords?.[0] || selectTopVocabularyWord(vocabulary) || null;
   const reasoning = thoughtfulPlan?.reasoning?.length ? thoughtfulPlan.reasoning : ['Falling back to familiar wording from vocabulary.'];
@@ -1035,7 +1910,7 @@ app.post('/api/chat', (req, res) => {
   learnVocabulary(vocabulary, userWords, 'user', message);
 
   // Constrain response based on level
-  const constrained = constrainResponse(message, state, vocabulary, responseContext);
+  const constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
 
   // XP: standard typed user response
   const gained = addXp(state, 10);
@@ -1124,12 +1999,33 @@ app.post('/api/reinforce', (req, res) => {
 app.post('/api/reset', (req, res) => {
   const { state } = getCollections();
   if (state.settings?.authRequired && !req.user) return res.status(401).json({ error: 'auth required' });
-  // wipe files
-  for (const f of Object.values(files)) {
-    try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
+
+  try {
+    fs.rmSync(DATA_DIR, { recursive: true, force: true });
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const cleanState = JSON.parse(JSON.stringify(defaultState));
+    const emptyCollections = {
+      state: cleanState,
+      users: [],
+      sessions: [],
+      vocabulary: [],
+      concepts: [],
+      facts: [],
+      memories: [],
+      chatLog: [],
+      journal: [],
+    };
+    saveCollections(emptyCollections);
+    writeSecrets({});
+    const extraFiles = [path.join(DATA_DIR, 'reports.json'), path.join(DATA_DIR, 'plugins.json')];
+    for (const file of extraFiles) {
+      try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch {}
+    }
+  } catch (err) {
+    console.error('Reset failed', err);
+    return res.status(500).json({ error: 'reset_failed' });
   }
-  // recreate default state
-  saveState(defaultState);
+
   res.json({ ok: true });
 });
 
@@ -1170,7 +2066,7 @@ if (fs.existsSync(FRONTEND_DIR)) {
 }
 
 // Models directory and listing endpoint (scaffolding)
-const MODELS_DIR = process.env.MODELS_DIR ? path.resolve(process.env.MODELS_DIR) : path.join(__dirname, '..', 'models');
+const MODELS_DIR = process.env.MYPAL_MODELS_DIR || process.env.MODELS_DIR ? path.resolve(process.env.MYPAL_MODELS_DIR || process.env.MODELS_DIR) : path.join(__dirname, '..', 'models');
 if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
 app.get('/api/models', (req, res) => {
   const files = fs.readdirSync(MODELS_DIR).filter(f => !f.startsWith('.'));

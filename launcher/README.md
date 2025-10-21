@@ -8,7 +8,7 @@ This Electron-based launcher starts the MyPal backend and opens the existing SPA
 - Windows 10/11 (packaged `.exe` target)
 
 ## Development run
-> **Note:** `<pal-root>` refers to the `MyPal` folder inside the repository (for example `C:\path\to\repo\MyPal\MyPal`).
+> **Note:** `<pal-root>` refers to the repository root (for example `C:\path\to\repo\MyPal`).
 
 ### Quick start (AutoRun script)
 From the repository root you can launch everything in one step:
@@ -57,3 +57,16 @@ During packaging the `app/` directory is copied into the Electron bundle. Backen
 
 ## Clean up backend when closing
 The launcher automatically shuts down the backend process when the window closes or the app exits. If the backend crashes unexpectedly, the launcher displays an error dialog and quits.
+
+## Troubleshooting
+
+- Express module not found (ERR_MODULE_NOT_FOUND)
+  - Cause: The packaged app couldn't find backend dependencies.
+  - Fix: Ensure you ran `npm install` in `app/backend` before `npm run dist` in `launcher`. The packager bundles the `app/` directory (including `app/backend/node_modules`) as an extra resource so the backend can import its modules at runtime.
+
+- Backend never becomes ready when launching
+  - Check logs: `Developer Files/server_out.txt` and `Developer Files/server_err.txt` in dev mode; otherwise see `%APPDATA%/MyPal/logs/`.
+  - Verify that port `3001` is free or set `MYPAL_BACKEND_PORT` before launching.
+
+- Google Drive sync causes EPERM/EBADF during install
+  - Avoid installing to folders actively synced by Drive/OneDrive. If unavoidable, run the `autorun.ps1 -SkipInstall` and install dependencies from an unsynced location, then copy the resulting `node_modules` into place.
