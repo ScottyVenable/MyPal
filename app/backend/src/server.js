@@ -7,13 +7,14 @@ import { fileURLToPath } from 'url';
 import { nanoid } from 'nanoid';
 import bcrypt from 'bcryptjs';
 import util from 'util';
+import { WebSocketServer } from 'ws';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = process.env.MYPAL_DATA_DIR || process.env.DATA_DIR ? path.resolve(process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
-const LOGS_DIR = process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR ? path.resolve(process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
+const DATA_DIR = (process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) ? path.resolve(process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
+const LOGS_DIR = (process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) ? path.resolve(process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
 
 // Ensure data dir exists
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -159,6 +160,7 @@ const files = {
   memories: path.join(DATA_DIR, 'memories.json'),
   journal: path.join(DATA_DIR, 'journal.json'),
   chatLog: path.join(DATA_DIR, 'chatlog.json'),
+  neuralNetwork: path.join(DATA_DIR, 'neural_network.json'),
 };
 
 function readJson(file, fallback) {
@@ -173,7 +175,17 @@ function readJson(file, fallback) {
 }
 
 function writeJson(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+  try {
+    // Ensure directory exists before writing
+    const dir = path.dirname(file);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+  } catch (error) {
+    console.error('Error writing JSON file:', file, error);
+    throw error; // Re-throw so callers can handle it
+  }
 }
 
 // Secrets storage (separate from state)
@@ -220,10 +232,11 @@ function getCollections() {
   const memories = readJson(files.memories, []);
   const chatLog = readJson(files.chatLog, []);
   const journal = readJson(files.journal, []);
-  return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal };
+  const neuralNetwork = readJson(files.neuralNetwork, null);
+  return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork };
 }
 
-function saveCollections({ state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal }) {
+function saveCollections({ state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork }) {
   saveState(state);
   writeJson(files.users, users ?? readJson(files.users, []));
   writeJson(files.sessions, sessions ?? readJson(files.sessions, []));
@@ -233,6 +246,9 @@ function saveCollections({ state, users, sessions, vocabulary, concepts, facts, 
   writeJson(files.memories, memories);
   writeJson(files.chatLog, chatLog);
   writeJson(files.journal, journal ?? readJson(files.journal, []));
+  if (neuralNetwork) {
+    writeJson(files.neuralNetwork, neuralNetwork);
+  }
 }
 
 // XP/Level logic (scaled thresholds)
@@ -272,6 +288,531 @@ function addXp(state, rawXp) {
   }
   return gained;
 }
+
+// ========================================
+// NEURAL NETWORK VISUALIZATION SYSTEM
+// ========================================
+
+/**
+ * Neural Network Class
+ * Manages neurons, regions, and firing patterns
+ */
+class NeuralNetwork {
+  constructor(data) {
+    this.regions = data?.regions || [];
+    this.pathways = data?.pathways || [];
+    this.metrics = data?.metrics || {
+      totalNeurons: 0,
+      neuronsByRegion: {},
+      averageFiringRate: 0,
+      mostActiveRegion: null,
+      leastActiveRegion: null,
+      totalFirings: 0,
+      manualTriggers: 0
+    };
+    this.events = data?.events || [];
+    this.activeNeurons = new Set();
+    this.neuralEventCallbacks = [];
+  }
+
+  /**
+   * Find a neuron by ID across all regions
+   */
+  findNeuron(neuronId) {
+    for (const region of this.regions) {
+      const neuron = region.neurons.find(n => n.id === neuronId);
+      if (neuron) return { neuron, region };
+    }
+    return null;
+  }
+
+  /**
+   * Trigger a neuron to fire
+   */
+  triggerNeuron(neuronId, stimulus = 1.0) {
+    const found = this.findNeuron(neuronId);
+    if (!found) return;
+
+    const { neuron, region } = found;
+
+    // Add stimulus to current activation
+    neuron.currentActivation += stimulus;
+
+    // Check if threshold reached
+    if (neuron.currentActivation >= neuron.activationThreshold) {
+      this.fireNeuron(neuron, region);
+    }
+  }
+
+  /**
+   * Fire a neuron and propagate to connected neurons
+   */
+  fireNeuron(neuron, region) {
+    const now = Date.now();
+
+    // Record firing
+    if (!neuron.firingHistory) neuron.firingHistory = [];
+    neuron.firingHistory.push({
+      timestamp: now,
+      intensity: neuron.currentActivation
+    });
+
+    // Keep only recent history (last 100 firings)
+    if (neuron.firingHistory.length > 100) {
+      neuron.firingHistory = neuron.firingHistory.slice(-100);
+    }
+
+    // Update metrics
+    this.metrics.totalFirings++;
+
+    // Emit visual event
+    this.emitNeuralEvent({
+      type: 'neuron-fire',
+      neuronId: neuron.id,
+      regionId: region.regionId,
+      regionColor: region.color,
+      intensity: neuron.currentActivation,
+      timestamp: now
+    });
+
+    // Propagate to connected neurons
+    if (neuron.connections) {
+      for (const connection of neuron.connections) {
+        // Calculate signal strength
+        const signal = neuron.currentActivation * connection.weight;
+
+        // Emit connection signal event
+        this.emitNeuralEvent({
+          type: 'connection-signal',
+          fromNeuronId: neuron.id,
+          toNeuronId: connection.targetNeuronId,
+          signal: signal,
+          latency: connection.latency || 50,
+          timestamp: now
+        });
+
+        // Schedule propagation with latency (use setImmediate for testing)
+        setImmediate(() => {
+          this.triggerNeuron(connection.targetNeuronId, signal);
+        });
+      }
+    }
+
+    // Reset to resting potential
+    neuron.currentActivation = neuron.restingPotential || 0;
+
+    // Add to active set for visualization
+    this.activeNeurons.add(neuron.id);
+    setTimeout(() => {
+      this.activeNeurons.delete(neuron.id);
+    }, 500);
+  }
+
+  /**
+   * Trigger a pathway (multiple neurons in sequence)
+   */
+  triggerPathway(pathwayDefinition) {
+    const { neurons, pattern } = pathwayDefinition;
+
+    if (pattern === 'sequential') {
+      // Fire neurons one after another
+      let delay = 0;
+      for (const neuronId of neurons) {
+        setTimeout(() => {
+          this.triggerNeuron(neuronId, 1.0);
+        }, delay);
+        delay += 100; // 100ms between each
+      }
+    } else if (pattern === 'parallel') {
+      // Fire all at once
+      for (const neuronId of neurons) {
+        this.triggerNeuron(neuronId, 1.0);
+      }
+    } else if (pattern === 'cascade') {
+      // Fire first, let it propagate naturally
+      if (neurons.length > 0) {
+        this.triggerNeuron(neurons[0], 1.5);
+      }
+    }
+  }
+
+  /**
+   * Emit neural event to all registered callbacks
+   */
+  emitNeuralEvent(event) {
+    // Store event in history
+    this.events.push(event);
+    if (this.events.length > 1000) {
+      this.events = this.events.slice(-1000);
+    }
+
+    // Notify callbacks (for WebSocket, etc.)
+    for (const callback of this.neuralEventCallbacks) {
+      try {
+        callback(event);
+      } catch (err) {
+        console.error('Neural event callback error:', err);
+      }
+    }
+  }
+
+  /**
+   * Register a callback for neural events
+   */
+  onNeuralEvent(callback) {
+    this.neuralEventCallbacks.push(callback);
+  }
+
+  /**
+   * Update metrics after activity
+   */
+  updateMetrics() {
+    // Count neurons by region
+    this.metrics.neuronsByRegion = {};
+    this.metrics.totalNeurons = 0;
+
+    for (const region of this.regions) {
+      const count = region.neurons.length;
+      this.metrics.neuronsByRegion[region.regionId] = count;
+      this.metrics.totalNeurons += count;
+    }
+
+    // Find most/least active regions (simplified)
+    let maxActivity = 0;
+    let minActivity = Infinity;
+    for (const region of this.regions) {
+      const activity = region.activityLevel || 0;
+      if (activity > maxActivity) {
+        maxActivity = activity;
+        this.metrics.mostActiveRegion = region.regionId;
+      }
+      if (activity < minActivity) {
+        minActivity = activity;
+        this.metrics.leastActiveRegion = region.regionId;
+      }
+    }
+  }
+
+  /**
+   * Serialize to JSON
+   */
+  toJSON() {
+    return {
+      regions: this.regions,
+      pathways: this.pathways,
+      metrics: this.metrics,
+      events: this.events.slice(-100) // Only save recent events
+    };
+  }
+}
+
+/**
+ * Initialize default neural network structure
+ */
+function initializeNeuralNetwork(level = 0) {
+  console.log('🧠 Initializing neural network...');
+
+  const regions = [
+    {
+      regionId: 'sensory-input',
+      regionName: 'Sensory Input',
+      position: { x: 100, y: 50 },
+      color: '#64b5f6',
+      size: { width: 150, height: 100 },
+      neurons: generateRegionNeurons('sensory-input', 'si', 20, level),
+      activityLevel: 0,
+      developedAtLevel: 0
+    },
+    {
+      regionId: 'language-center',
+      regionName: 'Language Center',
+      position: { x: 50, y: 200 },
+      color: '#9c27b0',
+      size: { width: 200, height: 150 },
+      neurons: generateRegionNeurons('language-center', 'lang', 50, level),
+      activityLevel: 0,
+      developedAtLevel: 0
+    },
+    {
+      regionId: 'association-cortex',
+      regionName: 'Association Cortex',
+      position: { x: 300, y: 200 },
+      color: '#66bb6a',
+      size: { width: 250, height: 200 },
+      neurons: generateRegionNeurons('association-cortex', 'assoc', 80, level),
+      activityLevel: 0,
+      developedAtLevel: 0
+    },
+    {
+      regionId: 'frontal-lobe',
+      regionName: 'Frontal Lobe',
+      position: { x: 300, y: 50 },
+      color: '#5b6fd8',
+      size: { width: 200, height: 120 },
+      neurons: generateRegionNeurons('frontal-lobe', 'fl', 40, level),
+      activityLevel: 0,
+      developedAtLevel: 0
+    },
+    {
+      regionId: 'amygdala',
+      regionName: 'Amygdala',
+      position: { x: 100, y: 450 },
+      color: '#e91e63',
+      size: { width: 120, height: 80 },
+      neurons: generateRegionNeurons('amygdala', 'amyg', 15, level),
+      activityLevel: 0,
+      developedAtLevel: 0
+    },
+    {
+      regionId: 'memory-systems',
+      regionName: 'Memory Systems',
+      position: { x: 450, y: 450 },
+      color: '#ff9800',
+      size: { width: 180, height: 120 },
+      neurons: generateRegionNeurons('memory-systems', 'mem', 35, level),
+      activityLevel: 0,
+      developedAtLevel: 0
+    },
+    {
+      regionId: 'motor-output',
+      regionName: 'Motor Output',
+      position: { x: 300, y: 600 },
+      color: '#00bcd4',
+      size: { width: 150, height: 100 },
+      neurons: generateRegionNeurons('motor-output', 'mo', 25, level),
+      activityLevel: 0,
+      developedAtLevel: 0
+    }
+  ];
+
+  // Create connections between regions
+  createInterRegionConnections(regions);
+
+  const network = new NeuralNetwork({
+    regions,
+    pathways: [],
+    metrics: {
+      totalNeurons: 0,
+      neuronsByRegion: {},
+      averageFiringRate: 0,
+      mostActiveRegion: null,
+      leastActiveRegion: null,
+      totalFirings: 0,
+      manualTriggers: 0
+    },
+    events: []
+  });
+
+  network.updateMetrics();
+  console.log(`✅ Neural network initialized with ${network.metrics.totalNeurons} neurons`);
+
+  return network;
+}
+
+/**
+ * Generate neurons for a region
+ */
+function generateRegionNeurons(regionId, prefix, count, level) {
+  const neurons = [];
+
+  for (let i = 0; i < count; i++) {
+    const neuron = {
+      id: `neuron-${prefix}-${String(i + 1).padStart(3, '0')}`,
+      position: { x: Math.random() * 100, y: Math.random() * 100 },
+      type: Math.random() < 0.8 ? 'excitatory' : 'inhibitory',
+      activationThreshold: 0.5 + Math.random() * 0.3,
+      currentActivation: 0,
+      restingPotential: 0,
+      connections: [],
+      firingHistory: [],
+      developedAtLevel: level
+    };
+
+    neurons.push(neuron);
+  }
+
+  // Create intra-region connections (each neuron connects to 2-5 others in same region)
+  for (const neuron of neurons) {
+    const connectionCount = 2 + Math.floor(Math.random() * 4);
+    const connected = new Set([neuron.id]);
+
+    for (let i = 0; i < connectionCount; i++) {
+      const target = neurons[Math.floor(Math.random() * neurons.length)];
+      if (!connected.has(target.id) && target.id !== neuron.id) {
+        neuron.connections.push({
+          targetNeuronId: target.id,
+          weight: 0.3 + Math.random() * 0.5,
+          type: neuron.type,
+          latency: 20 + Math.floor(Math.random() * 30)
+        });
+        connected.add(target.id);
+      }
+    }
+  }
+
+  return neurons;
+}
+
+/**
+ * Create connections between different brain regions
+ */
+function createInterRegionConnections(regions) {
+  const regionMap = {};
+  for (const region of regions) {
+    regionMap[region.regionId] = region;
+  }
+
+  // Define inter-region pathways
+  const connections = [
+    { from: 'sensory-input', to: 'language-center', count: 5 },
+    { from: 'sensory-input', to: 'association-cortex', count: 3 },
+    { from: 'language-center', to: 'association-cortex', count: 8 },
+    { from: 'language-center', to: 'motor-output', count: 4 },
+    { from: 'association-cortex', to: 'frontal-lobe', count: 6 },
+    { from: 'association-cortex', to: 'memory-systems', count: 5 },
+    { from: 'association-cortex', to: 'amygdala', count: 3 },
+    { from: 'frontal-lobe', to: 'motor-output', count: 5 },
+    { from: 'amygdala', to: 'frontal-lobe', count: 2 },
+    { from: 'memory-systems', to: 'association-cortex', count: 4 }
+  ];
+
+  for (const conn of connections) {
+    const fromRegion = regionMap[conn.from];
+    const toRegion = regionMap[conn.to];
+
+    if (!fromRegion || !toRegion) continue;
+
+    // Create random connections between neurons in these regions
+    for (let i = 0; i < conn.count; i++) {
+      const fromNeuron = fromRegion.neurons[Math.floor(Math.random() * fromRegion.neurons.length)];
+      const toNeuron = toRegion.neurons[Math.floor(Math.random() * toRegion.neurons.length)];
+
+      fromNeuron.connections.push({
+        targetNeuronId: toNeuron.id,
+        weight: 0.5 + Math.random() * 0.4,
+        type: 'excitatory',
+        latency: 30 + Math.floor(Math.random() * 50)
+      });
+    }
+  }
+}
+
+/**
+ * Get or initialize neural network from state
+ */
+function getNeuralNetwork(collections) {
+  let { neuralNetwork } = collections;
+
+  if (!neuralNetwork) {
+    // Initialize for the first time
+    const network = initializeNeuralNetwork(collections.state?.level || 0);
+    neuralNetwork = network.toJSON();
+    collections.neuralNetwork = neuralNetwork;
+  }
+
+  // Return as NeuralNetwork instance
+  return new NeuralNetwork(neuralNetwork);
+}
+
+/**
+ * Neural pattern definitions
+ */
+const neuralPatterns = {
+  'receive-message': {
+    regions: ['sensory-input'],
+    pattern: 'burst',
+    neurons: 8
+  },
+  'process-language': {
+    regions: ['language-center', 'association-cortex'],
+    pattern: 'sustained',
+    neurons: 15
+  },
+  'emotional-response': {
+    regions: ['amygdala', 'frontal-lobe'],
+    pattern: 'burst',
+    neurons: 8
+  },
+  'memory-recall': {
+    regions: ['memory-systems', 'association-cortex'],
+    pattern: 'wave',
+    neurons: 12
+  },
+  'decision-making': {
+    regions: ['frontal-lobe', 'association-cortex'],
+    pattern: 'deliberate',
+    neurons: 10
+  },
+  'generate-response': {
+    regions: ['language-center', 'motor-output'],
+    pattern: 'sequential',
+    neurons: 12
+  },
+  'learning': {
+    regions: ['language-center', 'memory-systems', 'association-cortex'],
+    pattern: 'strengthening',
+    neurons: 10
+  }
+};
+
+/**
+ * Activate a neural pattern
+ */
+function activateNeuralPattern(taskType, neuralNetwork) {
+  const pattern = neuralPatterns[taskType];
+  if (!pattern) return;
+
+  console.log(`🧠 Activating neural pattern: ${taskType}`);
+
+  // Find neurons in specified regions
+  const targetNeurons = [];
+  for (const regionName of pattern.regions) {
+    const region = neuralNetwork.regions.find(r => r.regionId.includes(regionName));
+    if (region && region.neurons) {
+      // Select random neurons from this region
+      const count = Math.min(pattern.neurons, region.neurons.length);
+      const shuffled = [...region.neurons].sort(() => Math.random() - 0.5);
+      targetNeurons.push(...shuffled.slice(0, count));
+    }
+  }
+
+  if (targetNeurons.length === 0) return;
+
+  // Trigger based on pattern
+  if (pattern.pattern === 'burst' || pattern.pattern === 'sustained') {
+    // All neurons fire
+    for (const neuron of targetNeurons) {
+      neuralNetwork.triggerNeuron(neuron.id, 1.0);
+    }
+  } else if (pattern.pattern === 'sequential') {
+    // Neurons fire in order with delay
+    targetNeurons.forEach((neuron, index) => {
+      setTimeout(() => {
+        neuralNetwork.triggerNeuron(neuron.id, 1.0);
+      }, index * 50);
+    });
+  } else if (pattern.pattern === 'wave') {
+    // Fire in multiple waves
+    for (let wave = 0; wave < 2; wave++) {
+      setTimeout(() => {
+        for (const neuron of targetNeurons) {
+          if (Math.random() < 0.6) {
+            neuralNetwork.triggerNeuron(neuron.id, 0.7);
+          }
+        }
+      }, wave * 150);
+    }
+  } else if (pattern.pattern === 'deliberate' || pattern.pattern === 'strengthening') {
+    // Controlled firing
+    for (const neuron of targetNeurons) {
+      neuralNetwork.triggerNeuron(neuron.id, 0.8);
+    }
+  }
+}
+
+// ========================================
+// END NEURAL NETWORK SYSTEM
+// ========================================
 
 // Persona-constrained generation (Stage 0-1)
 const earlyPhrases = [
@@ -468,6 +1009,154 @@ function learnQuotedPhrases(vocabulary, quotedPhrases, level, state) {
  * Patterns like: "We do not say X, we say Y" or "Don't say X, say Y instead"
  * Returns: { incorrect: string, correct: string } or null
  */
+/**
+ * Detect definitional learning patterns: "X means Y"
+ * This captures when the user teaches Pal by defining what something means.
+ * 
+ * Examples:
+ * - "Question means we want to learn"
+ * - "Question means we are wondering"
+ * - "Happy means feeling good"
+ * - "A dog is an animal that barks"
+ */
+function detectDefinition(text) {
+  if (!text || typeof text !== 'string') return null;
+  
+  const definitions = [];
+  
+  // Pattern 1: "X means Y"
+  const meansPattern = /([a-zA-Z]+(?:\s+[a-zA-Z]+)*?)\s+means\s+(.+?)(?:\.|$)/gi;
+  let match;
+  while ((match = meansPattern.exec(text)) !== null) {
+    const concept = match[1].trim();
+    let definition = match[2].trim();
+    
+    // Clean up the definition (remove trailing punctuation if any)
+    definition = definition.replace(/[.,!?]+$/, '').trim();
+    
+    if (concept && definition) {
+      definitions.push({
+        concept: concept.toLowerCase(),
+        definition: definition,
+        fullMatch: match[0]
+      });
+    }
+  }
+  
+  // Pattern 2: "X is Y" (definitional, not conversational)
+  // Only match if it looks like a definition (starts with "A/An" or concept is capitalized)
+  const isPattern = /(?:^|[.!?]\s+)(?:a|an)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)*?)\s+is\s+(.+?)(?:\.|$)/gi;
+  while ((match = isPattern.exec(text)) !== null) {
+    const concept = match[1].trim();
+    let definition = match[2].trim();
+    
+    definition = definition.replace(/[.,!?]+$/, '').trim();
+    
+    if (concept && definition) {
+      definitions.push({
+        concept: concept.toLowerCase(),
+        definition: definition,
+        fullMatch: match[0]
+      });
+    }
+  }
+  
+  return definitions.length > 0 ? definitions : null;
+}
+
+/**
+ * Learn from definitions by storing the definition as part of the concept's knowledge.
+ * This creates strong, structured understanding of what things mean.
+ */
+function learnFromDefinition(vocabulary, definitions, level, state) {
+  if (!definitions || !definitions.length) return;
+  
+  const now = Date.now();
+  const nowISO = new Date(now).toISOString();
+  
+  for (const { concept, definition } of definitions) {
+    console.log(`📖 Definition detected: "${concept}" means "${definition}"`);
+    
+    // Find or create the concept entry
+    let conceptEntry = vocabulary.find((item) => item.word === concept);
+    
+    if (!conceptEntry) {
+      conceptEntry = {
+        id: nanoid(),
+        word: concept,
+        count: 0,
+        knownBy: { user: 0, pal: 0 },
+        lastSeen: now,
+        contexts: [],
+        learnedAtLevel: level,
+        confidence: 1.0,
+      };
+      vocabulary.push(conceptEntry);
+    }
+    
+    // Give strong reinforcement for definitional learning
+    const learningBonus = Math.min(15, Math.floor(level / 2) + 8);
+    conceptEntry.count += learningBonus;
+    conceptEntry.knownBy.user = (conceptEntry.knownBy.user || 0) + learningBonus;
+    conceptEntry.lastSeen = now;
+    
+    // Store the definition as structured knowledge
+    if (!conceptEntry.definitions) {
+      conceptEntry.definitions = [];
+    }
+    
+    // Add the new definition
+    conceptEntry.definitions.push({
+      definition: definition,
+      learnedAt: nowISO,
+      learnedAtLevel: level,
+      reinforcementCount: 1,
+    });
+    
+    // Deduplicate similar definitions (keep most recent)
+    if (conceptEntry.definitions.length > 3) {
+      conceptEntry.definitions = conceptEntry.definitions.slice(-3);
+    }
+    
+    // Add memory metadata
+    conceptEntry.memoryMetadata = {
+      memoryType: 'skill-knowledge', // Definitions are foundational knowledge
+      decayRate: 0.001, // Very slow decay (0.1%/day)
+      expiryDate: null,
+      created: conceptEntry.memoryMetadata?.created || nowISO,
+      lastUpdated: nowISO,
+      learningSource: 'definition',
+      temporal: false,
+    };
+    
+    // Add to contexts for quick reference
+    if (!conceptEntry.contexts) conceptEntry.contexts = [];
+    conceptEntry.contexts.unshift(`Definition: ${definition}`);
+    if (conceptEntry.contexts.length > 7) conceptEntry.contexts.length = 7;
+    
+    // Also create relationship in state if available
+    if (state && state.relationships) {
+      const relationshipKey = `${concept}:means`;
+      if (!state.relationships[relationshipKey]) {
+        state.relationships[relationshipKey] = {
+          subject: concept,
+          predicate: 'means',
+          object: definition,
+          strength: learningBonus,
+          lastReinforced: now,
+          reinforcementCount: 1,
+        };
+      } else {
+        state.relationships[relationshipKey].strength += learningBonus;
+        state.relationships[relationshipKey].lastReinforced = now;
+        state.relationships[relationshipKey].reinforcementCount += 1;
+      }
+    }
+    
+    console.log(`✅ Learned definition: "${concept}" = "${definition}" (bonus: +${learningBonus})`);
+  }
+}
+
 function detectCorrection(text) {
   if (!text || typeof text !== 'string') return null;
   
@@ -3306,6 +3995,31 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+app.get('/api/neural-network', (req, res) => {
+  try {
+    const collections = getCollections();
+    const neuralNetwork = getNeuralNetwork(collections);
+    
+    res.json({
+      regions: neuralNetwork.regions.map(region => ({
+        regionId: region.regionId,
+        regionName: region.regionName,
+        position: region.position,
+        color: region.color,
+        size: region.size,
+        neuronCount: region.neurons.length,
+        activityLevel: region.activityLevel,
+        developedAtLevel: region.developedAtLevel
+      })),
+      metrics: neuralNetwork.metrics,
+      recentEvents: neuralNetwork.events.slice(-50) // Last 50 events
+    });
+  } catch (error) {
+    console.error('Error fetching neural network:', error);
+    res.status(500).json({ error: 'Failed to fetch neural network' });
+  }
+});
+
 app.post('/api/settings', (req, res) => {
   const { state } = getCollections();
   const { xpMultiplier, apiProvider, apiKey, telemetry, authRequired } = req.body || {};
@@ -3374,8 +4088,10 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.post('/api/chat', (req, res) => {
+  console.log('📨 Chat request received');
   const { message } = req.body || {};
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
+  console.log('💬 User message:', message);
 
   const collections = getCollections();
   const { state, vocabulary, chatLog, memories, concepts, journal } = collections;
@@ -3414,6 +4130,12 @@ app.post('/api/chat', (req, res) => {
     learnFromCorrection(vocabulary, corrections, state.level, message);
   }
 
+  // Detect and learn from definitions (e.g., "Question means we want to learn")
+  const definitions = detectDefinition(message);
+  if (definitions && definitions.length > 0) {
+    learnFromDefinition(vocabulary, definitions, state.level, state);
+  }
+
   // Extract and learn quoted phrases for direct teaching
   const quotedPhrases = extractQuotedPhrases(message);
   if (quotedPhrases.length > 0) {
@@ -3435,6 +4157,29 @@ app.post('/api/chat', (req, res) => {
     learnVocabulary(vocabulary, userWords, 'user', message);
   }
 
+  // ===== NEURAL ACTIVATION =====
+  // Get neural network and activate patterns during cognitive processing
+  const neuralNetwork = getNeuralNetwork(collections);
+  
+  // 1. Receive message (sensory input fires)
+  activateNeuralPattern('receive-message', neuralNetwork);
+  
+  // 2. Process language (language center + association cortex)
+  activateNeuralPattern('process-language', neuralNetwork);
+  
+  // 3. Emotional processing if needed
+  if (responseContext.sentiment && responseContext.sentiment !== 'neutral') {
+    activateNeuralPattern('emotional-response', neuralNetwork);
+  }
+  
+  // 4. Memory recall if relevant memories exist
+  if (memories.length > 0) {
+    activateNeuralPattern('memory-recall', neuralNetwork);
+  }
+  
+  // 5. Decision making
+  activateNeuralPattern('decision-making', neuralNetwork);
+
   // Generate response: Use curiosity question if triggered, otherwise normal response
   let constrained;
   if (curiosity) {
@@ -3447,7 +4192,9 @@ app.post('/api/chat', (req, res) => {
     };
   } else {
     // Normal response generation
+    console.log('🤔 Generating normal response...');
     constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
+    console.log('✅ Response generated');
   }
 
   // XP: standard typed user response
@@ -3463,6 +4210,16 @@ app.post('/api/chat', (req, res) => {
   // Learn from pal's own utterance to reinforce known vocabulary
   const palWords = tokenizeMessage(constrained.output);
   learnVocabulary(vocabulary, palWords, 'pal', constrained.output);
+
+  // 6. Generate response (language center + motor output)
+  activateNeuralPattern('generate-response', neuralNetwork);
+  
+  // 7. Learning (after generating response)
+  activateNeuralPattern('learning', neuralNetwork);
+  
+  // Update neural network metrics and save
+  neuralNetwork.updateMetrics();
+  collections.neuralNetwork = neuralNetwork.toJSON();
 
   const { memory, importance } = buildMemoryEntry({
     state,
@@ -3508,12 +4265,19 @@ app.post('/api/chat', (req, res) => {
     .map((entry) => entry.word);
   state.vocabulary = summarized;
 
-  saveCollections({ ...collections, chatLog, state, vocabulary, memories, concepts, journal });
-
   // Determine Pal's emotional state from response
   const palEmotion = determineEmotionalState(constrained, responseContext, state);
   state.currentEmotion = palEmotion;
 
+  // Try to save collections, but don't let save errors prevent response
+  try {
+    saveCollections({ ...collections, chatLog, state, vocabulary, memories, concepts, journal });
+    console.log('💾 Collections saved successfully');
+  } catch (saveError) {
+    console.error('Error saving collections (response will still be sent):', saveError);
+  }
+
+  console.log('📤 Sending response to client');
   res.json({
     reply: palMsg.text,
     kind: constrained.utterance_type,
@@ -3529,6 +4293,7 @@ app.post('/api/chat', (req, res) => {
     thoughtId: thought.id,
     emotion: palEmotion,
   });
+  console.log('✅ Response sent successfully');
 });
 
 app.post('/api/reinforce', (req, res) => {
@@ -3800,6 +4565,198 @@ app.get('/api/journal', (req, res) => {
   res.json({ thoughts: items, total: journal.length });
 });
 
+// API: get current neural network state
+app.get('/api/neural', (req, res) => {
+  try {
+    const collections = getCollections();
+    const neural = getNeuralNetwork(collections);
+    res.json({ neural: neural.toJSON() });
+  } catch (error) {
+    console.error('Error fetching neural state:', error);
+    res.status(500).json({ error: 'Failed to fetch neural state' });
+  }
+});
+
+// API: regenerate neural network from existing memories/chatlogs
+app.post('/api/neural/regenerate', async (req, res) => {
+  // Set up SSE for progress streaming
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendProgress = (progress, message, phase) => {
+    res.write(`data: ${JSON.stringify({ progress, message, phase })}\n\n`);
+  };
+
+  try {
+    const collections = getCollections();
+    const { memories, chatLog, vocabulary, state } = collections;
+    const level = state.level || 0;
+
+    sendProgress(0, 'Starting neural network regeneration...', 'init');
+    
+    // Calculate total steps for ETA
+    const totalSteps = memories.length + chatLog.length + vocabulary.length + 7; // +7 for initialization steps
+    let currentStep = 0;
+    const startTime = Date.now();
+
+    // Step 1: Initialize new neural network
+    sendProgress(5, `Initializing neural network for Level ${level}...`, 'init');
+    const neural = initializeNeuralNetwork(level);
+    currentStep++;
+
+    // Step 2: Add neurons based on level (growth simulation)
+    sendProgress(10, `Growing neural network (${Math.floor(10 * Math.pow(1.2, level))} new neurons)...`, 'growth');
+    const growthNeurons = Math.floor(10 * Math.pow(1.2, level));
+    for (let i = 0; i < growthNeurons; i++) {
+      // Distribute growth across regions proportionally
+      const regionIndex = i % neural.regions.length;
+      const region = neural.regions[regionIndex];
+      const newNeuron = {
+        id: `neuron-grown-${nanoid(6)}`,
+        position: { x: Math.random() * 100, y: Math.random() * 100 },
+        type: Math.random() < 0.8 ? 'excitatory' : 'inhibitory',
+        activationThreshold: 0.5 + Math.random() * 0.3,
+        currentActivation: 0,
+        restingPotential: 0,
+        connections: [],
+        firingHistory: [],
+        developedAtLevel: level
+      };
+      region.neurons.push(newNeuron);
+    }
+    currentStep++;
+
+    // Step 3: Process memories to strengthen neural pathways
+    sendProgress(20, `Processing ${memories.length} memories...`, 'memories');
+    for (let i = 0; i < memories.length; i++) {
+      const memory = memories[i];
+      if (memory.importance?.shouldRemember) {
+        // Simulate neural firing patterns based on memory importance
+        const intensity = memory.importance.score / 100;
+        
+        // Fire relevant regions
+        if (memory.sentiment === 'positive' || memory.sentiment === 'negative') {
+          activateNeuralPattern('emotional-response', neural);
+        }
+        if (memory.keywords && memory.keywords.length > 0) {
+          activateNeuralPattern('learning', neural);
+        }
+      }
+
+      currentStep++;
+      if (i % 10 === 0) {
+        const progress = 20 + Math.floor((i / memories.length) * 30);
+        const elapsed = Date.now() - startTime;
+        const eta = Math.ceil((elapsed / currentStep) * (totalSteps - currentStep) / 1000);
+        sendProgress(progress, `Processing memory ${i + 1}/${memories.length} (ETA: ${eta}s)`, 'memories');
+      }
+    }
+
+    // Step 4: Process chat log to simulate conversation patterns
+    sendProgress(50, `Processing ${chatLog.length} chat messages...`, 'chatlog');
+    for (let i = 0; i < chatLog.length; i++) {
+      const msg = chatLog[i];
+      
+      if (msg.role === 'user') {
+        activateNeuralPattern('receive-message', neural);
+        activateNeuralPattern('process-language', neural);
+      } else if (msg.role === 'pal') {
+        activateNeuralPattern('generate-response', neural);
+      }
+
+      currentStep++;
+      if (i % 20 === 0) {
+        const progress = 50 + Math.floor((i / chatLog.length) * 25);
+        const elapsed = Date.now() - startTime;
+        const eta = Math.ceil((elapsed / currentStep) * (totalSteps - currentStep) / 1000);
+        sendProgress(progress, `Processing message ${i + 1}/${chatLog.length} (ETA: ${eta}s)`, 'chatlog');
+      }
+    }
+
+    // Step 5: Strengthen connections based on vocabulary
+    sendProgress(75, `Strengthening neural connections from ${vocabulary.length} learned words...`, 'vocabulary');
+    for (let i = 0; i < vocabulary.length; i++) {
+      const word = vocabulary[i];
+      const strength = (word.count || 0) / 100;
+      
+      // Find language center and strengthen random connections
+      const langRegion = neural.regions.find(r => r.regionId === 'language-center');
+      if (langRegion && langRegion.neurons.length > 0) {
+        const neuron = langRegion.neurons[Math.floor(Math.random() * langRegion.neurons.length)];
+        
+        // Add/strengthen a connection
+        if (neuron.connections.length > 0) {
+          const conn = neuron.connections[0];
+          conn.weight = Math.min(1.0, conn.weight + strength * 0.1);
+        }
+      }
+
+      currentStep++;
+      if (i % 50 === 0) {
+        const progress = 75 + Math.floor((i / vocabulary.length) * 15);
+        const elapsed = Date.now() - startTime;
+        const eta = Math.ceil((elapsed / currentStep) * (totalSteps - currentStep) / 1000);
+        sendProgress(progress, `Processing word ${i + 1}/${vocabulary.length} (ETA: ${eta}s)`, 'vocabulary');
+      }
+    }
+
+    // Step 6: Create cross-region pathways based on experience
+    sendProgress(90, 'Creating cross-region pathways...', 'pathways');
+    const experienceLevel = Math.min(level, 15);
+    const pathwayCount = experienceLevel * 2;
+    
+    for (let i = 0; i < pathwayCount; i++) {
+      const fromRegion = neural.regions[Math.floor(Math.random() * neural.regions.length)];
+      const toRegion = neural.regions[Math.floor(Math.random() * neural.regions.length)];
+      
+      if (fromRegion !== toRegion && fromRegion.neurons.length > 0 && toRegion.neurons.length > 0) {
+        const fromNeuron = fromRegion.neurons[Math.floor(Math.random() * fromRegion.neurons.length)];
+        const toNeuron = toRegion.neurons[Math.floor(Math.random() * toRegion.neurons.length)];
+        
+        fromNeuron.connections.push({
+          targetNeuronId: toNeuron.id,
+          weight: 0.5 + Math.random() * 0.3,
+          type: 'excitatory',
+          latency: 30 + Math.floor(Math.random() * 40)
+        });
+      }
+    }
+    currentStep++;
+
+    // Step 7: Update metrics
+    sendProgress(95, 'Updating neural network metrics...', 'finalize');
+    neural.updateMetrics();
+    currentStep++;
+
+    // Step 8: Save to collections
+    sendProgress(98, 'Saving neural network...', 'finalize');
+    collections.neuralNetwork = neural.toJSON();
+    saveCollections(collections);
+    currentStep++;
+
+    // Complete
+    const totalTime = Math.ceil((Date.now() - startTime) / 1000);
+    sendProgress(100, `Neural network regenerated successfully in ${totalTime}s!`, 'complete');
+    
+    // Send final message with metrics
+    res.write(`data: ${JSON.stringify({ 
+      progress: 100, 
+      message: `Complete! Network has ${neural.metrics.totalNeurons} neurons across ${neural.regions.length} regions.`,
+      phase: 'complete',
+      metrics: neural.metrics,
+      done: true
+    })}\n\n`);
+    
+    res.end();
+  } catch (err) {
+    console.error('Neural regeneration error:', err);
+    sendProgress(0, `Error: ${err.message}`, 'error');
+    res.end();
+  }
+});
+
 app.get('/api/chatlog', (req, res) => {
   const { chatLog } = getCollections();
   const limit = Math.max(1, Math.min(Number(req.query.limit) || 200, MAX_CHAT_LOG_ENTRIES));
@@ -3895,3 +4852,79 @@ server = app.listen(PORT, () => {
   
   scheduleMemoryDecay();
 });
+
+// --- WebSocket server for neural events ---
+let wss = null;
+try {
+  wss = new WebSocketServer({ noServer: true });
+  server.on('upgrade', (request, socket, head) => {
+    // Simple path-based upgrade handling
+    const { url } = request;
+    if (url && url.startsWith('/neural-stream')) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  wss.on('connection', (ws) => {
+    console.log('WebSocket client connected to neural-stream');
+    // Send initial neural snapshot
+    try {
+      const collections = getCollections();
+      const neural = getNeuralNetwork(collections);
+      ws.send(JSON.stringify({ type: 'neural-snapshot', payload: neural.toJSON() }));
+    } catch (err) {
+      console.error('Failed to send neural snapshot', err);
+    }
+
+    ws.on('message', (msg) => {
+      // Accept manual trigger requests: { action: 'triggerNeuron', neuronId }
+      try {
+        const data = JSON.parse(String(msg));
+        if (data && data.action === 'triggerNeuron' && data.neuronId) {
+          const collections = getCollections();
+          const neural = getNeuralNetwork(collections);
+          neural.metrics.manualTriggers++;
+          neural.triggerNeuron(data.neuronId, 1.0);
+          // Persist neural state
+          saveCollections({ ...collections, neuralNetwork: neural.toJSON() });
+        }
+      } catch (e) {}
+    });
+
+    ws.on('close', () => {
+      console.log('WebSocket client disconnected from neural-stream');
+    });
+  });
+
+  // Register neural event broadcaster
+  // We'll use getNeuralNetwork to obtain instance and register callback
+  const collectionsForBroadcast = getCollections();
+  const neuralForBroadcast = getNeuralNetwork(collectionsForBroadcast);
+  neuralForBroadcast.onNeuralEvent((event) => {
+    try {
+      const payload = JSON.stringify({ type: 'neural-event', payload: event });
+      for (const client of wss.clients) {
+        if (client.readyState === 1) client.send(payload);
+      }
+    } catch (err) {
+      console.error('Broadcast error', err);
+    }
+  });
+
+  // Periodically persist neural events from the broadcast instance into saved collections
+  setInterval(() => {
+    try {
+      const collectionsSave = getCollections();
+      collectionsSave.neuralNetwork = neuralForBroadcast.toJSON();
+      saveCollections(collectionsSave);
+    } catch (err) {
+      console.error('Failed to persist neural state', err);
+    }
+  }, 5000);
+} catch (err) {
+  console.warn('WebSocket server not available:', err.message || err);
+}

@@ -279,19 +279,124 @@ function hideTyping(el = typingEl) {
 }
 
 async function sendChat(message) {
-  const res = await apiFetch(`/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
-  });
-  if (!res.ok) throw new Error('Chat failed');
-  return res.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+  
+  try {
+    const res = await apiFetch(`/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error('Chat failed');
+    return res.json();
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out after 30 seconds');
+    }
+    throw err;
+  }
 }
 
 async function getStats() {
   const res = await apiFetch(`/stats`);
   return res.json();
 }
+
+// --- Neural Visualization Frontend ---
+let neuralSocket = null;
+let neuralState = null;
+
+async function fetchNeuralSnapshot() {
+  try {
+    const res = await apiFetch('/neural');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.neural || null;
+  } catch (e) { return null; }
+}
+
+function onNeuronClickFront(neuronId) {
+  // Simple request to backend snapshot to find neuron info
+  if (!neuralState) return;
+  for (const region of neuralState.regions) {
+    const found = region.neurons.find(n => n.id === neuronId);
+    if (found) {
+      alert(`Neuron ${neuronId}\nRegion: ${region.regionName}\nFires: ${found.firingHistory?.length || 0}`);
+      return;
+    }
+  }
+}
+
+function connectNeuralSocket() {
+  if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) return;
+  try {
+    // Use localhost:3001 directly since we might be running in Electron with file:// protocol
+    const wsUrl = window.location.protocol === 'file:' 
+      ? 'ws://localhost:3001/neural-stream'
+      : 'ws://' + window.location.host.replace(/:\d+$/, ':3001') + '/neural-stream';
+    neuralSocket = new WebSocket(wsUrl);
+  } catch (e) {
+    console.error('WebSocket connect error', e);
+    return;
+  }
+
+  neuralSocket.addEventListener('open', () => {
+    console.log('Neural socket open');
+  });
+
+  neuralSocket.addEventListener('message', (ev) => {
+    try {
+      const data = JSON.parse(ev.data);
+      if (!data) return;
+      if (data.type === 'neural-snapshot') {
+        renderNeuralNetwork(data.payload);
+        const summary = document.getElementById('neural-summary');
+        if (summary) summary.textContent = `Neurons: ${data.payload.metrics.totalNeurons} · Regions: ${data.payload.regions.length} · Firings: ${data.payload.metrics.totalFirings}`;
+      } else if (data.type === 'neural-event') {
+        handleNeuralEvent(data.payload);
+      }
+    } catch (e) { console.error('Neural message error', e); }
+  });
+
+  neuralSocket.addEventListener('close', () => {
+    console.log('Neural socket closed');
+    neuralSocket = null;
+  });
+}
+
+function handleNeuralEvent(event) {
+  if (!event || !event.type) return;
+  if (event.type === 'neuron-fire') {
+    const id = event.neuronId;
+    const circle = document.querySelector(`circle[data-neuron-id='${id}']`);
+    if (circle) {
+      const origR = circle.getAttribute('r') || '4';
+      circle.setAttribute('r', '8');
+      circle.setAttribute('opacity', '1');
+      setTimeout(() => {
+        circle.setAttribute('r', origR);
+      }, 300);
+    }
+  }
+}
+
+// Wire up Neural tab button to initialize
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-brain-tab]');
+  if (!btn) return;
+  const tab = btn.dataset.brainTab;
+  if (tab === 'neural') {
+    // Fetch snapshot and connect websocket
+    fetchNeuralSnapshot().then((snapshot) => {
+      if (snapshot) renderNeuralNetwork(snapshot);
+      connectNeuralSocket();
+    });
+  }
+});
 
 async function saveSettings(xpMultiplier, apiProvider, apiKey, telemetry, authRequired) {
   const res = await apiFetch(`/settings`, {
@@ -928,6 +1033,9 @@ async function init() {
   wireChat();
   wireChatSearch();
   wireSettings();
+  setupBrainSubTabs();
+  setupNeuralRefresh();
+  setupNeuralRegeneration();
   await checkHealth();
   if (backendHealthy) {
     await refreshStats();
@@ -1135,3 +1243,661 @@ async function renderProgressDashboard() {
     });
   }
 }
+
+// ==============================================
+// NEURAL VISUALIZATION
+// ==============================================
+
+let neuralData = null;
+
+// Brain sub-tab switching
+function setupBrainSubTabs() {
+  const buttons = $$('.brain-tab-btn');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabName = btn.dataset.brainTab;
+      
+      // Update button states
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      // Update content visibility
+      $$('.brain-tab-content').forEach(content => content.classList.remove('active'));
+      const targetContent = document.getElementById(`brain-tab-${tabName}`);
+      if (targetContent) {
+        targetContent.classList.add('active');
+        
+        // Load neural data when switching to neural tab
+        if (tabName === 'neural') {
+          refreshNeuralNetwork();
+        }
+      }
+    });
+  });
+}
+
+// Fetch neural network data
+async function fetchNeuralNetwork() {
+  try {
+    const res = await fetch(`${API_BASE}/neural-network`);
+    if (!res.ok) throw new Error('Failed to fetch neural network');
+    return await res.json();
+  } catch (err) {
+    console.error('Error fetching neural network:', err);
+    return null;
+  }
+}
+
+// Refresh neural network visualization
+async function refreshNeuralNetwork() {
+  neuralData = await fetchNeuralNetwork();
+  if (!neuralData) return;
+  
+  renderNeuralNetwork();
+  updateNeuralStats();
+  updateNeuralEvents();
+}
+
+// Render neural network SVG
+function renderNeuralNetwork() {
+  if (!neuralData || !neuralData.regions) return;
+  
+  const svg = document.getElementById('neural-canvas');
+  if (!svg) return;
+  
+  // Clear existing content
+  svg.innerHTML = '';
+  
+  // Create SVG groups for each region
+  neuralData.regions.forEach(region => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.classList.add('region-group');
+    g.setAttribute('data-region', region.regionId);
+    
+    // Draw region background
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', region.position.x);
+    rect.setAttribute('y', region.position.y);
+    rect.setAttribute('width', region.size.width);
+    rect.setAttribute('height', region.size.height);
+    rect.setAttribute('fill', region.color);
+    rect.setAttribute('opacity', '0.1');
+    rect.setAttribute('rx', '8');
+    g.appendChild(rect);
+    
+    // Draw region label
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', region.position.x + region.size.width / 2);
+    label.setAttribute('y', region.position.y - 5);
+    label.setAttribute('text-anchor', 'middle');
+    label.classList.add('region-label');
+    label.textContent = region.regionName;
+    g.appendChild(label);
+    
+    // Draw simplified neuron representation (cluster indicator)
+    const neuronCount = region.neuronCount || 0;
+    const gridSize = Math.ceil(Math.sqrt(neuronCount / 5)); // Show subset
+    const spacing = Math.min(region.size.width / (gridSize + 1), region.size.height / (gridSize + 1), 30);
+    
+    for (let i = 0; i < Math.min(neuronCount / 5, 25); i++) {
+      const row = Math.floor(i / gridSize);
+      const col = i % gridSize;
+      const x = region.position.x + (col + 1) * spacing;
+      const y = region.position.y + (row + 1) * spacing + 10;
+      
+      const neuron = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      neuron.setAttribute('cx', x);
+      neuron.setAttribute('cy', y);
+      neuron.setAttribute('r', '3');
+      neuron.setAttribute('fill', region.color);
+      neuron.setAttribute('opacity', '0.6');
+      neuron.classList.add('neuron-node');
+      g.appendChild(neuron);
+    }
+    
+    svg.appendChild(g);
+  });
+}
+
+// Update neural stats
+function updateNeuralStats() {
+  if (!neuralData || !neuralData.metrics) return;
+  
+  $('#neural-total').textContent = neuralData.metrics.totalNeurons || 0;
+  $('#neural-firings').textContent = neuralData.metrics.totalFirings || 0;
+  $('#neural-most-active').textContent = formatRegionName(neuralData.metrics.mostActiveRegion) || '—';
+  
+  // Update summary
+  $('#neural-summary').textContent = `Neurons: ${neuralData.metrics.totalNeurons || 0} · Regions: 7 · Firings: ${neuralData.metrics.totalFirings || 0}`;
+}
+
+// Update neural events list
+function updateNeuralEvents() {
+  if (!neuralData || !neuralData.recentEvents) return;
+  
+  const eventList = $('#neural-event-list');
+  if (!eventList) return;
+  
+  eventList.innerHTML = '';
+  
+  const events = neuralData.recentEvents.slice(-20).reverse(); // Show last 20, newest first
+  
+  if (events.length === 0) {
+    eventList.innerHTML = '<div class="event-item">No recent activity</div>';
+    return;
+  }
+  
+  events.forEach(event => {
+    const item = document.createElement('div');
+    item.classList.add('event-item');
+    
+    if (event.type === 'neuron-fire') {
+      item.classList.add('firing');
+      const time = new Date(event.timestamp).toLocaleTimeString();
+      item.innerHTML = `
+        <div><strong>${formatRegionName(event.regionId)}</strong> fired</div>
+        <div class="event-time">${time}</div>
+      `;
+    }
+    
+    eventList.appendChild(item);
+  });
+}
+
+// Format region ID to readable name
+function formatRegionName(regionId) {
+  if (!regionId) return '';
+  return regionId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Wire up refresh button
+function setupNeuralRefresh() {
+  const btn = $('#refresh-neural');
+  if (btn) {
+    btn.addEventListener('click', refreshNeuralNetwork);
+  }
+}
+
+// ==============================================
+// NEURAL NETWORK REGENERATION
+// ==============================================
+
+function showNeuralRegenModal() {
+  const modal = $('#neural-regen-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    
+    // Reset UI
+    $('#neural-regen-progress').style.width = '0%';
+    $('#neural-regen-percent').textContent = '0%';
+    $('#neural-regen-message').textContent = 'Initializing...';
+    $('#neural-regen-eta').textContent = 'Calculating time remaining...';
+    $('#neural-regen-phase').textContent = 'Starting';
+    $('#neural-regen-close').disabled = true;
+  }
+}
+
+function hideNeuralRegenModal() {
+  const modal = $('#neural-regen-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
+async function startNeuralRegeneration() {
+  showNeuralRegenModal();
+  
+  try {
+    const response = await fetch(`${API_BASE}/neural/regenerate`, {
+      method: 'POST',
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to start regeneration');
+    }
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) {
+        // Enable close button
+        $('#neural-regen-close').disabled = false;
+        break;
+      }
+      
+      // Decode the chunk
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.substring(6));
+            updateRegenProgress(data);
+          } catch (e) {
+            console.error('Failed to parse SSE data:', e);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Neural regeneration error:', err);
+    $('#neural-regen-message').textContent = `Error: ${err.message}`;
+    $('#neural-regen-eta').textContent = 'Failed to regenerate neural network';
+    $('#neural-regen-close').disabled = false;
+  }
+}
+
+function updateRegenProgress(data) {
+  const { progress, message, phase, done } = data;
+  
+  // Update progress bar
+  if (typeof progress === 'number') {
+    $('#neural-regen-progress').style.width = `${progress}%`;
+    $('#neural-regen-percent').textContent = `${Math.round(progress)}%`;
+  }
+  
+  // Update message
+  if (message) {
+    $('#neural-regen-message').textContent = message;
+  }
+  
+  // Update phase
+  if (phase) {
+    const phaseNames = {
+      'init': 'Initialization',
+      'growth': 'Network Growth',
+      'memories': 'Processing Memories',
+      'chatlog': 'Analyzing Conversations',
+      'vocabulary': 'Learning Vocabulary',
+      'pathways': 'Building Pathways',
+      'finalize': 'Finalizing',
+      'complete': 'Complete',
+      'error': 'Error'
+    };
+    $('#neural-regen-phase').textContent = phaseNames[phase] || phase;
+  }
+  
+  // Extract ETA from message if present
+  const etaMatch = message?.match(/ETA:\s*(\d+)s/);
+  if (etaMatch) {
+    const seconds = parseInt(etaMatch[1]);
+    if (seconds > 60) {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      $('#neural-regen-eta').textContent = `Estimated time remaining: ${mins}m ${secs}s`;
+    } else {
+      $('#neural-regen-eta').textContent = `Estimated time remaining: ${seconds}s`;
+    }
+  } else if (progress >= 100 || done) {
+    $('#neural-regen-eta').textContent = 'Complete!';
+  }
+  
+  // If complete, enable close button and refresh neural view
+  if (done || progress >= 100) {
+    $('#neural-regen-close').disabled = false;
+    
+    // Auto-refresh neural network view after 1 second
+    setTimeout(() => {
+      refreshNeuralNetwork();
+      connectNeuralSocket();
+    }, 1000);
+  }
+}
+
+function setupNeuralRegeneration() {
+  const btn = $('#regenerate-neural');
+  const closeBtn = $('#neural-regen-close');
+  
+  if (btn) {
+    btn.addEventListener('click', () => {
+      if (confirm('Regenerate neural network from existing memories and conversations?\n\nThis will rebuild the network based on your current level and history.')) {
+        startNeuralRegeneration();
+      }
+    });
+  }
+  
+  if (closeBtn) {
+    closeBtn.addEventListener('click', hideNeuralRegenModal);
+  }
+}
+
+// ==============================================
+// FLOATING CHAT WINDOW
+// ==============================================
+
+let floatingChatOpen = false;
+let isDragging = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+function setupFloatingChat() {
+  const floatingModal = $('#floating-chat-modal');
+  const popOutBtn = $('#popout-chat-btn');
+  const closeBtn = $('#close-floating-chat');
+  const floatingForm = $('#floating-chat-form');
+  const floatingInput = $('#floating-chat-input');
+  const floatingWindow = $('#floating-chat-window');
+  
+  if (!floatingModal || !popOutBtn || !closeBtn) return;
+  
+  // Pop out button click
+  popOutBtn.addEventListener('click', () => {
+    floatingModal.classList.remove('hidden');
+    floatingChatOpen = true;
+    
+    // Sync messages from main chat to floating
+    syncMessagesToFloating();
+    
+    // Sync emotion display
+    syncEmotionToFloating();
+    
+    // Focus the floating input
+    floatingInput?.focus();
+  });
+  
+  // Close button click
+  closeBtn.addEventListener('click', () => {
+    floatingModal.classList.add('hidden');
+    floatingChatOpen = false;
+  });
+  
+  // Make header draggable
+  const header = $('.floating-chat-header');
+  if (header) {
+    header.addEventListener('mousedown', startDrag);
+  }
+  
+  // Handle form submission from floating chat
+  if (floatingForm) {
+    floatingForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = floatingInput.value.trim();
+      if (!msg) return;
+      
+      lastUserMessage = msg;
+      
+      // Add message to both windows
+      addMessage('user', msg);
+      addFloatingMessage('user', msg);
+      
+      floatingInput.value = '';
+      
+      // Disable both inputs while waiting
+      floatingInput.disabled = true;
+      $('#chat-input').disabled = true;
+      $('#chat-input').placeholder = 'Pal is thinking...';
+      floatingInput.placeholder = 'Pal is thinking...';
+      
+      const indicator = showTyping();
+      const floatingIndicator = showFloatingTyping();
+      
+      try {
+        const res = await sendChat(msg);
+        const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
+        const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
+        
+        // Add response to both windows
+        addMessage('pal', replyText, meta);
+        addFloatingMessage('pal', replyText, meta);
+        
+        // Update emotion displays
+        if (res?.emotion) {
+          updateEmotionDisplay(res.emotion);
+          updateFloatingEmotion(res.emotion);
+        }
+        
+        const wasDirty = multiplierDirty;
+        await refreshStats();
+        multiplierDirty = wasDirty;
+        if (journalLoaded) {
+          await loadJournal(true);
+        }
+      } catch (e) {
+        console.error('Chat error:', e);
+        let errorMsg = 'Sorry, I had trouble responding.';
+        
+        if (!backendHealthy) {
+          errorMsg = 'Server not running. Please start the backend.';
+          showStatusModal();
+        } else if (e.message?.includes('fetch') || e.message?.includes('network')) {
+          errorMsg = 'Network error. Please check your connection.';
+        } else if (e.message?.includes('timeout')) {
+          errorMsg = 'Response timed out. Please try again.';
+        } else if (e.message?.includes('Chat failed')) {
+          errorMsg = 'Unable to generate response. Please try again.';
+        }
+        
+        addMessage('pal', errorMsg);
+        addFloatingMessage('pal', errorMsg);
+      } finally {
+        hideTyping(indicator);
+        hideFloatingTyping(floatingIndicator);
+        
+        // Re-enable both inputs
+        floatingInput.disabled = false;
+        $('#chat-input').disabled = false;
+        $('#chat-input').placeholder = 'Type a message...';
+        floatingInput.placeholder = 'Type a message...';
+        floatingInput.focus();
+      }
+    });
+  }
+}
+
+function startDrag(e) {
+  isDragging = true;
+  const modal = $('#floating-chat-modal');
+  const rect = modal.getBoundingClientRect();
+  
+  dragOffsetX = e.clientX - rect.left;
+  dragOffsetY = e.clientY - rect.top;
+  
+  // Add dragging class for visual feedback
+  modal.classList.add('dragging');
+  
+  // Use optimized event listeners
+  document.addEventListener('mousemove', onDrag, { passive: true });
+  document.addEventListener('mouseup', stopDrag);
+  
+  e.preventDefault();
+}
+
+function onDrag(e) {
+  if (!isDragging) return;
+  
+  // Use requestAnimationFrame for smooth 60fps updates
+  requestAnimationFrame(() => {
+    const modal = $('#floating-chat-modal');
+    if (!modal) return;
+    
+    let newX = e.clientX - dragOffsetX;
+    let newY = e.clientY - dragOffsetY;
+    
+    // Keep within viewport bounds
+    const maxX = window.innerWidth - modal.offsetWidth;
+    const maxY = window.innerHeight - modal.offsetHeight;
+    
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+    
+    // Use transform instead of top/left for better performance
+    modal.style.transform = `translate(${newX}px, ${newY}px)`;
+    modal.style.right = 'auto'; // Remove right positioning when dragging
+  });
+}
+
+function stopDrag() {
+  isDragging = false;
+  const modal = $('#floating-chat-modal');
+  if (modal) {
+    modal.classList.remove('dragging');
+  }
+  
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', stopDrag);
+}
+
+function syncMessagesToFloating() {
+  const mainWindow = $('#chat-window');
+  const floatingWindow = $('#floating-chat-window');
+  
+  if (!mainWindow || !floatingWindow) return;
+  
+  // Clear floating window
+  floatingWindow.innerHTML = '';
+  
+  // Copy all messages from main to floating
+  const messages = mainWindow.querySelectorAll('.msg');
+  messages.forEach(msg => {
+    const clone = msg.cloneNode(true);
+    
+    // Re-attach event listeners for feedback buttons
+    const feedbackBtns = clone.querySelectorAll('.feedback-btn');
+    feedbackBtns.forEach((btn, idx) => {
+      const originalBtn = msg.querySelectorAll('.feedback-btn')[idx];
+      const sentiment = originalBtn.classList.contains('thumbs-up') ? 'positive' : 'negative';
+      const text = msg.querySelector('.bubble')?.textContent || '';
+      const role = msg.classList.contains('user') ? 'user' : 'pal';
+      
+      btn.addEventListener('click', () => feedbackClick(btn, sentiment, text, role));
+    });
+    
+    floatingWindow.appendChild(clone);
+  });
+  
+  floatingWindow.scrollTop = floatingWindow.scrollHeight;
+}
+
+function syncEmotionToFloating() {
+  const mainIcon = $('#emotion-icon');
+  const mainMood = $('#emotion-mood');
+  const floatingIcon = $('#emotion-icon-floating');
+  const floatingMood = $('#emotion-mood-floating');
+  
+  if (mainIcon && floatingIcon) {
+    floatingIcon.textContent = mainIcon.textContent;
+  }
+  
+  if (mainMood && floatingMood) {
+    floatingMood.textContent = mainMood.textContent;
+  }
+}
+
+function updateFloatingEmotion(emotion) {
+  if (!emotion) return;
+  
+  const icon = $('#emotion-icon-floating');
+  const mood = $('#emotion-mood-floating');
+  
+  if (!icon || !mood) return;
+  
+  // Update icon
+  icon.style.animation = 'none';
+  setTimeout(() => {
+    icon.textContent = emotion.expression || '😊';
+    icon.style.animation = 'emotionPulse 2s ease-in-out infinite';
+  }, 10);
+  
+  // Update mood text
+  const moodText = `Pal is ${emotion.description || 'calm'}`;
+  mood.textContent = moodText;
+}
+
+function addFloatingMessage(role, text, metaText) {
+  const floatingWindow = $('#floating-chat-window');
+  if (!floatingWindow) return;
+  
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text && String(text).trim().length ? text : '?';
+  
+  // Timestamp tooltip
+  try {
+    const ts = new Date();
+    bubble.title = ts.toLocaleString();
+    wrap.dataset.ts = String(ts.getTime());
+  } catch {}
+  
+  wrap.appendChild(bubble);
+  
+  if (metaText) {
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = metaText;
+    wrap.appendChild(meta);
+  }
+  
+  // Add feedback buttons
+  const feedbackContainer = document.createElement('div');
+  feedbackContainer.className = 'feedback-buttons';
+  
+  const thumbsUp = document.createElement('button');
+  thumbsUp.className = 'feedback-btn thumbs-up';
+  thumbsUp.title = 'Good response';
+  thumbsUp.innerHTML = '👍';
+  thumbsUp.addEventListener('click', () => feedbackClick(thumbsUp, 'positive', text, role));
+  
+  const thumbsDown = document.createElement('button');
+  thumbsDown.className = 'feedback-btn thumbs-down';
+  thumbsDown.title = 'Needs improvement';
+  thumbsDown.innerHTML = '👎';
+  thumbsDown.addEventListener('click', () => feedbackClick(thumbsDown, 'negative', text, role));
+  
+  feedbackContainer.appendChild(thumbsUp);
+  feedbackContainer.appendChild(thumbsDown);
+  wrap.appendChild(feedbackContainer);
+  
+  floatingWindow.appendChild(wrap);
+  floatingWindow.scrollTop = floatingWindow.scrollHeight;
+}
+
+function showFloatingTyping() {
+  const floatingWindow = $('#floating-chat-window');
+  if (!floatingWindow) return null;
+  
+  const wrap = document.createElement('div');
+  wrap.className = 'msg pal typing';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble typing-bubble';
+  bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+  wrap.appendChild(bubble);
+  
+  floatingWindow.appendChild(wrap);
+  floatingWindow.scrollTop = floatingWindow.scrollHeight;
+  
+  return wrap;
+}
+
+function hideFloatingTyping(el) {
+  try { if (el && el.parentElement) el.parentElement.removeChild(el); } catch {}
+}
+
+// Auto-close floating chat when Chat tab becomes active
+function handleTabSwitch(tabName) {
+  if (tabName === 'chat' && floatingChatOpen) {
+    const floatingModal = $('#floating-chat-modal');
+    if (floatingModal) {
+      floatingModal.classList.add('hidden');
+      floatingChatOpen = false;
+    }
+  }
+}
+
+// Modify switchTab function to handle floating chat
+const originalSwitchTab = switchTab;
+switchTab = function(name) {
+  originalSwitchTab(name);
+  handleTabSwitch(name);
+};
+
+// Start the application
+init().then(() => {
+  setupFloatingChat();
+});

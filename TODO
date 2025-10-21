@@ -6,7 +6,6 @@
   ## CRITICAL PRIORITY - Core Functionality
 ### Must fix for basic app operation
   ☐ Fix dependency installation error - Express module not found (ERR_MODULE_NOT_FOUND)
-  ☐ Resolve Google Drive sync conflicts causing EBADF/EPERM npm install errors
   ⏳ Create a plan for AI to respond to user messages. Right now the AI does not appropriately respond to user inputs in a meaningful way.
      → IN PROGRESS: Implemented training on USER messages only (breaks gibberish feedback loop)
      → Added quality checks to Markov chain output
@@ -17,7 +16,8 @@
 
 ## HIGH PRIORITY - Essential Features
 ### Core communication and user experience
-  ☐ **RESTART MYPAL APP to activate new features** (affirmations, temporal memory, curiosity, priority learning!)
+  ☐ **RESTART MYPAL APP to activate new features** (affirmations, temporal memory, curiosity, priority learning, definitions!)
+  ☐ Create a "debug" or "developer" mode toggle in Settings to enable verbose logging and testing features as a developer tool in the frontend UI.
   ☐ Test affirmation system:
     - "Yes, happy is good" should reinforce happy (+8), good (+6), and relationship (+10)
     - "You are right! Eating is important" should trigger curiosity → "Why is eating important?"
@@ -30,6 +30,11 @@
   ☐ Test priority learning chains:
     - Answer Pal's "Why?" question → words should get 3.5-4.0x learning multiplier
     - Check learningChains metadata in vocabulary entries
+  ☐ Test definitional learning system:
+    - "Question means we want to learn" should store definition for "question" concept
+    - "Question means we are wondering" should add second definition
+    - Check definitions[] array in vocabulary entry
+    - Verify relationship created: question:means → "we want to learn"
   ☐ Test quotation learning ("You should say 'hello' to greet people")
   ☐ Test correction system ("Don't say 'You is', say 'You are'")
   ☐ Verify subjective narratives appear in memories with proper styling
@@ -233,3 +238,8 @@
   ☑ Implement priority learning chains (checkAnsweringQuestion, applyPriorityLearning with 2.5-4.0x multipliers)
   ☑ Track learning chain metadata (chainId, concept, question, multiplier)
   ☑ Create comprehensive AFFIRMATION_REINFORCEMENT.md design document
+  ☑ Implement definitional learning system (detectDefinition for "X means Y" patterns)
+  ☑ Add learnFromDefinition to store definitions as structured knowledge
+  ☑ Create definitions[] array in vocabulary entries with reinforcement tracking
+  ☑ Store definition relationships in state.relationships for concept linking
+  ☑ Integrate definition detection into /api/chat endpoint

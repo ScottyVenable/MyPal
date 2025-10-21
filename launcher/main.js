@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, Tray, Menu, shell, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -9,6 +9,8 @@ const backendPort = process.env.MYPAL_BACKEND_PORT || process.env.PORT || '3001'
 let backendProcess = null;
 let backendReady = false;
 let quitting = false;
+let mainWindow = null;
+let tray = null;
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) {
@@ -36,6 +38,115 @@ function shutdownBackend(signal = 'SIGTERM') {
       try { backendProcess.kill(signal); } catch (__) {}
     }
   }
+}
+
+function createTray(rootDir) {
+  // Create a native image for the tray icon
+  // Electron will use a default icon if we don't provide one
+  let trayIcon = nativeImage.createEmpty();
+  
+  const iconCandidates = [
+    path.join(rootDir, 'launcher', 'icon.png'),
+    path.join(rootDir, 'app', 'frontend', 'favicon.ico'),
+    path.join(__dirname, 'icon.png')
+  ];
+  
+  for (const candidate of iconCandidates) {
+    if (fs.existsSync(candidate)) {
+      try {
+        trayIcon = nativeImage.createFromPath(candidate);
+        if (!trayIcon.isEmpty()) {
+          break;
+        }
+      } catch (err) {
+        console.warn('Failed to load icon from', candidate, err);
+      }
+    }
+  }
+
+  // Create tray with icon (or empty icon if none found)
+  tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
+  
+  const updateTrayMenu = () => {
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'MyPal',
+        type: 'normal',
+        enabled: false
+      },
+      { type: 'separator' },
+      {
+        label: mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() ? 'Hide Window' : 'Show Window',
+        click: () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            if (mainWindow.isVisible()) {
+              mainWindow.hide();
+            } else {
+              mainWindow.show();
+              mainWindow.focus();
+            }
+            updateTrayMenu();
+          }
+        }
+      },
+      { type: 'separator' },
+      {
+        label: `Server: ${backendReady ? 'Running' : 'Stopped'}`,
+        enabled: false
+      },
+      {
+        label: 'Open in Browser',
+        click: () => {
+          shell.openExternal(`http://localhost:${backendPort}`);
+        },
+        enabled: backendReady
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit MyPal',
+        click: async () => {
+          const choice = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Quit', 'Cancel'],
+            defaultId: 0,
+            title: 'Quit MyPal',
+            message: 'Do you want to shut down the MyPal server and quit?',
+            detail: 'The server will be safely shut down.'
+          });
+
+          if (choice.response === 0) {
+            quitting = true;
+            app.quit();
+          }
+        }
+      }
+    ]);
+
+    tray.setContextMenu(contextMenu);
+  };
+
+  updateTrayMenu();
+  
+  tray.setToolTip('MyPal - AI Companion');
+  
+  tray.on('click', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isVisible()) {
+        mainWindow.focus();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
+  });
+
+  // Update menu when window visibility changes
+  if (mainWindow) {
+    mainWindow.on('show', updateTrayMenu);
+    mainWindow.on('hide', updateTrayMenu);
+  }
+
+  return tray;
 }
 
 function resolveRootDir() {
@@ -121,21 +232,34 @@ async function startBackend(rootDir) {
       } catch (_) {}
     };
 
-    backendProcess = spawn(process.execPath, [backendEntry], {
+    // Decide whether to show console window
+    const showConsole = !app.isPackaged && !process.env.MYPAL_NO_SERVER_CONSOLE;
+    
+    // Spawn the backend server
+    const spawnOptions = {
       cwd: backendDir,
       env,
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+      windowsHide: !showConsole // Show or hide console window on Windows
+    };
 
-    backendProcess.stdout?.on('data', (chunk) => {
-      writeSafe(process.stdout, chunk);
-      writeSafe(outStream, chunk);
-    });
+    backendProcess = spawn(process.execPath, [backendEntry], spawnOptions);
 
-    backendProcess.stderr?.on('data', (chunk) => {
-      writeSafe(process.stderr, chunk);
-      writeSafe(errStream || outStream, chunk);
-    });
+    // Pipe output to log files
+    if (backendProcess.stdout) {
+      backendProcess.stdout.on('data', (chunk) => {
+        writeSafe(process.stdout, chunk);
+        writeSafe(outStream, chunk);
+      });
+    }
+
+    if (backendProcess.stderr) {
+      backendProcess.stderr.on('data', (chunk) => {
+        writeSafe(process.stderr, chunk);
+        writeSafe(errStream || outStream, chunk);
+      });
+    }
 
     backendProcess.once('error', (err) => {
       closeStreams();
@@ -149,6 +273,7 @@ async function startBackend(rootDir) {
       backendReady = false;
       backendProcess = null;
       closeStreams();
+      
       if (quitting) return;
       const reason = signal ? `signal ${signal}` : `exit code ${code}`;
       const message = `The MyPal backend stopped unexpectedly (${reason}).${logHint}`;
@@ -183,7 +308,7 @@ async function startBackend(rootDir) {
 }
 
 async function createWindow(rootDir) {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1100,
     height: 780,
     minWidth: 900,
@@ -210,6 +335,42 @@ async function createWindow(rootDir) {
       console.warn('Failed to open devtools', err);
     }
   }
+
+  // Handle window close with confirmation
+  mainWindow.on('close', async (e) => {
+    if (quitting) return;
+
+    e.preventDefault();
+
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Shut Down Server', 'Keep Server Running', 'Cancel'],
+      defaultId: 2,
+      title: 'Close MyPal',
+      message: 'What would you like to do?',
+      detail: 'You can shut down the server completely, keep it running in the background (accessible via system tray), or cancel.'
+    });
+
+    if (choice.response === 0) {
+      // Shut down server and quit
+      quitting = true;
+      app.quit();
+    } else if (choice.response === 1) {
+      // Keep server running, hide to tray
+      mainWindow.hide();
+      
+      // Show notification about system tray
+      if (tray) {
+        tray.displayBalloon({
+          title: 'MyPal Running in Background',
+          content: 'MyPal server is still running. Right-click the tray icon to manage or quit.'
+        });
+      }
+    }
+    // choice.response === 2 is cancel, do nothing
+  });
+
+  return mainWindow;
 }
 
 async function launch() {
@@ -217,6 +378,9 @@ async function launch() {
     const rootDir = resolveRootDir();
     await startBackend(rootDir);
     await createWindow(rootDir);
+    
+    // Create system tray
+    createTray(rootDir);
   } catch (err) {
     const message = err && err.message ? err.message : String(err);
     dialog.showErrorBox('Failed to launch MyPal', message);
@@ -226,8 +390,13 @@ async function launch() {
 
 app.whenReady().then(launch);
 
-app.on('window-all-closed', () => {
-  app.quit();
+app.on('window-all-closed', (e) => {
+  // Don't quit when all windows are closed if we have a tray icon
+  // The user can quit via the tray menu
+  if (!tray) {
+    app.quit();
+  }
+  // If tray exists, keep running in background
 });
 
 app.on('before-quit', () => {
@@ -237,4 +406,7 @@ app.on('before-quit', () => {
 
 app.on('quit', () => {
   shutdownBackend('SIGKILL');
+  if (tray && !tray.isDestroyed()) {
+    tray.destroy();
+  }
 });

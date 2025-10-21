@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 ws://localhost:3001; img-src 'self' data:; font-src 'self';" />
   <title>Pal — Evolving AI Companion</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -35,6 +36,7 @@
         <input id="chat-search" placeholder="Search chat history..." autocomplete="off" />
         <button id="chat-search-btn" type="button">Search</button>
         <button id="chat-search-clear" type="button">Clear</button>
+        <button id="popout-chat-btn" type="button" title="Pop out chat to floating window">📌 Pop Out</button>
       </div>
       <div id="chat-search-results" class="search-results hidden" aria-live="polite"></div>
       <div id="chat-window"></div>
@@ -120,31 +122,109 @@
     </section>
 
     <section id="tab-brain" class="tab">
-      <div class="brain-toolbar">
-        <button id="refresh-brain" type="button">Refresh Graph</button>
-        <span id="brain-summary">Nodes: 0 · Links: 0 · Memories: 0</span>
+      <div class="brain-tabs">
+        <button type="button" data-brain-tab="concepts" class="brain-tab-btn active">Concepts</button>
+        <button type="button" data-brain-tab="neural" class="brain-tab-btn">Neural Activity</button>
       </div>
-      <div class="brain-layout">
-        <div class="brain-graph-card">
-          <div id="brain-graph"></div>
+      
+      <!-- Concepts Sub-Tab (existing brain graph) -->
+      <div id="brain-tab-concepts" class="brain-tab-content active">
+        <div class="brain-toolbar">
+          <button id="refresh-brain" type="button">Refresh Graph</button>
+          <span id="brain-summary">Nodes: 0 · Links: 0 · Memories: 0</span>
         </div>
-        <aside class="brain-sidebar">
-          <div class="brain-info">
-            <h3>How to read this graph</h3>
-            <p id="brain-description">Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.</p>
-            <ul>
-              <li><strong>Size</strong>: frequency of the word.</li>
-              <li><strong>Color</strong>: interaction recency.</li>
-              <li><strong>Edges</strong>: shared context strength.</li>
-            </ul>
+        <div class="brain-layout">
+          <div class="brain-graph-card">
+            <div id="brain-graph"></div>
           </div>
-          <div class="brain-memories">
-            <div class="brain-memories-header">
-              <h3>Recent Memories <span class="help-icon" title="Memories are important interactions stored by Pal. Click on a memory to see Pal's subjective perspective of how it felt during that moment. Sentiment shows emotional tone, keywords show main concepts.">ⓘ</span></h3>
+          <aside class="brain-sidebar">
+            <div class="brain-info">
+              <h3>How to read this graph</h3>
+              <p id="brain-description">Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.</p>
+              <ul>
+                <li><strong>Size</strong>: frequency of the word.</li>
+                <li><strong>Color</strong>: interaction recency.</li>
+                <li><strong>Edges</strong>: shared context strength.</li>
+              </ul>
             </div>
-            <div id="memory-list" class="memory-list"></div>
+            <div class="brain-memories">
+              <div class="brain-memories-header">
+                <h3>Recent Memories <span class="help-icon" title="Memories are important interactions stored by Pal. Click on a memory to see Pal's subjective perspective of how it felt during that moment. Sentiment shows emotional tone, keywords show main concepts.">ⓘ</span></h3>
+              </div>
+              <div id="memory-list" class="memory-list"></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      
+      <!-- Neural Activity Sub-Tab (NEW) -->
+      <div id="brain-tab-neural" class="brain-tab-content">
+        <div class="neural-toolbar">
+          <button id="refresh-neural" type="button">Refresh</button>
+          <span id="neural-summary">Neurons: 0 · Regions: 7 · Firings: 0</span>
+        </div>
+        <div class="neural-container">
+          <div class="neural-visualization">
+            <svg id="neural-canvas" viewBox="0 0 700 700"></svg>
           </div>
-        </aside>
+          <aside class="neural-sidebar">
+            <div class="neural-info">
+              <h3>Neural Network</h3>
+              <p>Watch Pal's brain regions fire in real-time as thoughts are processed.</p>
+              <div class="region-legend">
+                <h4>Brain Regions</h4>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #64b5f6"></span>
+                  <span>Sensory Input</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #9c27b0"></span>
+                  <span>Language Center</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #66bb6a"></span>
+                  <span>Association Cortex</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #5b6fd8"></span>
+                  <span>Frontal Lobe</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #e91e63"></span>
+                  <span>Amygdala</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #ff9800"></span>
+                  <span>Memory Systems</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background: #00bcd4"></span>
+                  <span>Motor Output</span>
+                </div>
+              </div>
+            </div>
+            <div class="neural-stats">
+              <h4>Network Stats</h4>
+              <div class="stat-row">
+                <span>Total Neurons:</span>
+                <span id="neural-total">0</span>
+              </div>
+              <div class="stat-row">
+                <span>Total Firings:</span>
+                <span id="neural-firings">0</span>
+              </div>
+              <div class="stat-row">
+                <span>Most Active:</span>
+                <span id="neural-most-active">—</span>
+              </div>
+              <button id="regenerate-neural" class="neural-action-btn" type="button">🧠 Regenerate Neural Network</button>
+            </div>
+            <div class="neural-events">
+              <h4>Recent Activity</h4>
+              <div id="neural-event-list" class="event-list"></div>
+            </div>
+          </aside>
+        </div>
       </div>
     </section>
 
@@ -231,6 +311,54 @@
         <button id="retry-connection" type="button">Retry</button>
         <button id="dismiss-connection" type="button">Dismiss</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Neural Network Regeneration Modal -->
+  <div id="neural-regen-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="neural-regen-title">
+    <div class="modal-card neural-regen-card">
+      <h2 id="neural-regen-title">🧠 Generating Neural Network</h2>
+      <p class="neural-regen-subtitle">This may take a while...</p>
+      
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div id="neural-regen-progress" class="progress-fill" style="width: 0%"></div>
+          <span id="neural-regen-percent" class="progress-text">0%</span>
+        </div>
+      </div>
+      
+      <div class="neural-regen-status">
+        <div class="status-message" id="neural-regen-message">Initializing...</div>
+        <div class="status-eta" id="neural-regen-eta">Calculating time remaining...</div>
+      </div>
+      
+      <div class="neural-regen-phase">
+        <span class="phase-label">Phase:</span>
+        <span id="neural-regen-phase" class="phase-value">Starting</span>
+      </div>
+      
+      <div class="modal-actions">
+        <button id="neural-regen-close" class="primary" type="button" disabled>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Chat Modal -->
+  <div id="floating-chat-modal" class="floating-chat-modal hidden">
+    <div class="floating-chat-header">
+      <span class="floating-chat-title">💬 Chat with Pal</span>
+      <button id="close-floating-chat" class="close-floating-btn" type="button" title="Close floating chat">✕</button>
+    </div>
+    <div class="floating-chat-body">
+      <div class="emotion-display-mini" id="emotion-display-floating">
+        <div class="emotion-icon-mini" id="emotion-icon-floating">😊</div>
+        <div class="emotion-mood-mini" id="emotion-mood-floating">Pal is calm</div>
+      </div>
+      <div id="floating-chat-window"></div>
+      <form id="floating-chat-form">
+        <input id="floating-chat-input" placeholder="Type a message..." autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
     </div>
   </div>
 
