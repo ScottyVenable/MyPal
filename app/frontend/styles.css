@@ -9,6 +9,90 @@ main { padding: 16px; }
 .tab { display: none; }
 .tab.active { display: block; }
 
+.emotion-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #1a2142 0%, #151935 100%);
+  border: 1px solid #2a306b;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.emotion-icon {
+  font-size: 40px;
+  line-height: 1;
+  animation: emotionPulse 2s ease-in-out infinite;
+  user-select: none;
+  min-width: 50px;
+  text-align: center;
+}
+
+@keyframes emotionPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.emotion-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.emotion-mood {
+  font-size: 14px;
+  color: #9ab4ff;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.emotion-bar {
+  height: 6px;
+  background: #1f2452;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.emotion-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3240a8 0%, #5b6fd8 100%);
+  border-radius: 3px;
+  transition: width 0.5s ease-out, background 0.3s ease;
+  box-shadow: 0 0 8px rgba(50, 64, 168, 0.6);
+}
+
+.emotion-fill.happy {
+  background: linear-gradient(90deg, #ffc107 0%, #ff9800 100%);
+  box-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+}
+
+.emotion-fill.curious {
+  background: linear-gradient(90deg, #4caf50 0%, #66bb6a 100%);
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+}
+
+.emotion-fill.caring {
+  background: linear-gradient(90deg, #e91e63 0%, #f06292 100%);
+  box-shadow: 0 0 8px rgba(233, 30, 99, 0.6);
+}
+
+.emotion-fill.concerned {
+  background: linear-gradient(90deg, #9c27b0 0%, #ba68c8 100%);
+  box-shadow: 0 0 8px rgba(156, 39, 176, 0.6);
+}
+
+.emotion-fill.friendly {
+  background: linear-gradient(90deg, #00bcd4 0%, #4dd0e1 100%);
+  box-shadow: 0 0 8px rgba(0, 188, 212, 0.6);
+}
+
+.emotion-fill.focused {
+  background: linear-gradient(90deg, #3f51b5 0%, #5c6bc0 100%);
+  box-shadow: 0 0 8px rgba(63, 81, 181, 0.6);
+}
+
 #chat-window { height: 60vh; overflow-y: auto; padding: 12px; background: #121634; border: 1px solid #2a306b; border-radius: 8px; }
 .msg { display: flex; margin: 8px 0; }
 .msg .bubble { max-width: 70%; padding: 8px 12px; border-radius: 14px; }
@@ -48,6 +132,65 @@ main { padding: 16px; }
 
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
 .stat-box { background: #121634; border: 1px solid #2a306b; border-radius: 8px; padding: 8px; text-align: center; }
+
+.current-emotion-card {
+  background: #121634;
+  border: 1px solid #2a306b;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.current-emotion-card h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  color: #9ab4ff;
+}
+
+.emotion-display-large {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.emotion-icon-large {
+  font-size: 80px;
+  line-height: 1;
+  user-select: none;
+  animation: emotionPulse 2s ease-in-out infinite;
+}
+
+.emotion-info {
+  flex: 1;
+}
+
+.emotion-label {
+  font-size: 12px;
+  color: #7a8ab8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  margin-top: 12px;
+}
+
+.emotion-label:first-child {
+  margin-top: 0;
+}
+
+.emotion-value {
+  font-size: 18px;
+  color: #e6e8f0;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.emotion-bar-large {
+  height: 12px;
+  background: #1f2452;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
 
 .brain-placeholder { height: 400px; background: #121634; border: 1px dashed #2a306b; border-radius: 8px; display: flex; align-items: center; justify-content: center; opacity: 0.8; }
 

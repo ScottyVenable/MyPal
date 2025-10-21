@@ -68,6 +68,39 @@ function formatTimestamp(ts) {
   return `${day} | ${time}`;
 }
 
+function updateEmotionDisplay(emotion) {
+  if (!emotion) return;
+  
+  const icon = $('#emotion-icon');
+  const mood = $('#emotion-mood');
+  const fill = $('#emotion-fill');
+  
+  if (!icon || !mood || !fill) return;
+  
+  // Update icon with animation
+  icon.style.animation = 'none';
+  setTimeout(() => {
+    icon.textContent = emotion.expression || '😊';
+    icon.style.animation = 'emotionPulse 2s ease-in-out infinite';
+  }, 10);
+  
+  // Update mood text
+  const moodText = `Pal is ${emotion.description || 'calm'}`;
+  mood.textContent = moodText;
+  
+  // Update emotion bar
+  const intensity = (emotion.intensity || 0.5) * 100;
+  fill.style.width = `${intensity}%`;
+  
+  // Remove all mood classes
+  fill.classList.remove('happy', 'curious', 'caring', 'concerned', 'friendly', 'focused');
+  
+  // Add current mood class
+  if (emotion.mood) {
+    fill.classList.add(emotion.mood);
+  }
+}
+
 function switchTab(name) {
   const target = document.getElementById(`tab-${name}`);
   if (!target) {
@@ -188,6 +221,24 @@ function renderStats(s) {
   }
   if (document.getElementById('auth-required')) {
     $('#auth-required').checked = !!s.settings?.authRequired;
+  }
+  
+  // Update emotion display in stats tab
+  if (s.currentEmotion) {
+    const statIcon = $('#stat-emotion-icon');
+    const statMood = $('#stat-emotion-mood');
+    const statFill = $('#stat-emotion-fill');
+    
+    if (statIcon) statIcon.textContent = s.currentEmotion.expression || '😊';
+    if (statMood) statMood.textContent = s.currentEmotion.description || 'Calm';
+    if (statFill) {
+      const intensity = (s.currentEmotion.intensity || 0.5) * 100;
+      statFill.style.width = `${intensity}%`;
+      statFill.classList.remove('happy', 'curious', 'caring', 'concerned', 'friendly', 'focused');
+      if (s.currentEmotion.mood) {
+        statFill.classList.add(s.currentEmotion.mood);
+      }
+    }
   }
 
   const labels = ['Curious', 'Logical', 'Social', 'Agreeable', 'Cautious'];
@@ -555,6 +606,12 @@ function wireChat() {
       const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
       const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
       addMessage('pal', replyText, meta);
+      
+      // Update emotion display if emotion data is present
+      if (res?.emotion) {
+        updateEmotionDisplay(res.emotion);
+      }
+      
       const wasDirty = multiplierDirty;
       await refreshStats();
       multiplierDirty = wasDirty;

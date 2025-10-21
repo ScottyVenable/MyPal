@@ -314,6 +314,77 @@ function analyzeSentiment(text) {
   return score > 1 ? 'positive' : score < -1 ? 'negative' : 'neutral';
 }
 
+function determineEmotionalState(constrained, responseContext, state) {
+  const strategy = constrained.strategy || '';
+  const utteranceType = constrained.utterance_type || '';
+  const userSentiment = responseContext.sentiment || 'neutral';
+  const level = state.level || 0;
+  
+  // Emotional state has: mood, intensity (0-1), expression
+  const emotionalState = {
+    mood: 'neutral',
+    intensity: 0.5,
+    expression: '😊',
+    description: 'calm',
+  };
+  
+  // Determine mood based on strategy and context
+  if (strategy.includes('emotional-resonance') || strategy.includes('emotional-echo')) {
+    // Mirroring user's emotion
+    if (userSentiment === 'positive') {
+      emotionalState.mood = 'happy';
+      emotionalState.expression = level < 2 ? '😊' : level < 5 ? '😄' : '🥰';
+      emotionalState.description = level < 2 ? 'feeling good' : level < 5 ? 'happy' : 'joyful';
+      emotionalState.intensity = 0.7;
+    } else if (userSentiment === 'negative') {
+      emotionalState.mood = 'concerned';
+      emotionalState.expression = level < 2 ? '😟' : level < 5 ? '😢' : '🥺';
+      emotionalState.description = level < 2 ? 'sensing sadness' : level < 5 ? 'concerned' : 'empathetic';
+      emotionalState.intensity = 0.6;
+    }
+  } else if (strategy.includes('curiosity') || strategy.includes('inquiry') || strategy.includes('cognitive')) {
+    emotionalState.mood = 'curious';
+    emotionalState.expression = level < 2 ? '🤔' : level < 5 ? '🧐' : '💭';
+    emotionalState.description = level < 2 ? 'wondering' : level < 5 ? 'curious' : 'thinking deeply';
+    emotionalState.intensity = 0.6;
+  } else if (strategy.includes('empathy') || strategy.includes('comfort') || strategy.includes('prosocial')) {
+    emotionalState.mood = 'caring';
+    emotionalState.expression = level < 2 ? '💙' : level < 5 ? '🤗' : '💖';
+    emotionalState.description = level < 2 ? 'caring' : level < 5 ? 'supportive' : 'deeply caring';
+    emotionalState.intensity = 0.7;
+  } else if (strategy.includes('exploration') || strategy.includes('awakening')) {
+    emotionalState.mood = 'curious';
+    emotionalState.expression = level < 1 ? '👀' : level < 3 ? '✨' : '🌟';
+    emotionalState.description = level < 1 ? 'awakening' : level < 3 ? 'exploring' : 'discovering';
+    emotionalState.intensity = 0.5;
+  } else if (strategy.includes('social') || strategy.includes('greeting') || strategy.includes('reciprocity')) {
+    emotionalState.mood = 'friendly';
+    emotionalState.expression = level < 2 ? '👋' : level < 5 ? '😊' : '🌈';
+    emotionalState.description = level < 2 ? 'noticing you' : level < 5 ? 'friendly' : 'warm & welcoming';
+    emotionalState.intensity = 0.6;
+  } else if (strategy.includes('vocabulary') || strategy.includes('learning') || strategy.includes('word')) {
+    emotionalState.mood = 'focused';
+    emotionalState.expression = level < 2 ? '📚' : level < 5 ? '🎓' : '🧠';
+    emotionalState.description = level < 2 ? 'listening' : level < 5 ? 'learning' : 'studying intently';
+    emotionalState.intensity = 0.6;
+  } else if (utteranceType.includes('emotional') || utteranceType.includes('affective')) {
+    // General emotional expression
+    if (userSentiment === 'positive' || constrained.output?.includes('happy') || constrained.output?.includes('good')) {
+      emotionalState.mood = 'happy';
+      emotionalState.expression = level < 3 ? '😊' : '😄';
+      emotionalState.description = level < 3 ? 'happy' : 'delighted';
+      emotionalState.intensity = 0.7;
+    } else {
+      emotionalState.mood = 'reflective';
+      emotionalState.expression = '🤔';
+      emotionalState.description = 'thoughtful';
+      emotionalState.intensity = 0.5;
+    }
+  }
+  
+  return emotionalState;
+}
+
 function tokenizeMessage(text) {
   return (String(text || '').toLowerCase().match(/[a-z]{2,}/g) || []).slice(0, 40);
 }
@@ -1823,6 +1894,12 @@ app.get('/api/stats', (req, res) => {
     personality: state.personality,
     vocabSize: vocabulary.length,
     memoryCount: memories.length,
+    currentEmotion: state.currentEmotion || {
+      mood: 'neutral',
+      intensity: 0.5,
+      expression: '😊',
+      description: 'calm',
+    },
   });
 });
 
@@ -1972,6 +2049,10 @@ app.post('/api/chat', (req, res) => {
 
   saveCollections({ ...collections, chatLog, state, vocabulary, memories, concepts, journal });
 
+  // Determine Pal's emotional state from response
+  const palEmotion = determineEmotionalState(constrained, responseContext, state);
+  state.currentEmotion = palEmotion;
+
   res.json({
     reply: palMsg.text,
     kind: constrained.utterance_type,
@@ -1985,6 +2066,7 @@ app.post('/api/chat', (req, res) => {
       reasons: importance.reasons,
     },
     thoughtId: thought.id,
+    emotion: palEmotion,
   });
 });
 

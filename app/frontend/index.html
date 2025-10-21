@@ -22,6 +22,15 @@
 
   <main>
     <section id="tab-chat" class="tab active">
+      <div class="emotion-display" id="emotion-display">
+        <div class="emotion-icon" id="emotion-icon">😊</div>
+        <div class="emotion-details">
+          <div class="emotion-mood" id="emotion-mood">Pal is calm</div>
+          <div class="emotion-bar">
+            <div class="emotion-fill" id="emotion-fill" style="width: 50%"></div>
+          </div>
+        </div>
+      </div>
       <div id="chat-window"></div>
       <form id="chat-form">
         <input id="chat-input" placeholder="Teach Pal…" autocomplete="off" />
@@ -48,6 +57,22 @@
           <div id="stat-vocab">0</div>
         </div>
       </div>
+      
+      <div class="current-emotion-card">
+        <h3>Current Emotional State</h3>
+        <div class="emotion-display-large">
+          <div class="emotion-icon-large" id="stat-emotion-icon">😊</div>
+          <div class="emotion-info">
+            <div class="emotion-label">Mood</div>
+            <div class="emotion-value" id="stat-emotion-mood">Calm</div>
+            <div class="emotion-label">Intensity</div>
+            <div class="emotion-bar-large">
+              <div class="emotion-fill" id="stat-emotion-fill" style="width: 50%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <canvas id="personalityChart" width="400" height="400"></canvas>
     </section>
 
