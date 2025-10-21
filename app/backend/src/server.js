@@ -177,8 +177,8 @@ const files = {
   users: path.join(DATA_DIR, 'users.json'),
   sessions: path.join(DATA_DIR, 'sessions.json'),
   vocabulary: null, // Will use profileManager.getCurrentProfilePath('vocabulary.json')
-  concepts: path.join(DATA_DIR, 'concepts.json'), // Shared for now
-  facts: path.join(DATA_DIR, 'facts.json'), // Shared for now
+  concepts: null, // Will use profileManager.getCurrentProfilePath('concepts.json')
+  facts: null, // Will use profileManager.getCurrentProfilePath('facts.json')
   memories: null, // Will use profileManager.getCurrentProfilePath('memories.json')
   journal: null, // Will use profileManager.getCurrentProfilePath('journal.json')
   chatLog: null, // Will use profileManager.getCurrentProfilePath('chat-log.json')
@@ -274,10 +274,8 @@ function getCollections() {
   const chatLog = profileManager.getCurrentProfileData('chat-log.json') || [];
   const journal = profileManager.getCurrentProfileData('journal.json') || [];
   const neuralNetwork = profileManager.getCurrentProfileData('neural.json') || null;
-  
-  // Load shared data
-  const concepts = readJson(files.concepts, []);
-  const facts = readJson(files.facts, []);
+  const concepts = profileManager.getCurrentProfileData('concepts.json') || [];
+  const facts = profileManager.getCurrentProfileData('facts.json') || [];
   
   return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork };
 }
@@ -293,10 +291,8 @@ function saveCollections({ state, users, sessions, vocabulary, concepts, facts, 
   if (chatLog) profileManager.saveCurrentProfileData('chat-log.json', chatLog);
   if (journal) profileManager.saveCurrentProfileData('journal.json', journal);
   if (neuralNetwork) profileManager.saveCurrentProfileData('neural.json', neuralNetwork);
-  
-  // Save shared data
-  if (concepts) writeJson(files.concepts, concepts);
-  if (facts) writeJson(files.facts, facts);
+  if (concepts) profileManager.saveCurrentProfileData('concepts.json', concepts);
+  if (facts) profileManager.saveCurrentProfileData('facts.json', facts);
   
   // Update profile metadata with latest stats
   profileManager.updateProfileMetadata({
@@ -4005,6 +4001,12 @@ app.post('/api/profiles', (req, res) => {
     }
     
     const profile = profileManager.createProfile(name.trim());
+    
+    // Reinitialize neural broadcaster for the new profile
+    if (profile.success && typeof setupNeuralBroadcaster === 'function') {
+      setupNeuralBroadcaster();
+    }
+    
     res.json(profile);
   } catch (err) {
     console.error('Error creating profile:', err);
@@ -4022,6 +4024,11 @@ app.post('/api/profiles/:id/load', (req, res) => {
     
     if (!profile) {
       return res.status(404).json({ error: 'Profile not found' });
+    }
+    
+    // Reinitialize neural broadcaster for the new profile
+    if (typeof setupNeuralBroadcaster === 'function') {
+      setupNeuralBroadcaster();
     }
     
     res.json(profile);
@@ -5049,7 +5056,55 @@ server = app.listen(PORT, () => {
 });
 
 // --- WebSocket server for neural events ---
+// Global variables for neural broadcaster management
 let wss = null;
+let neuralBroadcaster = null;
+let neuralPersistInterval = null;
+
+// Function to setup neural broadcaster for current profile
+function setupNeuralBroadcaster() {
+  if (!wss) {
+    console.warn('Cannot setup neural broadcaster: WebSocket server not available');
+    return;
+  }
+
+  // Clean up old broadcaster if it exists
+  if (neuralPersistInterval) {
+    clearInterval(neuralPersistInterval);
+    neuralPersistInterval = null;
+  }
+
+  // Get neural network for current profile
+  const collectionsForBroadcast = getCollections();
+  neuralBroadcaster = getNeuralNetwork(collectionsForBroadcast);
+  
+  // Register event broadcaster
+  neuralBroadcaster.onNeuralEvent((event) => {
+    try {
+      const payload = JSON.stringify({ type: 'neural-event', payload: event });
+      for (const client of wss.clients) {
+        if (client.readyState === 1) client.send(payload);
+      }
+    } catch (err) {
+      console.error('Broadcast error', err);
+    }
+  });
+
+  // Periodically persist neural events from the broadcast instance into saved collections
+  neuralPersistInterval = setInterval(() => {
+    try {
+      const collectionsSave = getCollections();
+      collectionsSave.neuralNetwork = neuralBroadcaster.toJSON();
+      saveCollections(collectionsSave);
+    } catch (err) {
+      console.error('Failed to persist neural state', err);
+    }
+  }, 5000);
+
+  const currentProfileId = profileManager.getCurrentProfileId();
+  console.log('Neural broadcaster initialized for profile:', currentProfileId || 'none');
+}
+
 try {
   wss = new WebSocketServer({ noServer: true });
   server.on('upgrade', (request, socket, head) => {
@@ -5066,7 +5121,7 @@ try {
 
   wss.on('connection', (ws) => {
     console.log('WebSocket client connected to neural-stream');
-    // Send initial neural snapshot
+    // Send initial neural snapshot for current profile
     try {
       const collections = getCollections();
       const neural = getNeuralNetwork(collections);
@@ -5080,11 +5135,12 @@ try {
       try {
         const data = JSON.parse(String(msg));
         if (data && data.action === 'triggerNeuron' && data.neuronId) {
+          // Use current profile's neural network
           const collections = getCollections();
           const neural = getNeuralNetwork(collections);
           neural.metrics.manualTriggers++;
           neural.triggerNeuron(data.neuronId, 1.0);
-          // Persist neural state
+          // Persist neural state to current profile
           saveCollections({ ...collections, neuralNetwork: neural.toJSON() });
         }
       } catch (e) {}
@@ -5099,31 +5155,8 @@ try {
     });
   });
 
-  // Register neural event broadcaster
-  // We'll use getNeuralNetwork to obtain instance and register callback
-  const collectionsForBroadcast = getCollections();
-  const neuralForBroadcast = getNeuralNetwork(collectionsForBroadcast);
-  neuralForBroadcast.onNeuralEvent((event) => {
-    try {
-      const payload = JSON.stringify({ type: 'neural-event', payload: event });
-      for (const client of wss.clients) {
-        if (client.readyState === 1) client.send(payload);
-      }
-    } catch (err) {
-      console.error('Broadcast error', err);
-    }
-  });
-
-  // Periodically persist neural events from the broadcast instance into saved collections
-  setInterval(() => {
-    try {
-      const collectionsSave = getCollections();
-      collectionsSave.neuralNetwork = neuralForBroadcast.toJSON();
-      saveCollections(collectionsSave);
-    } catch (err) {
-      console.error('Failed to persist neural state', err);
-    }
-  }, 5000);
+  // Initialize neural broadcaster for the current profile
+  setupNeuralBroadcaster();
 } catch (err) {
   console.warn('WebSocket server not available:', err.message || err);
 }

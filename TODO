@@ -1,9 +1,51 @@
 # Next Build & Bug Fix TODO List (Prioritized)
 
 ## BUGS & ISSUES
-  ☐ When asking a question, Pal responds with a question in return, not answering question in Level 2. Is this normal behavior?
-  ## CRITICAL PRIORITY - Core Functionality
-### Must fix for basic app operation
+  ☐ Pal returns a question instead of answering user questions at Level 2
+     Environment: MyPal app (Level 2 cognitive setting)
+     Steps to reproduce:
+       1. Launch MyPal and select/configure a Pal at Level 2.
+       2. In chat, ask a direct factual question (e.g., "What is the capital of France?").
+       3. Observe the Pal's response.
+     Actual: Pal replies with a question (e.g., "Why do you want to know?") instead of giving an answer.
+     Expected: At Level 2 the Pal should return a concise, direct answer (or a low-complexity response), not deflect with another question.
+     Impact: Users do not receive expected information; degrades conversational utility.
+     Frequency: [unknown — capture frequency during verification]
+     Suspected causes: curiosity/clarification trigger thresholds too aggressive for Level 2, intent classification mislabeling information requests, level-gating logic routing to question-generation path.
+     Suggested fixes/tests:
+       - Add unit/UI test asserting direct-answer behavior for factual queries at Level 2.
+       - Adjust curiosity/why-question thresholds for Level ≤2.
+       - Verify intent classification and response-routing for "information request" intents.
+  ☐ New Pal name textbox uneditable after returning to main menu
+     Environment: MyPal UI (New Pal dialog), reproduces on main menu return flow
+     Severity: High — prevents creating new Pal
+     Frequency: Always (when reproducing steps below)
+
+     Steps to reproduce:
+       1. Launch MyPal.
+       2. From the app window, press "Exit" to return to Main Menu.
+       3. Click "New Pal" to open the New Pal dialog.
+       4. Attempt to type in the Name textbox.
+
+     Actual: No caret appears; keyboard input is ignored and textbox does not accept focus.
+     Expected: Name textbox autofocuses when the New Pal dialog opens and accepts typing.
+
+     Suspected causes:
+       - Missing autofocus logic when dialog is opened from Main Menu return path
+       - Input rendered with disabled/readonly attribute
+       - Focus trap or overlay element blocking input events
+       - Incorrect z-index stacking preventing click/focus
+       - Event handler preventing key events or stealing focus
+
+     Suggested fixes/tests:
+       - Ensure New Pal dialog sets focus to Name input on open (add autofocus or programmatic focus in dialog open handler)
+       - Verify input does not have disabled/readonly attributes in this code path
+       - Inspect DOM stacking and remove/blocking overlays or fix z-index
+       - Audit keyboard/focus-related event handlers for unintended preventDefault()/stopPropagation()
+       - Add automated UI/E2E test: open Main Menu → New Pal → assert Name input has focus and accepts text entry
+       - Add unit test for dialog open lifecycle to prevent regressions
+
+## CRITICAL PRIORITY - Core Functionality
   ☑ Fix dependency installation error - Express module not found (ERR_MODULE_NOT_FOUND)
   ⏳ Create a plan for AI to respond to user messages. Right now the AI does not appropriately respond to user inputs in a meaningful way.
      → IN PROGRESS: Implemented training on USER messages only (breaks gibberish feedback loop)

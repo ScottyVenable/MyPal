@@ -107,10 +107,12 @@ class ProfileManager {
     // Create initial data files
     const initialData = {
       'metadata.json': metadata,
-      'chat-log.json': { messages: [] },
-      'memories.json': { memories: [] },
-      'vocabulary.json': { words: {} },
-      'journal.json': { entries: [] },
+      'chat-log.json': [],
+      'memories.json': [],
+      'vocabulary.json': [],
+      'journal.json': [],
+      'concepts.json': [],
+      'facts.json': [],
       'settings.json': {
         xpMultiplier: 1,
         apiProvider: 'local',

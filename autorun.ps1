@@ -111,7 +111,142 @@ Write-Host "Tip: Run '.\autorun.ps1 -NoServerConsole' to skip the console window
 Write-Host "Tip: Run '.\autorun.ps1 -SkipInstall' for faster restarts" -ForegroundColor DarkGray
 Write-Host ""
 
-# todo: add a prompt for user to select dev vs prod mode, run commands before launch, change env vars/directories, etc.
+# Interactive mode selection
+Write-Host "Select launch mode:" -ForegroundColor Cyan
+Write-Host "  [1] Development (default - uses dev-data, dev-logs)" -ForegroundColor White
+Write-Host "  [2] Production (uses production data directories)" -ForegroundColor White
+Write-Host "  [3] Custom (configure paths and options)" -ForegroundColor White
+Write-Host ""
+$modeChoice = Read-Host "Enter choice [1-3] (press Enter for default)"
+
+if ([string]::IsNullOrWhiteSpace($modeChoice)) {
+    $modeChoice = "1"
+}
+
+switch ($modeChoice) {
+    "2" {
+        # Production mode
+        Write-Host "`nProduction Mode Selected" -ForegroundColor Green
+        $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "data"
+        $env:MYPAL_LOGS_DIR = Join-Path $scriptRoot "logs"
+        $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
+        $env:MYPAL_FORCE_TELEMETRY = '0'
+        $env:NODE_ENV = 'production'
+    }
+    "3" {
+        # Custom mode
+        Write-Host "`nCustom Mode - Configure Options" -ForegroundColor Yellow
+        Write-Host ""
+        
+        # Data directory
+        Write-Host "Current data directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
+        $customData = Read-Host "Enter custom data directory (press Enter to keep current)"
+        if (-not [string]::IsNullOrWhiteSpace($customData)) {
+            $env:MYPAL_DATA_DIR = $customData
+        }
+        
+        # Logs directory
+        Write-Host "Current logs directory: $env:MYPAL_LOGS_DIR" -ForegroundColor Gray
+        $customLogs = Read-Host "Enter custom logs directory (press Enter to keep current)"
+        if (-not [string]::IsNullOrWhiteSpace($customLogs)) {
+            $env:MYPAL_LOGS_DIR = $customLogs
+        }
+        
+        # Port
+        Write-Host "Current port: 3001 (default)" -ForegroundColor Gray
+        $customPort = Read-Host "Enter custom port (press Enter for default)"
+        if (-not [string]::IsNullOrWhiteSpace($customPort)) {
+            $env:MYPAL_BACKEND_PORT = $customPort
+        }
+        
+        # Telemetry
+        Write-Host "Enable telemetry? [Y/n]" -ForegroundColor Gray
+        $telemetryChoice = Read-Host
+        if ($telemetryChoice -eq "n" -or $telemetryChoice -eq "N") {
+            $env:MYPAL_FORCE_TELEMETRY = '0'
+        } else {
+            $env:MYPAL_FORCE_TELEMETRY = '1'
+        }
+        
+        Write-Host "`nCustom configuration applied" -ForegroundColor Green
+    }
+    default {
+        # Development mode (default)
+        Write-Host "`nDevelopment Mode Selected" -ForegroundColor Green
+    }
+}
+
+# Ask about running pre-launch commands
+Write-Host ""
+Write-Host "Run pre-launch commands? [y/N]" -ForegroundColor Cyan
+$runCommands = Read-Host
+if ($runCommands -eq "y" -or $runCommands -eq "Y") {
+    Write-Host ""
+    Write-Host "Available commands:" -ForegroundColor Yellow
+    Write-Host "  [1] Clear data directory" -ForegroundColor White
+    Write-Host "  [2] Clear logs directory" -ForegroundColor White
+    Write-Host "  [3] Rebuild node_modules (npm install)" -ForegroundColor White
+    Write-Host "  [4] Run tests" -ForegroundColor White
+    Write-Host "  [5] Skip" -ForegroundColor White
+    Write-Host ""
+    $cmdChoice = Read-Host "Enter choice [1-5]"
+    
+    switch ($cmdChoice) {
+        "1" {
+            Write-Host "Clearing data directory..." -ForegroundColor Yellow
+            if (Test-Path $env:MYPAL_DATA_DIR) {
+                Remove-Item -Path "$env:MYPAL_DATA_DIR\*" -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "Data directory cleared" -ForegroundColor Green
+            }
+        }
+        "2" {
+            Write-Host "Clearing logs directory..." -ForegroundColor Yellow
+            if (Test-Path $env:MYPAL_LOGS_DIR) {
+                Remove-Item -Path "$env:MYPAL_LOGS_DIR\*" -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "Logs directory cleared" -ForegroundColor Green
+            }
+        }
+        "3" {
+            Write-Host "Rebuilding dependencies..." -ForegroundColor Yellow
+            Push-Location $backendDir
+            try {
+                Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
+                npm install
+            } finally {
+                Pop-Location
+            }
+            Push-Location $launcherDir
+            try {
+                Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
+                npm install
+            } finally {
+                Pop-Location
+            }
+            Write-Host "Dependencies rebuilt" -ForegroundColor Green
+        }
+        "4" {
+            Write-Host "Running tests..." -ForegroundColor Yellow
+            Push-Location $backendDir
+            try {
+                npm test
+            } finally {
+                Pop-Location
+            }
+        }
+        default {
+            Write-Host "Skipping pre-launch commands" -ForegroundColor Gray
+        }
+    }
+}
+
+Write-Host ""
+Write-Host "Final configuration:" -ForegroundColor Cyan
+Write-Host "  Data: $env:MYPAL_DATA_DIR" -ForegroundColor White
+Write-Host "  Logs: $env:MYPAL_LOGS_DIR" -ForegroundColor White
+if ($env:MYPAL_BACKEND_PORT) {
+    Write-Host "  Port: $env:MYPAL_BACKEND_PORT" -ForegroundColor White
+}
+Write-Host ""
 
 Push-Location $launcherDir
 try {
