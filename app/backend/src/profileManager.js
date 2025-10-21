@@ -1,6 +1,6 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 
 class ProfileManager {
   constructor(baseDataDir) {
@@ -324,4 +324,4 @@ class ProfileManager {
   }
 }
 
-module.exports = ProfileManager;
+export default ProfileManager;

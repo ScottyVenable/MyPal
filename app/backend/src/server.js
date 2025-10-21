@@ -8,6 +8,7 @@ import { nanoid } from 'nanoid';
 import bcrypt from 'bcryptjs';
 import util from 'util';
 import { WebSocketServer } from 'ws';
+import ProfileManager from './profileManager.js';
 
 dotenv.config();
 
@@ -15,6 +16,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = (process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) ? path.resolve(process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
 const LOGS_DIR = (process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) ? path.resolve(process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
+
+// Initialize ProfileManager
+const profileManager = new ProfileManager(DATA_DIR);
 
 // Ensure data dir exists
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -150,17 +154,19 @@ const defaultState = {
   vocabulary: [], // quick cache of top learned words
 };
 
+// Files object - will use ProfileManager for profile-specific data
+// Keep users/sessions in DATA_DIR root (shared across profiles)
 const files = {
-  state: path.join(DATA_DIR, 'state.json'),
+  state: null, // Will use profileManager.getCurrentProfilePath('metadata.json')
   users: path.join(DATA_DIR, 'users.json'),
   sessions: path.join(DATA_DIR, 'sessions.json'),
-  vocabulary: path.join(DATA_DIR, 'vocabulary.json'),
-  concepts: path.join(DATA_DIR, 'concepts.json'),
-  facts: path.join(DATA_DIR, 'facts.json'),
-  memories: path.join(DATA_DIR, 'memories.json'),
-  journal: path.join(DATA_DIR, 'journal.json'),
-  chatLog: path.join(DATA_DIR, 'chatlog.json'),
-  neuralNetwork: path.join(DATA_DIR, 'neural_network.json'),
+  vocabulary: null, // Will use profileManager.getCurrentProfilePath('vocabulary.json')
+  concepts: path.join(DATA_DIR, 'concepts.json'), // Shared for now
+  facts: path.join(DATA_DIR, 'facts.json'), // Shared for now
+  memories: null, // Will use profileManager.getCurrentProfilePath('memories.json')
+  journal: null, // Will use profileManager.getCurrentProfilePath('journal.json')
+  chatLog: null, // Will use profileManager.getCurrentProfilePath('chat-log.json')
+  neuralNetwork: null, // Will use profileManager.getCurrentProfilePath('neural.json')
 };
 
 function readJson(file, fallback) {
@@ -213,26 +219,50 @@ function normalizeProgress(state) {
 }
 
 function loadState() {
-  const state = readJson(files.state, defaultState);
-  // ensure defaults and normalize progress against stored XP
-  return normalizeProgress({ ...defaultState, ...state, settings: { ...defaultState.settings, ...(state.settings || {}) } });
+  // Load from current profile's metadata
+  const metadata = profileManager.getCurrentProfileData('metadata.json');
+  if (!metadata) return normalizeProgress({ ...defaultState });
+  
+  const state = {
+    level: metadata.level || 0,
+    xp: metadata.xp || 0,
+    cp: metadata.cp || 0,
+    settings: metadata.settings || defaultState.settings,
+    personality: metadata.personality || defaultState.personality,
+    vocabulary: metadata.vocabulary || []
+  };
+  
+  return normalizeProgress({ ...defaultState, ...state });
 }
 
 function saveState(state) {
-  writeJson(files.state, state);
+  // Save to current profile's metadata
+  const metadata = profileManager.getCurrentProfileData('metadata.json') || {};
+  metadata.level = state.level;
+  metadata.xp = state.xp;
+  metadata.cp = state.cp;
+  metadata.settings = state.settings;
+  metadata.personality = state.personality;
+  metadata.vocabulary = state.vocabulary;
+  profileManager.saveCurrentProfileData('metadata.json', metadata);
 }
 
 function getCollections() {
   const state = loadState();
   const users = readJson(files.users, []);
   const sessions = readJson(files.sessions, []);
-  const vocabulary = readJson(files.vocabulary, []);
+  
+  // Load profile-specific data
+  const vocabulary = profileManager.getCurrentProfileData('vocabulary.json') || [];
+  const memories = profileManager.getCurrentProfileData('memories.json') || [];
+  const chatLog = profileManager.getCurrentProfileData('chat-log.json') || [];
+  const journal = profileManager.getCurrentProfileData('journal.json') || [];
+  const neuralNetwork = profileManager.getCurrentProfileData('neural.json') || null;
+  
+  // Load shared data
   const concepts = readJson(files.concepts, []);
   const facts = readJson(files.facts, []);
-  const memories = readJson(files.memories, []);
-  const chatLog = readJson(files.chatLog, []);
-  const journal = readJson(files.journal, []);
-  const neuralNetwork = readJson(files.neuralNetwork, null);
+  
   return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork };
 }
 
@@ -240,15 +270,25 @@ function saveCollections({ state, users, sessions, vocabulary, concepts, facts, 
   saveState(state);
   writeJson(files.users, users ?? readJson(files.users, []));
   writeJson(files.sessions, sessions ?? readJson(files.sessions, []));
-  writeJson(files.vocabulary, vocabulary);
-  writeJson(files.concepts, concepts);
-  writeJson(files.facts, facts);
-  writeJson(files.memories, memories);
-  writeJson(files.chatLog, chatLog);
-  writeJson(files.journal, journal ?? readJson(files.journal, []));
-  if (neuralNetwork) {
-    writeJson(files.neuralNetwork, neuralNetwork);
-  }
+  
+  // Save profile-specific data
+  if (vocabulary) profileManager.saveCurrentProfileData('vocabulary.json', vocabulary);
+  if (memories) profileManager.saveCurrentProfileData('memories.json', memories);
+  if (chatLog) profileManager.saveCurrentProfileData('chat-log.json', chatLog);
+  if (journal) profileManager.saveCurrentProfileData('journal.json', journal);
+  if (neuralNetwork) profileManager.saveCurrentProfileData('neural.json', neuralNetwork);
+  
+  // Save shared data
+  if (concepts) writeJson(files.concepts, concepts);
+  if (facts) writeJson(files.facts, facts);
+  
+  // Update profile metadata with latest stats
+  profileManager.updateProfileMetadata({
+    level: state.level,
+    xp: state.xp,
+    messageCount: chatLog?.length || 0,
+    memoryCount: memories?.length || 0
+  });
 }
 
 // XP/Level logic (scaled thresholds)
@@ -3930,6 +3970,67 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
 
+// --- Profile Management API ---
+app.get('/api/profiles', (req, res) => {
+  try {
+    const result = profileManager.listProfiles();
+    res.json(result);
+  } catch (err) {
+    console.error('Error listing profiles:', err);
+    res.status(500).json({ error: 'Failed to list profiles' });
+  }
+});
+
+app.post('/api/profiles', (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Profile name is required' });
+    }
+    
+    const profile = profileManager.createProfile(name.trim());
+    res.json(profile);
+  } catch (err) {
+    console.error('Error creating profile:', err);
+    if (err.message.includes('Maximum') || err.message.includes('already exists')) {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: 'Failed to create profile' });
+  }
+});
+
+app.post('/api/profiles/:id/load', (req, res) => {
+  try {
+    const { id } = req.params;
+    const profile = profileManager.loadProfile(id);
+    
+    if (!profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+    
+    res.json(profile);
+  } catch (err) {
+    console.error('Error loading profile:', err);
+    res.status(500).json({ error: 'Failed to load profile' });
+  }
+});
+
+app.delete('/api/profiles/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const success = profileManager.deleteProfile(id);
+    
+    if (!success) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting profile:', err);
+    res.status(500).json({ error: 'Failed to delete profile' });
+  }
+});
+
 // --- Auth helpers and middleware
 function nowSec() { return Math.floor(Date.now() / 1000); }
 function tidySessions(sessions) {
@@ -4811,6 +4912,84 @@ process.once('unhandledRejection', (reason) => {
   console.error('Unhandled rejection', reason);
   gracefulShutdown('unhandledRejection');
 });
+
+// --- Migration: Convert legacy single-profile to multi-profile ---
+function migrateToMultiProfile() {
+  try {
+    // Check if profiles already exist
+    const profilesData = profileManager.listProfiles();
+    if (profilesData.profiles.length > 0) {
+      console.log('Multi-profile system already initialized with existing profiles');
+      return;
+    }
+    
+    // Check for legacy files
+    const legacyChatLog = path.join(DATA_DIR, 'chatlog.json');
+    const legacyMemories = path.join(DATA_DIR, 'memories.json');
+    const legacyState = path.join(DATA_DIR, 'state.json');
+    
+    const hasLegacyData = fs.existsSync(legacyChatLog) || fs.existsSync(legacyMemories) || fs.existsSync(legacyState);
+    
+    if (!hasLegacyData) {
+      console.log('No legacy data found, starting fresh with multi-profile system');
+      return;
+    }
+    
+    console.log('Migrating legacy single-profile data to multi-profile system...');
+    
+    // Create "DevPal" profile for existing user
+    const profile = profileManager.createProfile('DevPal');
+    console.log(`Created profile: ${profile.name} (${profile.id})`);
+    
+    // Copy legacy files to new profile
+    const legacyFiles = [
+      { old: 'state.json', new: 'metadata.json' },
+      { old: 'chatlog.json', new: 'chat-log.json' },
+      { old: 'memories.json', new: 'memories.json' },
+      { old: 'vocabulary.json', new: 'vocabulary.json' },
+      { old: 'journal.json', new: 'journal.json' },
+      { old: 'neural_network.json', new: 'neural.json' }
+    ];
+    
+    for (const { old, new: newName } of legacyFiles) {
+      const oldPath = path.join(DATA_DIR, old);
+      const newPath = profileManager.getCurrentProfilePath(newName);
+      
+      if (fs.existsSync(oldPath)) {
+        try {
+          // Special handling for state.json -> metadata.json
+          if (old === 'state.json') {
+            const state = readJson(oldPath, {});
+            const metadata = profileManager.getCurrentProfileData('metadata.json') || {};
+            metadata.level = state.level || 0;
+            metadata.xp = state.xp || 0;
+            metadata.cp = state.cp || 0;
+            metadata.settings = state.settings || {};
+            metadata.personality = state.personality || {};
+            metadata.vocabulary = state.vocabulary || [];
+            profileManager.saveCurrentProfileData('metadata.json', metadata);
+          } else {
+            fs.copyFileSync(oldPath, newPath);
+          }
+          
+          // Rename old file with .migrated extension
+          fs.renameSync(oldPath, oldPath + '.migrated');
+          console.log(`  Migrated ${old} -> ${newName}`);
+        } catch (err) {
+          console.error(`  Error migrating ${old}:`, err.message);
+        }
+      }
+    }
+    
+    console.log('Migration complete! Old files backed up with .migrated extension');
+  } catch (err) {
+    console.error('Migration failed:', err);
+    // Don't block server startup on migration failure
+  }
+}
+
+// Run migration before starting server
+migrateToMultiProfile();
 
 server = app.listen(PORT, () => {
   console.log(`MyPal backend listening on http://localhost:${PORT}`);

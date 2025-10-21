@@ -9,6 +9,318 @@ let journalLoading = false;
 let multiplierDirty = false;
 let lastUserMessage = '';
 let typingEl = null;
+let currentProfileId = null;
+
+// ==============================================
+// PROFILE MANAGEMENT
+// ==============================================
+
+// Appearance Settings
+function loadAppearanceSettings() {
+  const theme = localStorage.getItem('mypal_theme') || 'dark';
+  const font = localStorage.getItem('mypal_font') || 'system-ui';
+  const textSize = localStorage.getItem('mypal_text_size') || '16';
+  const smoothScrolling = localStorage.getItem('mypal_smooth_scrolling') !== 'false';
+  const reducedMotion = localStorage.getItem('mypal_reduced_motion') === 'true';
+  
+  applyAppearanceSettings({ theme, font, textSize, smoothScrolling, reducedMotion });
+  
+  return { theme, font, textSize, smoothScrolling, reducedMotion };
+}
+
+function applyAppearanceSettings({ theme, font, textSize, smoothScrolling, reducedMotion }) {
+  document.body.setAttribute('data-theme', theme);
+  document.body.style.fontFamily = font;
+  document.body.style.fontSize = `${textSize}px`;
+  
+  if (smoothScrolling) {
+    document.body.classList.add('smooth-scrolling');
+  } else {
+    document.body.classList.remove('smooth-scrolling');
+  }
+  
+  if (reducedMotion) {
+    document.body.classList.add('reduced-motion');
+  } else {
+    document.body.classList.remove('reduced-motion');
+  }
+}
+
+function saveAppearanceSettings({ theme, font, textSize, smoothScrolling, reducedMotion }) {
+  localStorage.setItem('mypal_theme', theme);
+  localStorage.setItem('mypal_font', font);
+  localStorage.setItem('mypal_text_size', textSize);
+  localStorage.setItem('mypal_smooth_scrolling', smoothScrolling);
+  localStorage.setItem('mypal_reduced_motion', reducedMotion);
+  
+  applyAppearanceSettings({ theme, font, textSize, smoothScrolling, reducedMotion });
+}
+
+async function loadProfilesList() {
+  try {
+    const res = await apiFetch('/profiles');
+    if (!res.ok) throw new Error('Failed to load profiles');
+    return await res.json();
+  } catch (err) {
+    console.error('Error loading profiles:', err);
+    return null;
+  }
+}
+
+async function createProfile(name) {
+  try {
+    const res = await apiFetch('/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || 'Failed to create profile');
+    }
+    
+    return await res.json();
+  } catch (err) {
+    console.error('Error creating profile:', err);
+    throw err;
+  }
+}
+
+async function loadProfile(profileId) {
+  try {
+    const res = await apiFetch(`/profiles/${profileId}/load`, {
+      method: 'POST'
+    });
+    
+    if (!res.ok) throw new Error('Failed to load profile');
+    
+    const profile = await res.json();
+    currentProfileId = profileId;
+    localStorage.setItem('mypal_current_profile', profileId);
+    
+    // Update profile badge in header
+    const profileBadge = $('#current-profile-name');
+    if (profileBadge) {
+      profileBadge.textContent = profile.name;
+    }
+    
+    return profile;
+  } catch (err) {
+    console.error('Error loading profile:', err);
+    throw err;
+  }
+}
+
+async function deleteProfile(profileId) {
+  try {
+    const res = await apiFetch(`/profiles/${profileId}`, {
+      method: 'DELETE'
+    });
+    
+    if (!res.ok) throw new Error('Failed to delete profile');
+    return await res.json();
+  } catch (err) {
+    console.error('Error deleting profile:', err);
+    throw err;
+  }
+}
+
+function showProfileMenu() {
+  $('#profile-menu').classList.remove('hidden');
+  $('#main-app').classList.add('hidden');
+}
+
+function hideProfileMenu() {
+  $('#profile-menu').classList.add('hidden');
+  $('#main-app').classList.remove('hidden');
+}
+
+function renderProfileCards(profiles) {
+  const container = $('#profile-cards');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  
+  if (!profiles || profiles.length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+  
+  container.classList.remove('hidden');
+  
+  profiles.forEach(profile => {
+    const card = document.createElement('div');
+    card.className = 'profile-card';
+    
+    const lastPlayed = profile.lastPlayedAt ? new Date(profile.lastPlayedAt).toLocaleDateString() : 'Never';
+    
+    card.innerHTML = `
+      <div class="profile-card-header">
+        <h3 class="profile-card-name">${profile.name}</h3>
+        <button class="profile-card-delete" data-profile-id="${profile.id}" title="Delete profile">🗑️</button>
+      </div>
+      <div class="profile-card-stats">
+        <div class="profile-stat">Level: <span class="profile-stat-value">${profile.level || 0}</span></div>
+        <div class="profile-stat">XP: <span class="profile-stat-value">${profile.xp || 0}</span></div>
+        <div class="profile-stat">Messages: <span class="profile-stat-value">${profile.messageCount || 0}</span></div>
+        <div class="profile-stat">Memories: <span class="profile-stat-value">${profile.memoryCount || 0}</span></div>
+      </div>
+      <div class="profile-card-footer">Last played: ${lastPlayed}</div>
+    `;
+    
+    // Click card to load profile
+    card.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('profile-card-delete')) return;
+      
+      try {
+        await loadProfile(profile.id);
+        hideProfileMenu();
+        await refreshStats();
+      } catch (err) {
+        alert(`Failed to load profile: ${err.message}`);
+      }
+    });
+    
+    // Delete button
+    const deleteBtn = card.querySelector('.profile-card-delete');
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      
+      if (!confirm(`Delete "${profile.name}"? This cannot be undone.`)) return;
+      
+      try {
+        await deleteProfile(profile.id);
+        await initProfileMenu();
+      } catch (err) {
+        alert(`Failed to delete profile: ${err.message}`);
+      }
+    });
+    
+    container.appendChild(card);
+  });
+}
+
+async function initProfileMenu() {
+  const data = await loadProfilesList();
+  if (!data) {
+    alert('Failed to load profiles. Please check the server.');
+    return;
+  }
+  
+  const { profiles, lastUsedId, maxProfiles } = data;
+  
+  // Update continue button
+  const continueSection = $('#continue-section');
+  const continueBtn = $('#continue-btn');
+  const continueName = $('#continue-name');
+  
+  if (lastUsedId && profiles.length > 0) {
+    const lastProfile = profiles.find(p => p.id === lastUsedId);
+    if (lastProfile) {
+      continueSection.classList.remove('hidden');
+      continueName.textContent = lastProfile.name;
+      
+      continueBtn.onclick = async () => {
+        try {
+          await loadProfile(lastUsedId);
+          hideProfileMenu();
+          await refreshStats();
+        } catch (err) {
+          alert(`Failed to continue: ${err.message}`);
+        }
+      };
+    } else {
+      continueSection.classList.add('hidden');
+    }
+  } else {
+    continueSection.classList.add('hidden');
+  }
+  
+  // Update New Pal button state
+  const newPalBtn = $('#new-pal-btn');
+  if (profiles.length >= maxProfiles) {
+    newPalBtn.disabled = true;
+    newPalBtn.title = `Maximum ${maxProfiles} profiles reached`;
+  } else {
+    newPalBtn.disabled = false;
+    newPalBtn.title = '';
+  }
+  
+  renderProfileCards(profiles);
+}
+
+function wireProfileManagement() {
+  const newPalBtn = $('#new-pal-btn');
+  const loadPalBtn = $('#load-pal-btn');
+  const newPalModal = $('#new-pal-modal');
+  const newPalForm = $('#new-pal-form');
+  const newPalCancel = $('#new-pal-cancel');
+  const newPalName = $('#new-pal-name');
+  const newPalError = $('#new-pal-error');
+  
+  newPalBtn?.addEventListener('click', () => {
+    newPalModal.classList.remove('hidden');
+    newPalName.value = '';
+    newPalError.classList.add('hidden');
+    // Delay focus to ensure modal is rendered
+    setTimeout(() => newPalName.focus(), 50);
+  });
+  
+  loadPalBtn?.addEventListener('click', async () => {
+    const profileCards = $('#profile-cards');
+    if (profileCards.classList.contains('hidden')) {
+      // Show profile cards - reload to ensure fresh data
+      const data = await loadProfilesList();
+      if (data && data.profiles.length > 0) {
+        renderProfileCards(data.profiles);
+        setTimeout(() => {
+          profileCards.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
+      }
+    } else {
+      // Hide profile cards
+      profileCards.classList.add('hidden');
+    }
+  });
+  
+  newPalCancel?.addEventListener('click', () => {
+    newPalModal.classList.add('hidden');
+  });
+  
+  newPalForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const name = newPalName.value.trim();
+    if (!name) {
+      newPalError.textContent = 'Please enter a name';
+      newPalError.classList.remove('hidden');
+      return;
+    }
+    
+    try {
+      const profile = await createProfile(name);
+      await loadProfile(profile.id);
+      newPalModal.classList.add('hidden');
+      hideProfileMenu();
+      await refreshStats();
+    } catch (err) {
+      newPalError.textContent = err.message;
+      newPalError.classList.remove('hidden');
+    }
+  });
+  
+  // Close modal on background click
+  newPalModal?.addEventListener('click', (e) => {
+    if (e.target === newPalModal) {
+      newPalModal.classList.add('hidden');
+    }
+  });
+}
+
+// ==============================================
+// EXISTING CODE CONTINUES BELOW
+// ==============================================
 
 window.addEventListener('error', (event) => {
   const message = event?.error?.stack || event?.message || 'Unknown error';
@@ -371,15 +683,37 @@ function connectNeuralSocket() {
 function handleNeuralEvent(event) {
   if (!event || !event.type) return;
   if (event.type === 'neuron-fire') {
-    const id = event.neuronId;
-    const circle = document.querySelector(`circle[data-neuron-id='${id}']`);
-    if (circle) {
-      const origR = circle.getAttribute('r') || '4';
-      circle.setAttribute('r', '8');
-      circle.setAttribute('opacity', '1');
-      setTimeout(() => {
-        circle.setAttribute('r', origR);
-      }, 300);
+    const neuronId = event.neuronId;
+    // Extract region ID from neuron ID (format: region-xxx-neuron-yyy)
+    const regionMatch = neuronId.match(/^(.+?)-neuron-\d+$/);
+    const regionId = regionMatch ? regionMatch[1] : null;
+    
+    if (regionId) {
+      // Find all neurons in this region and flash them
+      const regionGroup = document.querySelector(`g[data-region='${regionId}']`);
+      if (regionGroup) {
+        const neurons = regionGroup.querySelectorAll('.neuron-node');
+        neurons.forEach(neuron => {
+          const origR = neuron.getAttribute('r') || '3';
+          const origOpacity = neuron.getAttribute('opacity') || '0.6';
+          neuron.setAttribute('r', parseFloat(origR) * 1.5);
+          neuron.setAttribute('opacity', '1');
+          setTimeout(() => {
+            neuron.setAttribute('r', origR);
+            neuron.setAttribute('opacity', origOpacity);
+          }, 300);
+        });
+        
+        // Also pulse the region background
+        const rect = regionGroup.querySelector('rect');
+        if (rect) {
+          const origOpacity = rect.getAttribute('opacity') || '0.1';
+          rect.setAttribute('opacity', '0.3');
+          setTimeout(() => {
+            rect.setAttribute('opacity', origOpacity);
+          }, 300);
+        }
+      }
     }
   }
 }
@@ -580,8 +914,9 @@ function renderBrain(data) {
 
   // Use setTimeout to allow loading UI to render before heavy computation
   setTimeout(() => {
-    container.innerHTML = '';
-
+    // Keep loading spinner visible
+    const loadingDiv = container.querySelector('.graph-loading');
+    
     const options = {
       layout: { improvedLayout: true },
       nodes: {
@@ -647,7 +982,26 @@ function renderBrain(data) {
       }
     };
     
-    new vis.Network(container, { nodes, edges }, options);
+    // Create canvas element for network
+    const canvas = document.createElement('div');
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.display = 'none'; // Hide until ready
+    container.appendChild(canvas);
+    
+    const network = new vis.Network(canvas, { nodes, edges }, options);
+    
+    // Remove loading spinner when stabilization is complete
+    network.once('stabilizationIterationsDone', () => {
+      if (loadingDiv) loadingDiv.remove();
+      canvas.style.display = 'block';
+    });
+    
+    // Fallback in case stabilization event doesn't fire
+    setTimeout(() => {
+      if (loadingDiv && loadingDiv.isConnected) loadingDiv.remove();
+      canvas.style.display = 'block';
+    }, 3000);
 
     if (desc) {
       if (conceptCount && data.concepts?.length) {
@@ -843,9 +1197,10 @@ async function loadJournal(force = false) {
   if (journalLoading) return;
   if (!force && journalLoaded) return;
   journalLoading = true;
-  if (!journalLoaded) {
-    container.innerHTML = '<p class="memory-empty">Loading thoughts…</p>';
-  }
+  
+  // Show loading spinner
+  container.innerHTML = '<div class="graph-loading"><div class="loading-spinner"></div><p>Loading thoughts...</p></div>';
+  
   try {
     const data = await fetchJournal();
     renderJournal(data);
@@ -944,6 +1299,74 @@ function wireChat() {
 }
 
 function wireSettings() {
+  // Load and apply appearance settings
+  const appearance = loadAppearanceSettings();
+  
+  // Set initial values in form
+  if ($('#theme-select')) $('#theme-select').value = appearance.theme;
+  if ($('#font-select')) $('#font-select').value = appearance.font;
+  if ($('#text-size')) {
+    $('#text-size').value = appearance.textSize;
+    $('#text-size-value').textContent = `${appearance.textSize}px`;
+  }
+  if ($('#smooth-scrolling')) $('#smooth-scrolling').checked = appearance.smoothScrolling;
+  if ($('#reduced-motion')) $('#reduced-motion').checked = appearance.reducedMotion;
+  
+  // Wire appearance controls
+  $('#theme-select')?.addEventListener('change', (e) => {
+    saveAppearanceSettings({
+      theme: e.target.value,
+      font: $('#font-select').value,
+      textSize: $('#text-size').value,
+      smoothScrolling: $('#smooth-scrolling').checked,
+      reducedMotion: $('#reduced-motion').checked
+    });
+  });
+  
+  $('#font-select')?.addEventListener('change', (e) => {
+    saveAppearanceSettings({
+      theme: $('#theme-select').value,
+      font: e.target.value,
+      textSize: $('#text-size').value,
+      smoothScrolling: $('#smooth-scrolling').checked,
+      reducedMotion: $('#reduced-motion').checked
+    });
+  });
+  
+  $('#text-size')?.addEventListener('input', (e) => {
+    $('#text-size-value').textContent = `${e.target.value}px`;
+  });
+  
+  $('#text-size')?.addEventListener('change', (e) => {
+    saveAppearanceSettings({
+      theme: $('#theme-select').value,
+      font: $('#font-select').value,
+      textSize: e.target.value,
+      smoothScrolling: $('#smooth-scrolling').checked,
+      reducedMotion: $('#reduced-motion').checked
+    });
+  });
+  
+  $('#smooth-scrolling')?.addEventListener('change', (e) => {
+    saveAppearanceSettings({
+      theme: $('#theme-select').value,
+      font: $('#font-select').value,
+      textSize: $('#text-size').value,
+      smoothScrolling: e.target.checked,
+      reducedMotion: $('#reduced-motion').checked
+    });
+  });
+  
+  $('#reduced-motion')?.addEventListener('change', (e) => {
+    saveAppearanceSettings({
+      theme: $('#theme-select').value,
+      font: $('#font-select').value,
+      textSize: $('#text-size').value,
+      smoothScrolling: $('#smooth-scrolling').checked,
+      reducedMotion: e.target.checked
+    });
+  });
+  
   $('#save-settings').addEventListener('click', async () => {
     const saveBtn = $('#save-settings');
     const originalText = saveBtn.textContent;
@@ -979,6 +1402,16 @@ function wireSettings() {
       saveBtn.disabled = false;
     }
   });
+  
+  $('#switch-profile')?.addEventListener('click', async () => {
+    if (confirm('Switch to a different profile? Your current session will be saved.')) {
+      currentProfileId = null;
+      localStorage.removeItem('mypal_current_profile');
+      showProfileMenu();
+      await initProfileMenu();
+    }
+  });
+  
   $('#reset-pal').addEventListener('click', async () => {
     const confirmed = confirm('Are you sure? Doing this will wipe your Pal forever.');
     if (!confirmed) return;
@@ -1047,26 +1480,78 @@ function wireSettings() {
 }
 
 async function init() {
+  // Wire up profile management first
+  wireProfileManagement();
+  
+  // Check for existing profile
+  const savedProfileId = localStorage.getItem('mypal_current_profile');
+  
+  await checkHealth();
+  
+  if (backendHealthy) {
+    // Try to load profiles
+    const profilesData = await loadProfilesList();
+    
+    if (profilesData && profilesData.profiles.length > 0) {
+      // If we have a saved profile, try to load it
+      if (savedProfileId) {
+        try {
+          await loadProfile(savedProfileId);
+          currentProfileId = savedProfileId;
+          hideProfileMenu();
+          await refreshStats();
+        } catch (err) {
+          console.error('Failed to auto-load profile:', err);
+          localStorage.removeItem('mypal_current_profile');
+          showProfileMenu();
+          await initProfileMenu();
+        }
+      } else {
+        // No saved profile, show menu
+        showProfileMenu();
+        await initProfileMenu();
+      }
+    } else {
+      // No profiles exist, show menu to create one
+      showProfileMenu();
+      await initProfileMenu();
+    }
+  } else {
+    showStatusModal();
+    showProfileMenu();
+  }
+  
   wireTabs();
   wireChat();
   wireChatSearch();
   wireSettings();
   setupBrainSubTabs();
+  setupJournalSubTabs();
   setupNeuralRefresh();
   setupNeuralRegeneration();
-  await checkHealth();
-  if (backendHealthy) {
-    await refreshStats();
-  } else {
-    showStatusModal();
-  }
+  connectNeuralSocket(); // Connect WebSocket for real-time neural events
+  
+  // Wire exit button
+  $('#exit-to-menu')?.addEventListener('click', async () => {
+    if (confirm('Exit to profile menu? Your current session will be saved.')) {
+      currentProfileId = null;
+      localStorage.removeItem('mypal_current_profile');
+      showProfileMenu();
+      await initProfileMenu();
+    }
+  });
+  
   const retry = document.getElementById('retry-connection');
   const dismiss = document.getElementById('dismiss-connection');
   retry?.addEventListener('click', async () => {
     const ok = await checkHealth();
     if (ok) {
       hideStatusModal();
-      await refreshStats();
+      if (currentProfileId) {
+        await refreshStats();
+      } else {
+        await initProfileMenu();
+      }
     }
   });
   dismiss?.addEventListener('click', hideStatusModal);
@@ -1270,7 +1755,7 @@ let neuralData = null;
 
 // Brain sub-tab switching
 function setupBrainSubTabs() {
-  const buttons = $$('.brain-tab-btn');
+  const buttons = $$('.brain-tab-btn[data-brain-tab]');
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
       const tabName = btn.dataset.brainTab;
@@ -1294,6 +1779,34 @@ function setupBrainSubTabs() {
   });
 }
 
+// Journal sub-tab switching
+function setupJournalSubTabs() {
+  const buttons = $$('.brain-tab-btn[data-journal-tab]');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabName = btn.dataset.journalTab;
+      
+      // Update button states
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      // Update content visibility
+      const allContents = document.querySelectorAll('#tab-journal .brain-tab-content');
+      allContents.forEach(content => content.classList.remove('active'));
+      const targetContent = document.getElementById(`journal-tab-${tabName}`);
+      if (targetContent) {
+        targetContent.classList.add('active');
+        
+        // Load data when switching tabs
+        if (tabName === 'thoughts') {
+          loadJournal(true);
+        }
+        // Other tabs will be populated later with specific data
+      }
+    });
+  });
+}
+
 // Fetch neural network data
 async function fetchNeuralNetwork() {
   try {
@@ -1308,12 +1821,29 @@ async function fetchNeuralNetwork() {
 
 // Refresh neural network visualization
 async function refreshNeuralNetwork() {
+  const btn = $('#refresh-neural');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Refreshing...';
+  }
+  
   neuralData = await fetchNeuralNetwork();
-  if (!neuralData) return;
+  if (!neuralData) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Refresh';
+    }
+    return;
+  }
   
   renderNeuralNetwork();
   updateNeuralStats();
   updateNeuralEvents();
+  
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'Refresh';
+  }
 }
 
 // Render neural network SVG

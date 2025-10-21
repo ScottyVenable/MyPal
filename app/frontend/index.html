@@ -10,8 +10,51 @@
   <script type="module" src="app.js" defer></script>
 </head>
 <body>
+  <!-- Profile Selection Menu -->
+  <div id="profile-menu" class="profile-menu">
+    <div class="profile-menu-content">
+      <h1 class="profile-title">Welcome to MyPal</h1>
+      <p class="profile-subtitle">Choose your Pal or create a new one</p>
+      
+      <div id="continue-section" class="continue-section hidden">
+        <button id="continue-btn" class="btn-primary btn-large" type="button">
+          Continue with <span id="continue-name">My Pal</span>
+        </button>
+      </div>
+      
+      <div class="profile-actions">
+        <button id="new-pal-btn" class="btn-secondary" type="button">+ New Pal</button>
+        <button id="load-pal-btn" class="btn-secondary" type="button">Load Pal</button>
+      </div>
+      
+      <div id="profile-cards" class="profile-cards hidden"></div>
+    </div>
+  </div>
+  
+  <!-- New Pal Modal -->
+  <div id="new-pal-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Create New Pal</h2>
+      <form id="new-pal-form">
+        <label for="new-pal-name">Pal Name</label>
+        <input id="new-pal-name" type="text" placeholder="Enter a name..." maxlength="30" required />
+        <div class="form-hint">Maximum 30 characters</div>
+        <div id="new-pal-error" class="form-error hidden"></div>
+        <div class="modal-actions">
+          <button type="submit" class="btn-primary">Create</button>
+          <button type="button" id="new-pal-cancel" class="btn-secondary">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
+  <!-- Main App (hidden until profile loaded) -->
+  <div id="main-app" class="hidden">
   <header>
-    <h1>Pal</h1>
+    <div class="header-left">
+      <h1>Pal</h1>
+      <span id="current-profile-name" class="profile-badge"></span>
+    </div>
     <nav>
       <button type="button" data-tab="chat" class="active">Conversation</button>
       <button type="button" data-tab="stats">Stats</button>
@@ -19,6 +62,7 @@
       <button type="button" data-tab="journal">Journal</button>
       <button type="button" data-tab="settings">Settings</button>
     </nav>
+    <button id="exit-to-menu" class="exit-btn" type="button" title="Exit to Profile Menu">⬅ Exit</button>
   </header>
 
   <main>
@@ -230,17 +274,90 @@
 
     <section id="tab-journal" class="tab">
       <div class="journal-toolbar">
+        <div class="brain-tabs">
+          <button class="brain-tab-btn active" data-journal-tab="thoughts" type="button">Thoughts</button>
+          <button class="brain-tab-btn" data-journal-tab="ideas" type="button">Ideas</button>
+          <button class="brain-tab-btn" data-journal-tab="personality" type="button">Personality</button>
+          <button class="brain-tab-btn" data-journal-tab="people" type="button">People</button>
+          <button class="brain-tab-btn" data-journal-tab="interests" type="button">Interests</button>
+        </div>
         <button id="refresh-journal" type="button">Refresh</button>
         <span id="journal-summary">Thoughts: 0</span>
-        <span class="help-icon" title="Journal shows Pal's internal thought process for each interaction. Strategy shows how Pal decided to respond, Focus shows what concept Pal was thinking about, and Reasoning explains Pal's logic.">ⓘ</span>
+        <span class="help-icon" title="Journal shows Pal's internal thought process, ideas, personality traits, people it knows, and topics of interest.">ⓘ</span>
       </div>
-      <div id="journal-entries" class="journal-list"></div>
+      
+      <div id="journal-tab-thoughts" class="brain-tab-content active">
+        <div id="journal-entries" class="journal-list"></div>
+      </div>
+      
+      <div id="journal-tab-ideas" class="brain-tab-content">
+        <div id="journal-ideas" class="journal-list">
+          <p class="memory-empty">Ideas and insights Pal has formed will appear here...</p>
+        </div>
+      </div>
+      
+      <div id="journal-tab-personality" class="brain-tab-content">
+        <div id="journal-personality" class="journal-list">
+          <p class="memory-empty">Personality traits and characteristics will appear here...</p>
+        </div>
+      </div>
+      
+      <div id="journal-tab-people" class="brain-tab-content">
+        <div id="journal-people" class="journal-list">
+          <p class="memory-empty">People Pal knows about will appear here...</p>
+        </div>
+      </div>
+      
+      <div id="journal-tab-interests" class="brain-tab-content">
+        <div id="journal-interests" class="journal-list">
+          <p class="memory-empty">Topics and interests Pal has developed will appear here...</p>
+        </div>
+      </div>
     </section>
 
     <section id="tab-settings" class="tab">
       <div class="settings-container">
         <h2>Settings</h2>
         
+        <div class="settings-section">
+          <h3>Appearance</h3>
+          <label>
+            <span>Theme</span>
+            <select id="theme-select">
+              <option value="dark">Dark (Default)</option>
+              <option value="midnight">Midnight Blue</option>
+              <option value="ocean">Ocean</option>
+              <option value="forest">Forest</option>
+              <option value="sunset">Sunset</option>
+            </select>
+          </label>
+          <label>
+            <span>Font Family</span>
+            <select id="font-select">
+              <option value="system-ui">System Default</option>
+              <option value="'Segoe UI', sans-serif">Segoe UI</option>
+              <option value="'Roboto', sans-serif">Roboto</option>
+              <option value="'Open Sans', sans-serif">Open Sans</option>
+              <option value="'Fira Code', monospace">Fira Code (Mono)</option>
+              <option value="'Courier New', monospace">Courier New</option>
+            </select>
+          </label>
+          <label class="slider-group">
+            <span>Text Size</span>
+            <input id="text-size" type="range" min="12" max="20" value="16" step="1" />
+            <span id="text-size-value">16px</span>
+          </label>
+          <label class="checkbox-label">
+            <input id="smooth-scrolling" type="checkbox" checked />
+            <span>Smooth Scrolling</span>
+          </label>
+          <label class="checkbox-label">
+            <input id="reduced-motion" type="checkbox" />
+            <span>Reduce Animations</span>
+          </label>
+          <p class="help-text">Customize the look and feel of MyPal to your preference.</p>
+        </div>
+
         <div class="settings-section">
           <h3>Learning & Development</h3>
           <label class="slider-group">
@@ -280,6 +397,14 @@
             <span>Require login for sensitive actions</span>
           </label>
           <p class="help-text">Telemetry helps improve MyPal. All data stays local unless explicitly enabled.</p>
+        </div>
+
+        <div class="settings-section">
+          <h3>Profile Management</h3>
+          <div class="settings-actions">
+            <button id="switch-profile" class="secondary">Switch Profile</button>
+          </div>
+          <p class="help-text">Return to profile selection menu to switch between your Pals.</p>
         </div>
 
         <div class="settings-section">
@@ -376,6 +501,7 @@
     </div>
     <div class="dev-row"><small id="auth-status">Not logged in</small></div>
   </div>
+  </div> <!-- End main-app -->
 
   <!-- Graph library -->
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
