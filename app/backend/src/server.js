@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -9,13 +8,16 @@ import bcrypt from 'bcryptjs';
 import util from 'util';
 import { WebSocketServer } from 'ws';
 import ProfileManager from './profileManager.js';
-
-dotenv.config();
+import { loadConfig } from './config.js';
+import { addXp, normalizeProgress, progressToNextLevel, thresholdsFor } from './progression.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = (process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) ? path.resolve(process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
-const LOGS_DIR = (process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) ? path.resolve(process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
+const config = loadConfig();
+const DATA_DIR = config.dataDir;
+const LOGS_DIR = config.logsDir;
+const MODELS_DIR = config.modelsDir;
+const TELEMETRY_FORCE = config.telemetryForce;
 
 // Initialize ProfileManager
 const profileManager = new ProfileManager(DATA_DIR);
@@ -27,7 +29,6 @@ if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
 // Simple file logger
 const accessLogPath = path.join(LOGS_DIR, 'access.log');
 const telemetryLogPath = path.join(LOGS_DIR, 'telemetry.log');
-const TELEMETRY_FORCE = process.env.MYPAL_FORCE_TELEMETRY === '1';
 const consoleLogPath = path.join(LOGS_DIR, 'console.log');
 const errorLogPath = path.join(LOGS_DIR, 'error.log');
 
@@ -154,6 +155,8 @@ const defaultState = {
   vocabulary: [], // quick cache of top learned words
 };
 
+let volatileState = normalizeProgress({ ...defaultState });
+
 // Files object - will use ProfileManager for profile-specific data
 // Keep users/sessions in DATA_DIR root (shared across profiles)
 const files = {
@@ -167,6 +170,14 @@ const files = {
   journal: null, // Will use profileManager.getCurrentProfilePath('journal.json')
   chatLog: null, // Will use profileManager.getCurrentProfilePath('chat-log.json')
   neuralNetwork: null, // Will use profileManager.getCurrentProfilePath('neural.json')
+};
+
+const volatileCollections = {
+  vocabulary: [],
+  memories: [],
+  chatLog: [],
+  journal: [],
+  neuralNetwork: null,
 };
 
 function readJson(file, fallback) {
@@ -203,26 +214,11 @@ function writeSecrets(data) {
   writeJson(secretsFile, data);
 }
 
-function normalizeProgress(state) {
-  if (!state || typeof state !== 'object') return state;
-  if (typeof state.xp !== 'number' || Number.isNaN(state.xp)) state.xp = 0;
-  if (typeof state.level !== 'number' || Number.isNaN(state.level)) state.level = 0;
-  if (state.level < 0) state.level = 0;
-  while (state.level > 0 && state.xp < (state.level > 0 ? thresholdsFor(state.level - 1) : 0)) {
-    state.level -= 1;
-  }
-  while (state.xp >= thresholdsFor(state.level)) {
-    state.level += 1;
-  }
-  state.cp = Math.floor(state.xp / 100);
-  return state;
-}
-
 function loadState() {
   // Load from current profile's metadata
   const metadata = profileManager.getCurrentProfileData('metadata.json');
-  if (!metadata) return normalizeProgress({ ...defaultState });
-  
+  if (!metadata) return volatileState;
+
   const state = {
     level: metadata.level || 0,
     xp: metadata.xp || 0,
@@ -231,12 +227,19 @@ function loadState() {
     personality: metadata.personality || defaultState.personality,
     vocabulary: metadata.vocabulary || []
   };
-  
-  return normalizeProgress({ ...defaultState, ...state });
+
+  volatileState = normalizeProgress({ ...defaultState, ...state });
+  return volatileState;
 }
 
 function saveState(state) {
-  // Save to current profile's metadata
+  normalizeProgress(state);
+  volatileState = state;
+
+  // Save to current profile's metadata when available
+  const profileId = profileManager.getCurrentProfileId();
+  if (!profileId) return;
+
   const metadata = profileManager.getCurrentProfileData('metadata.json') || {};
   metadata.level = state.level;
   metadata.xp = state.xp;
@@ -251,18 +254,29 @@ function getCollections() {
   const state = loadState();
   const users = readJson(files.users, []);
   const sessions = readJson(files.sessions, []);
-  
+
   // Load profile-specific data
-  const vocabulary = profileManager.getCurrentProfileData('vocabulary.json') || [];
-  const memories = profileManager.getCurrentProfileData('memories.json') || [];
-  const chatLog = profileManager.getCurrentProfileData('chat-log.json') || [];
-  const journal = profileManager.getCurrentProfileData('journal.json') || [];
-  const neuralNetwork = profileManager.getCurrentProfileData('neural.json') || null;
-  
+  const hasProfile = !!profileManager.getCurrentProfileId();
+  const vocabulary = hasProfile
+    ? (profileManager.getCurrentProfileData('vocabulary.json') || [])
+    : volatileCollections.vocabulary;
+  const memories = hasProfile
+    ? (profileManager.getCurrentProfileData('memories.json') || [])
+    : volatileCollections.memories;
+  const chatLog = hasProfile
+    ? (profileManager.getCurrentProfileData('chat-log.json') || [])
+    : volatileCollections.chatLog;
+  const journal = hasProfile
+    ? (profileManager.getCurrentProfileData('journal.json') || [])
+    : volatileCollections.journal;
+  const neuralNetwork = hasProfile
+    ? (profileManager.getCurrentProfileData('neural.json') || null)
+    : volatileCollections.neuralNetwork;
+
   // Load shared data
   const concepts = readJson(files.concepts, []);
   const facts = readJson(files.facts, []);
-  
+
   return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork };
 }
 
@@ -270,63 +284,36 @@ function saveCollections({ state, users, sessions, vocabulary, concepts, facts, 
   saveState(state);
   writeJson(files.users, users ?? readJson(files.users, []));
   writeJson(files.sessions, sessions ?? readJson(files.sessions, []));
-  
+
   // Save profile-specific data
-  if (vocabulary) profileManager.saveCurrentProfileData('vocabulary.json', vocabulary);
-  if (memories) profileManager.saveCurrentProfileData('memories.json', memories);
-  if (chatLog) profileManager.saveCurrentProfileData('chat-log.json', chatLog);
-  if (journal) profileManager.saveCurrentProfileData('journal.json', journal);
-  if (neuralNetwork) profileManager.saveCurrentProfileData('neural.json', neuralNetwork);
-  
+  const hasProfile = !!profileManager.getCurrentProfileId();
+  if (hasProfile) {
+    if (vocabulary) profileManager.saveCurrentProfileData('vocabulary.json', vocabulary);
+    if (memories) profileManager.saveCurrentProfileData('memories.json', memories);
+    if (chatLog) profileManager.saveCurrentProfileData('chat-log.json', chatLog);
+    if (journal) profileManager.saveCurrentProfileData('journal.json', journal);
+    if (neuralNetwork) profileManager.saveCurrentProfileData('neural.json', neuralNetwork);
+  } else {
+    if (vocabulary) volatileCollections.vocabulary = vocabulary;
+    if (memories) volatileCollections.memories = memories;
+    if (chatLog) volatileCollections.chatLog = chatLog;
+    if (journal) volatileCollections.journal = journal;
+    if (neuralNetwork !== undefined) volatileCollections.neuralNetwork = neuralNetwork;
+  }
+
   // Save shared data
   if (concepts) writeJson(files.concepts, concepts);
   if (facts) writeJson(files.facts, facts);
-  
+
   // Update profile metadata with latest stats
-  profileManager.updateProfileMetadata({
-    level: state.level,
-    xp: state.xp,
-    messageCount: chatLog?.length || 0,
-    memoryCount: memories?.length || 0
-  });
-}
-
-// XP/Level logic (scaled thresholds)
-const LEVEL_THRESHOLDS = [
-  100,   // Level 0 → 1
-  400,   // Level 1 → 2
-  1000,  // Level 2 → 3
-  2000,  // Level 3 → 4
-  3500,  // Level 4 → 5
-  5500,  // Level 5 → 6
-  8000,  // Level 6 → 7
-  11000, // Level 7 → 8
-  14500, // Level 8 → 9
-  18500, // Level 9 → 10
-  23000, // Level 10 → 11
-  28000, // Level 11 → 12
-  33500, // Level 12 → 13
-  39500, // Level 13 → 14
-  46000, // Level 14 → 15
-];
-
-function thresholdsFor(level) {
-  if (level < LEVEL_THRESHOLDS.length) return LEVEL_THRESHOLDS[level];
-  const base = LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length - 1];
-  const extraLevels = level - (LEVEL_THRESHOLDS.length - 1);
-  return base + extraLevels * 6000;
-}
-
-function addXp(state, rawXp) {
-  const mult = state.settings?.xpMultiplier ?? 1;
-  const gained = Math.floor(rawXp * mult);
-  state.xp += gained;
-  state.cp = Math.floor(state.xp / 100);
-  // Level up loop
-  while (state.xp >= thresholdsFor(state.level)) {
-    state.level += 1;
+  if (hasProfile) {
+    profileManager.updateProfileMetadata({
+      level: state.level,
+      xp: state.xp,
+      messageCount: chatLog?.length || 0,
+      memoryCount: memories?.length || 0
+    });
   }
-  return gained;
 }
 
 // ========================================
@@ -964,6 +951,16 @@ function determineEmotionalState(constrained, responseContext, state) {
   }
   
   return emotionalState;
+}
+
+function classifyUtteranceKind(level, utteranceType) {
+  const lvl = Number.isFinite(level) ? level : 0;
+  const normalized = (utteranceType || '').toLowerCase();
+  if (normalized === 'free') return 'free';
+  if (normalized === 'curious-question') return 'primitive_phrase';
+  if (lvl >= 4) return 'free';
+  if (lvl >= 2) return 'primitive_phrase';
+  return 'single_word';
 }
 
 function tokenizeMessage(text) {
@@ -4062,12 +4059,14 @@ app.get('/api/stats', (req, res) => {
   // Calculate XP progress to next level
   const currentLevel = state.level;
   const currentXp = state.xp;
-  const nextLevelThreshold = thresholdsFor(currentLevel);
-  const previousLevelThreshold = currentLevel > 0 ? thresholdsFor(currentLevel - 1) : 0;
-  const xpForCurrentLevel = currentXp - previousLevelThreshold;
-  const xpNeededForNextLevel = nextLevelThreshold - previousLevelThreshold;
-  const xpRemaining = nextLevelThreshold - currentXp;
-  const progressPercent = Math.min(100, Math.max(0, (xpForCurrentLevel / xpNeededForNextLevel) * 100));
+  const {
+    nextThreshold: nextLevelThreshold,
+    previousThreshold: previousLevelThreshold,
+    xpForCurrentLevel,
+    xpNeededForNextLevel,
+    xpRemaining,
+    progressPercent,
+  } = progressToNextLevel(currentLevel, currentXp);
   
   res.json({
     level: state.level,
@@ -4302,7 +4301,16 @@ app.post('/api/chat', (req, res) => {
   const gained = addXp(state, 10);
 
   const userMsg = { id: nanoid(), role: 'user', text: message, ts: Date.now() };
-  const palMsg = { id: nanoid(), role: 'pal', text: constrained.output, kind: constrained.utterance_type, ts: Date.now() };
+  const utteranceType = constrained.utterance_type || null;
+  const legacyKind = classifyUtteranceKind(state.level, utteranceType);
+  const palMsg = {
+    id: nanoid(),
+    role: 'pal',
+    text: constrained.output,
+    kind: legacyKind,
+    utteranceType,
+    ts: Date.now(),
+  };
   chatLog.push(userMsg, palMsg);
   if (chatLog.length > MAX_CHAT_LOG_ENTRIES) {
     chatLog.splice(0, chatLog.length - MAX_CHAT_LOG_ENTRIES);
@@ -4381,7 +4389,8 @@ app.post('/api/chat', (req, res) => {
   console.log('📤 Sending response to client');
   res.json({
     reply: palMsg.text,
-    kind: constrained.utterance_type,
+    kind: legacyKind,
+    utteranceType,
     xpGained: gained,
     level: state.level,
     memoryCount: memories.length,
@@ -4523,7 +4532,6 @@ if (fs.existsSync(FRONTEND_DIR)) {
 }
 
 // Models directory and listing endpoint (scaffolding)
-const MODELS_DIR = process.env.MYPAL_MODELS_DIR || process.env.MODELS_DIR ? path.resolve(process.env.MYPAL_MODELS_DIR || process.env.MODELS_DIR) : path.join(__dirname, '..', 'models');
 if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
 app.get('/api/models', (req, res) => {
   const files = fs.readdirSync(MODELS_DIR).filter(f => !f.startsWith('.'));
@@ -4865,7 +4873,7 @@ app.get('/api/chatlog', (req, res) => {
   res.json({ messages: items, total: chatLog.length });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = config.port;
 let server = null;
 
 function finalizeShutdown(code = 0) {

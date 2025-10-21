@@ -11,6 +11,16 @@ let lastUserMessage = '';
 let typingEl = null;
 let currentProfileId = null;
 
+function formatResponseMode(res) {
+  if (!res || typeof res !== 'object') return '';
+  const detail = typeof res.utteranceType === 'string' ? res.utteranceType : '';
+  const summary = typeof res.kind === 'string' ? res.kind : '';
+  if (detail && summary && detail !== summary) {
+    return `${detail} (${summary})`;
+  }
+  return detail || summary || '';
+}
+
 // ==============================================
 // PROFILE MANAGEMENT
 // ==============================================
@@ -537,7 +547,8 @@ function addMessage(role, text, metaText) {
       try {
         const res = await sendChat(lastUserMessage);
         const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '�?�');
-        const meta = 'Regenerated' + (res?.kind ? ` | Mode: ${res.kind}` : '');
+        const modeLabel = formatResponseMode(res);
+        const meta = 'Regenerated' + (modeLabel ? ` | Mode: ${modeLabel}` : '');
         addMessage('pal', replyText, meta);
         if (res?.emotion) updateEmotionDisplay(res.emotion);
         const wasDirty = multiplierDirty; await refreshStats(); multiplierDirty = wasDirty;
@@ -1257,7 +1268,8 @@ function wireChat() {
     try {
       const res = await sendChat(msg);
       const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
-      const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
+      const modeLabel = formatResponseMode(res);
+      const meta = modeLabel ? `Mode: ${modeLabel}` : undefined;
       addMessage('pal', replyText, meta);
       
       // Update emotion display if emotion data is present
@@ -2187,7 +2199,8 @@ function setupFloatingChat() {
       try {
         const res = await sendChat(msg);
         const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
-        const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
+        const modeLabel = formatResponseMode(res);
+        const meta = modeLabel ? `Mode: ${modeLabel}` : undefined;
         
         // Add response to both windows
         addMessage('pal', replyText, meta);
