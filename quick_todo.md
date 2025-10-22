@@ -1,17 +1,26 @@
 # Quick TODO
 Add these to the main todo list when available.
 
-## Bugs
-- Neurons in the Neural Activity Monitor still populate on New Pals. Each pal should have it's own neuron data file to access.
-- Fix the "Save Changes" button in the Settings menu not working.
-- Cannot open a Pal from the main menu after exiting an active Pal session.
-- upon entering the journal menu, thoughts do not automatically load until switching tabs.
-- Graphs across the application are not rendering.
+## Bugs - COMPLETED v0.2.1-alpha ✅
+- ~~Neurons in the Neural Activity Monitor still populate on New Pals~~ - FIXED: Profile-specific neural.json isolation
+- ~~Fix the "Save Changes" button in the Settings menu not working~~ - FIXED: Profile-specific settings persistence
+- ~~Cannot open a Pal from the main menu after exiting an active Pal session~~ - FIXED: Card visibility on profile switch
+- ~~upon entering the journal menu, thoughts do not automatically load until switching tabs~~ - FIXED: Auto-load thoughts tab
+- ~~Graphs across the application are not rendering~~ - FIXED: Empty state handling for charts
+- ~~Stop words (like "Are") and actions (like "*Blink*") becoming topics~~ - FIXED: Comprehensive stop words filter (100+ words)
+- ~~Neural regeneration pulling data from other profiles~~ - FIXED: Profile validation with logging
+- ~~Chat timeout after 30 seconds~~ - FIXED: Increased to 60 seconds
 
-## UI and UX
+## Bugs - In Progress 🔧
+- Knowledge graph showing "Nodes: 0 | Links: 0" when data exists - DEBUGGING: Added comprehensive logging
+
+## UI and UX - Completed ✅
+- ~~Reintroduce the web physics effects for draggable elements in the Knowledge Base graph view~~ - FIXED: Interactive physics restored with gentle forces
+
+## UI and UX - Todo
 - Upon creating a new Pal, have a welcome message or tutorial pop up to guide new users through initial steps. Animations or tooltips could enhance user engagement.
 - Custom cursor styles.
-- Reintroduce the web physics effects for draggable elements in the Knowledge Base graph view and implement an option to disable it for performance reasons.
+- Implement an option to disable physics for performance reasons in Knowledge Base graph.
 - Optimize the Knowledge Base UI design for better usability and aesthetics.
 - Optimize the program for 1920x1080 resolution screens or similar aspect ratios.
 - Stats window needs a redesign for better clarity and usability on desktop platforms with aspect ratios like 16:9.
