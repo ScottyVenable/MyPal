@@ -1,0 +1,80 @@
+[
+  {
+    "id": "v0Xv_nr7YBGZVuxRE1uOt",
+    "word": "hello",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761065577593,
+    "contexts": [
+      "Hello Pal, how are you?"
+    ]
+  },
+  {
+    "id": "mVb_tx5A4BnL8Ws5bIl1l",
+    "word": "pal",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761065577593,
+    "contexts": [
+      "Hello Pal, how are you?"
+    ]
+  },
+  {
+    "id": "muuAF9W-AkxGrA27xytoi",
+    "word": "how",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761065577593,
+    "contexts": [
+      "Hello Pal, how are you?"
+    ]
+  },
+  {
+    "id": "48R_0gVDkmuwaIzW5Pe3h",
+    "word": "are",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761065577593,
+    "contexts": [
+      "Hello Pal, how are you?"
+    ]
+  },
+  {
+    "id": "Ya_1ptUSdeL_-bRNrwFoY",
+    "word": "you",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761065577593,
+    "contexts": [
+      "Hello Pal, how are you?"
+    ]
+  },
+  {
+    "id": "yGwur5uirZHm45W25k2pL",
+    "word": "mm",
+    "count": 1,
+    "knownBy": {
+      "user": 0,
+      "pal": 1
+    },
+    "lastSeen": 1761065577596,
+    "contexts": [
+      "mm"
+    ]
+  }
+]

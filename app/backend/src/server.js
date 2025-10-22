@@ -170,19 +170,37 @@ const defaultState = {
   vocabulary: [], // quick cache of top learned words
 };
 
-// Files object - will use ProfileManager for profile-specific data
+// Map detailed utterance types to broad kinds expected by clients/tests
+function mapUtteranceKind(utteranceType, output, level) {
+  try {
+    const text = String(output || '').trim();
+    if (text.length > 0) {
+      const words = text.split(/\s+/);
+      if (words.length <= 1) return 'single_word';
+    }
+    if (typeof level === 'number' && level < 4) return 'primitive_phrase';
+    return 'free';
+  } catch {
+    return 'free';
+  }
+}
+
+// Files object - supports both per-profile and fallback root data when no profile is active
 // Keep users/sessions in DATA_DIR root (shared across profiles)
 const files = {
-  state: null, // Will use profileManager.getCurrentProfilePath('metadata.json')
+  // Fallback root files (when no current profile is selected)
+  state: path.join(DATA_DIR, 'state.json'),
   users: path.join(DATA_DIR, 'users.json'),
   sessions: path.join(DATA_DIR, 'sessions.json'),
-  vocabulary: null, // Will use profileManager.getCurrentProfilePath('vocabulary.json')
-  concepts: null, // Will use profileManager.getCurrentProfilePath('concepts.json')
-  facts: null, // Will use profileManager.getCurrentProfilePath('facts.json')
-  memories: null, // Will use profileManager.getCurrentProfilePath('memories.json')
-  journal: null, // Will use profileManager.getCurrentProfilePath('journal.json')
-  chatLog: null, // Will use profileManager.getCurrentProfilePath('chat-log.json')
-  neuralNetwork: null, // Will use profileManager.getCurrentProfilePath('neural.json')
+  vocabulary: path.join(DATA_DIR, 'vocabulary.json'),
+  concepts: path.join(DATA_DIR, 'concepts.json'),
+  facts: path.join(DATA_DIR, 'facts.json'),
+  memories: path.join(DATA_DIR, 'memories.json'),
+  journal: path.join(DATA_DIR, 'journal.json'),
+  // Note: legacy filename in root uses "chatlog.json" (no hyphen)
+  chatLog: path.join(DATA_DIR, 'chatlog.json'),
+  // Legacy neural network filename
+  neuralNetwork: path.join(DATA_DIR, 'neural_network.json'),
 };
 
 function readJson(file, fallback) {
@@ -235,32 +253,57 @@ function normalizeProgress(state) {
 }
 
 function loadState() {
-  // Load from current profile's metadata
-  const metadata = profileManager.getCurrentProfileData('metadata.json');
-  if (!metadata) return normalizeProgress({ ...defaultState });
-  
+  // Prefer current profile metadata; fallback to root state.json
+  const currentId = profileManager.getCurrentProfileId?.() || null;
+  if (currentId) {
+    const metadata = profileManager.getCurrentProfileData('metadata.json');
+    if (!metadata) return normalizeProgress({ ...defaultState });
+    const state = {
+      level: metadata.level || 0,
+      xp: metadata.xp || 0,
+      cp: metadata.cp || 0,
+      settings: metadata.settings || defaultState.settings,
+      personality: metadata.personality || defaultState.personality,
+      vocabulary: metadata.vocabulary || []
+    };
+    return normalizeProgress({ ...defaultState, ...state });
+  }
+  // Fallback to root state file when no profile selected
+  const root = readJson(files.state, null);
+  if (!root) return normalizeProgress({ ...defaultState });
   const state = {
-    level: metadata.level || 0,
-    xp: metadata.xp || 0,
-    cp: metadata.cp || 0,
-    settings: metadata.settings || defaultState.settings,
-    personality: metadata.personality || defaultState.personality,
-    vocabulary: metadata.vocabulary || []
+    level: root.level || 0,
+    xp: root.xp || 0,
+    cp: root.cp || 0,
+    settings: root.settings || defaultState.settings,
+    personality: root.personality || defaultState.personality,
+    vocabulary: root.vocabulary || []
   };
-  
   return normalizeProgress({ ...defaultState, ...state });
 }
 
 function saveState(state) {
-  // Save to current profile's metadata
-  const metadata = profileManager.getCurrentProfileData('metadata.json') || {};
-  metadata.level = state.level;
-  metadata.xp = state.xp;
-  metadata.cp = state.cp;
-  metadata.settings = state.settings;
-  metadata.personality = state.personality;
-  metadata.vocabulary = state.vocabulary;
-  profileManager.saveCurrentProfileData('metadata.json', metadata);
+  // Save to current profile's metadata if active, else to root state.json
+  const currentId = profileManager.getCurrentProfileId?.() || null;
+  if (currentId) {
+    const metadata = profileManager.getCurrentProfileData('metadata.json') || {};
+    metadata.level = state.level;
+    metadata.xp = state.xp;
+    metadata.cp = state.cp;
+    metadata.settings = state.settings;
+    metadata.personality = state.personality;
+    metadata.vocabulary = state.vocabulary;
+    profileManager.saveCurrentProfileData('metadata.json', metadata);
+  } else {
+    writeJson(files.state, {
+      level: state.level,
+      xp: state.xp,
+      cp: state.cp,
+      settings: state.settings,
+      personality: state.personality,
+      vocabulary: state.vocabulary,
+    });
+  }
 }
 
 function getCollections() {
@@ -268,14 +311,26 @@ function getCollections() {
   const users = readJson(files.users, []);
   const sessions = readJson(files.sessions, []);
   
-  // Load profile-specific data
-  const vocabulary = profileManager.getCurrentProfileData('vocabulary.json') || [];
-  const memories = profileManager.getCurrentProfileData('memories.json') || [];
-  const chatLog = profileManager.getCurrentProfileData('chat-log.json') || [];
-  const journal = profileManager.getCurrentProfileData('journal.json') || [];
-  const neuralNetwork = profileManager.getCurrentProfileData('neural.json') || null;
-  const concepts = profileManager.getCurrentProfileData('concepts.json') || [];
-  const facts = profileManager.getCurrentProfileData('facts.json') || [];
+  const currentId = profileManager.getCurrentProfileId?.() || null;
+  let vocabulary, memories, chatLog, journal, neuralNetwork, concepts, facts;
+  if (currentId) {
+    vocabulary = profileManager.getCurrentProfileData('vocabulary.json') || [];
+    memories = profileManager.getCurrentProfileData('memories.json') || [];
+    chatLog = profileManager.getCurrentProfileData('chat-log.json') || [];
+    journal = profileManager.getCurrentProfileData('journal.json') || [];
+    neuralNetwork = profileManager.getCurrentProfileData('neural.json') || null;
+    concepts = profileManager.getCurrentProfileData('concepts.json') || [];
+    facts = profileManager.getCurrentProfileData('facts.json') || [];
+  } else {
+    vocabulary = readJson(files.vocabulary, []);
+    memories = readJson(files.memories, []);
+    // Try both legacy and hyphenated chat log names
+    chatLog = readJson(files.chatLog, readJson(path.join(DATA_DIR, 'chat-log.json'), []));
+    journal = readJson(files.journal, []);
+    neuralNetwork = readJson(files.neuralNetwork, null);
+    concepts = readJson(files.concepts, []);
+    facts = readJson(files.facts, []);
+  }
   
   return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork };
 }
@@ -285,22 +340,33 @@ function saveCollections({ state, users, sessions, vocabulary, concepts, facts, 
   writeJson(files.users, users ?? readJson(files.users, []));
   writeJson(files.sessions, sessions ?? readJson(files.sessions, []));
   
-  // Save profile-specific data
-  if (vocabulary) profileManager.saveCurrentProfileData('vocabulary.json', vocabulary);
-  if (memories) profileManager.saveCurrentProfileData('memories.json', memories);
-  if (chatLog) profileManager.saveCurrentProfileData('chat-log.json', chatLog);
-  if (journal) profileManager.saveCurrentProfileData('journal.json', journal);
-  if (neuralNetwork) profileManager.saveCurrentProfileData('neural.json', neuralNetwork);
-  if (concepts) profileManager.saveCurrentProfileData('concepts.json', concepts);
-  if (facts) profileManager.saveCurrentProfileData('facts.json', facts);
-  
-  // Update profile metadata with latest stats
-  profileManager.updateProfileMetadata({
-    level: state.level,
-    xp: state.xp,
-    messageCount: chatLog?.length || 0,
-    memoryCount: memories?.length || 0
-  });
+  const currentId = profileManager.getCurrentProfileId?.() || null;
+  if (currentId) {
+    // Save profile-specific data
+    if (vocabulary) profileManager.saveCurrentProfileData('vocabulary.json', vocabulary);
+    if (memories) profileManager.saveCurrentProfileData('memories.json', memories);
+    if (chatLog) profileManager.saveCurrentProfileData('chat-log.json', chatLog);
+    if (journal) profileManager.saveCurrentProfileData('journal.json', journal);
+    if (neuralNetwork) profileManager.saveCurrentProfileData('neural.json', neuralNetwork);
+    if (concepts) profileManager.saveCurrentProfileData('concepts.json', concepts);
+    if (facts) profileManager.saveCurrentProfileData('facts.json', facts);
+    // Update profile metadata with latest stats
+    profileManager.updateProfileMetadata({
+      level: state.level,
+      xp: state.xp,
+      messageCount: chatLog?.length || 0,
+      memoryCount: memories?.length || 0
+    });
+  } else {
+    // Fallback: persist to root data when no profile is active
+    if (vocabulary) writeJson(files.vocabulary, vocabulary);
+    if (memories) writeJson(files.memories, memories);
+    if (chatLog) writeJson(files.chatLog, chatLog);
+    if (journal) writeJson(files.journal, journal);
+    if (neuralNetwork) writeJson(files.neuralNetwork, neuralNetwork);
+    if (concepts) writeJson(files.concepts, concepts);
+    if (facts) writeJson(files.facts, facts);
+  }
 }
 
 // XP/Level logic (scaled thresholds)
@@ -4388,7 +4454,7 @@ app.post('/api/chat', (req, res) => {
 
   // Generate response: Use curiosity question if triggered, otherwise normal response
   let constrained;
-  if (curiosity) {
+  if (curiosity && state.level >= 4) {
     // Pal asks "Why?" due to curiosity
     constrained = {
       output: curiosity.question,
@@ -4407,7 +4473,13 @@ app.post('/api/chat', (req, res) => {
   const gained = addXp(state, 10, collections);
 
   const userMsg = { id: nanoid(), role: 'user', text: message, ts: Date.now() };
-  const palMsg = { id: nanoid(), role: 'pal', text: constrained.output, kind: constrained.utterance_type, ts: Date.now() };
+  const palMsg = {
+    id: nanoid(),
+    role: 'pal',
+    text: constrained.output,
+    kind: mapUtteranceKind(constrained.utterance_type, constrained.output, state.level),
+    ts: Date.now(),
+  };
   chatLog.push(userMsg, palMsg);
   if (chatLog.length > MAX_CHAT_LOG_ENTRIES) {
     chatLog.splice(0, chatLog.length - MAX_CHAT_LOG_ENTRIES);
@@ -4486,7 +4558,7 @@ app.post('/api/chat', (req, res) => {
   console.log('📤 Sending response to client');
   res.json({
     reply: palMsg.text,
-    kind: constrained.utterance_type,
+    kind: palMsg.kind,
     xpGained: gained,
     level: state.level,
     memoryCount: memories.length,
@@ -4539,7 +4611,9 @@ app.post('/api/feedback', (req, res) => {
   // Reward positive feedback on Pal's responses
   let gained = 0;
   if (sentiment === 'positive' && role === 'pal') {
-    gained = addXp(state, 15);
+    const collections = getCollections();
+    gained = addXp(collections.state, 15, collections);
+    saveCollections(collections);
   }
   
   // Penalize negative feedback slightly (for future learning adjustments)

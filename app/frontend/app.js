@@ -262,6 +262,9 @@ function wireProfileManagement() {
   newPalBtn?.addEventListener('click', () => {
     newPalModal.classList.remove('hidden');
     newPalName.value = '';
+    // Ensure input is editable and focusable
+    newPalName.removeAttribute('readonly');
+    newPalName.disabled = false;
     newPalError.classList.add('hidden');
     // Delay focus to ensure modal is rendered
     setTimeout(() => newPalName.focus(), 50);
@@ -1345,27 +1348,48 @@ function wireChat() {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = $('#chat-input');
+    const floatingInput = $('#floating-chat-input');
     const msg = input.value.trim();
     if (!msg) return;
     
     lastUserMessage = msg;
     addMessage('user', msg);
+    
+    // If floating chat is open, sync the message there too
+    if (floatingChatOpen) {
+      addFloatingMessage('user', msg);
+    }
+    
     input.value = '';
     
-    // Disable input while waiting for response
+    // Disable both inputs while waiting for response
     input.disabled = true;
     input.placeholder = 'Pal is thinking...';
+    if (floatingInput) {
+      floatingInput.disabled = true;
+      floatingInput.placeholder = 'Pal is thinking...';
+    }
     
     const indicator = showTyping();
+    const floatingIndicator = floatingChatOpen ? showFloatingTyping() : null;
+    
     try {
       const res = await sendChat(msg);
       const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
       const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
       addMessage('pal', replyText, meta);
       
+      // If floating chat is open, sync the response there too
+      if (floatingChatOpen) {
+        addFloatingMessage('pal', replyText, meta);
+      }
+      
       // Update emotion display if emotion data is present
       if (res?.emotion) {
         updateEmotionDisplay(res.emotion);
+        if (floatingChatOpen) {
+          updateFloatingEmotion(res.emotion);
+        }
       }
       
       const wasDirty = multiplierDirty;
@@ -1391,11 +1415,22 @@ function wireChat() {
       }
       
       addMessage('pal', errorMsg);
+      if (floatingChatOpen) {
+        addFloatingMessage('pal', errorMsg);
+      }
     } finally {
       hideTyping(indicator);
-      // Re-enable input
+      if (floatingIndicator) {
+        hideFloatingTyping(floatingIndicator);
+      }
+      
+      // Re-enable both inputs
       input.disabled = false;
       input.placeholder = 'Type a message...';
+      if (floatingInput) {
+        floatingInput.disabled = false;
+        floatingInput.placeholder = 'Type a message...';
+      }
       input.focus();
     }
   });
@@ -1641,6 +1676,14 @@ async function init() {
     if (confirm('Exit to profile menu? Your current session will be saved.')) {
       currentProfileId = null;
       localStorage.removeItem('mypal_current_profile');
+      // Ensure any floating overlays are closed to avoid input capture
+      const floatingModal = document.getElementById('floating-chat-modal');
+      if (floatingModal) {
+        floatingModal.classList.add('hidden');
+      }
+      if (typeof floatingChatOpen !== 'undefined') {
+        floatingChatOpen = false;
+      }
       showProfileMenu();
       await initProfileMenu();
     }
@@ -1926,8 +1969,6 @@ async function renderProgressDashboard() {
 // NEURAL VISUALIZATION
 // ==============================================
 
-let neuralData = null;
-
 // Brain sub-tab switching
 function setupBrainSubTabs() {
   const buttons = $$('.brain-tab-btn[data-brain-tab]');
@@ -1985,9 +2026,10 @@ function setupJournalSubTabs() {
 // Fetch neural network data
 async function fetchNeuralNetwork() {
   try {
-    const res = await fetch(`${API_BASE}/neural-network`);
+    const res = await apiFetch('/neural');
     if (!res.ok) throw new Error('Failed to fetch neural network');
-    return await res.json();
+    const data = await res.json();
+    return data.neural || null;
   } catch (err) {
     console.error('Error fetching neural network:', err);
     return null;
@@ -2002,8 +2044,8 @@ async function refreshNeuralNetwork() {
     btn.textContent = 'Refreshing...';
   }
   
-  neuralData = await fetchNeuralNetwork();
-  if (!neuralData) {
+  const networkData = await fetchNeuralNetwork();
+  if (!networkData) {
     if (btn) {
       btn.disabled = false;
       btn.textContent = 'Refresh';
@@ -2011,7 +2053,7 @@ async function refreshNeuralNetwork() {
     return;
   }
   
-  renderNeuralNetwork();
+  renderNeuralNetwork(networkData);
   updateNeuralStats();
   updateNeuralEvents();
   
@@ -2241,26 +2283,26 @@ function renderInterRegionConnections(svg, regions) {
 
 // Update neural stats
 function updateNeuralStats() {
-  if (!neuralData || !neuralData.metrics) return;
+  if (!neuralState || !neuralState.metrics) return;
   
-  $('#neural-total').textContent = neuralData.metrics.totalNeurons || 0;
-  $('#neural-firings').textContent = neuralData.metrics.totalFirings || 0;
-  $('#neural-most-active').textContent = formatRegionName(neuralData.metrics.mostActiveRegion) || '—';
+  $('#neural-total').textContent = neuralState.metrics.totalNeurons || 0;
+  $('#neural-firings').textContent = neuralState.metrics.totalFirings || 0;
+  $('#neural-most-active').textContent = formatRegionName(neuralState.metrics.mostActiveRegion) || '—';
   
   // Update summary
-  $('#neural-summary').textContent = `Neurons: ${neuralData.metrics.totalNeurons || 0} · Regions: 7 · Firings: ${neuralData.metrics.totalFirings || 0}`;
+  $('#neural-summary').textContent = `Neurons: ${neuralState.metrics.totalNeurons || 0} · Regions: 7 · Firings: ${neuralState.metrics.totalFirings || 0}`;
 }
 
 // Update neural events list
 function updateNeuralEvents() {
-  if (!neuralData || !neuralData.recentEvents) return;
+  if (!neuralState || !neuralState.events) return;
   
   const eventList = $('#neural-event-list');
   if (!eventList) return;
   
   eventList.innerHTML = '';
   
-  const events = neuralData.recentEvents.slice(-20).reverse(); // Show last 20, newest first
+  const events = neuralState.events.slice(-20).reverse(); // Show last 20, newest first
   
   if (events.length === 0) {
     eventList.innerHTML = '<div class="event-item">No recent activity</div>';
@@ -2298,7 +2340,7 @@ function showNeuronDetails(neuron) {
     <div class="neuron-modal-content">
       <div class="neuron-modal-header">
         <h3>Neuron Details: ${neuron.id}</h3>
-        <button class="neuron-modal-close" onclick="this.closest('.neuron-modal').remove()">×</button>
+        <button class="neuron-modal-close">×</button>
       </div>
       <div class="neuron-modal-body">
         <div class="neuron-detail-row">
@@ -2320,7 +2362,7 @@ function showNeuronDetails(neuron) {
           <strong>Developed at Level:</strong> ${neuron.developedAtLevel || 0}
         </div>
         <div class="neuron-actions">
-          <button onclick="triggerNeuronManually('${neuron.id}')" class="neuron-trigger-btn">
+          <button class="neuron-trigger-btn" data-neuron-id="${neuron.id}">
             ⚡ Trigger (Cost: 2 CP)
           </button>
         </div>
@@ -2328,6 +2370,13 @@ function showNeuronDetails(neuron) {
     </div>
   `;
   document.body.appendChild(modal);
+  
+  // Add event listeners
+  const closeBtn = modal.querySelector('.neuron-modal-close');
+  const triggerBtn = modal.querySelector('.neuron-trigger-btn');
+  
+  closeBtn.addEventListener('click', () => modal.remove());
+  triggerBtn.addEventListener('click', () => triggerNeuronManually(neuron.id));
   
   // Close on background click
   modal.addEventListener('click', (e) => {
@@ -2381,12 +2430,18 @@ function showRegionDetails(region) {
         <strong>Developed at Level:</strong> ${region.developedAtLevel || 0}
       </div>
       <div class="region-actions">
-        <button onclick="triggerRegionActivity('${region.regionId}')" class="region-trigger-btn">
+        <button class="region-trigger-btn" data-region-id="${region.regionId}">
           🧠 Activate Region (Cost: 5 CP)
         </button>
       </div>
     </div>
   `;
+  
+  // Add event listener to the trigger button
+  const triggerBtn = detailsSection.querySelector('.region-trigger-btn');
+  if (triggerBtn) {
+    triggerBtn.addEventListener('click', () => triggerRegionActivity(region.regionId));
+  }
 }
 
 // Manual Neural Triggering Functions

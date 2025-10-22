@@ -33,6 +33,7 @@
 - 🔴 **[BUG-003] Race condition when multiple chats arrive before data save completes**
 - 🔴 **[BUG-004] Duplicate keyword echoing in journal focus selection**
 - 🔴 **[BUG-005] Intermittent telemetry write failures on Windows sandboxed installs**
+- 🔴 **[BUG-006] Pressing 'X' on a neuron view not closing the view**
 
 ## 🚀 FEATURES & ENHANCEMENTS
 ### Current Sprint - Critical Priority

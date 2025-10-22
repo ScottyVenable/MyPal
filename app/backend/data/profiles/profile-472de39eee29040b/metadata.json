@@ -1,0 +1,32 @@
+{
+  "id": "472de39eee29040b",
+  "name": "DevPal",
+  "createdAt": 1761131695875,
+  "lastPlayedAt": 1761131786156,
+  "level": 0,
+  "xp": 10,
+  "messageCount": 2,
+  "memoryCount": 1,
+  "version": "1.0.0",
+  "cp": 0,
+  "settings": {
+    "xpMultiplier": 1,
+    "apiProvider": "local",
+    "apiKeyMask": null
+  },
+  "personality": {
+    "curious": 11,
+    "logical": 10,
+    "social": 11,
+    "agreeable": 10,
+    "cautious": 10
+  },
+  "vocabulary": [
+    "mm",
+    "hello",
+    "pal",
+    "how",
+    "are",
+    "you"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "level": 0,
+  "xp": 10,
+  "cp": 0,
+  "settings": {
+    "xpMultiplier": 1,
+    "apiProvider": "local",
+    "apiKeyMask": null
+  },
+  "personality": {
+    "curious": 11,
+    "logical": 10,
+    "social": 11,
+    "agreeable": 10,
+    "cautious": 10
+  },
+  "vocabulary": [
+    "mm",
+    "hello",
+    "pal",
+    "how",
+    "are",
+    "you"
+  ]
+}
