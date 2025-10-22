@@ -210,6 +210,7 @@ Repository root/
 
 **For Developers:**
 - **[`docs/design/APP_DESIGN.md`](docs/design/APP_DESIGN.md)** — Complete 40-page technical specification with psychological theory, architecture, data models, and UI specs (REQUIRED READING)
+- **[`docs/design/WINDOWS_NATIVE_APP_CONVERSION_PLAN.md`](docs/design/WINDOWS_NATIVE_APP_CONVERSION_PLAN.md)** — Comprehensive plan for converting from Electron to native Windows application with C#/WPF, GPU acceleration, and performance optimization
 - **[`docs/ai/AI_PLAN.md`](docs/ai/AI_PLAN.md)** — AI integration strategy, model selection, hardware requirements
 - **[`docs/updates/MILESTONES.md`](docs/updates/MILESTONES.md)** — Detailed development milestones with acceptance criteria
 - **[`docs/updates/V1.0_ROADMAP.md`](docs/updates/V1.0_ROADMAP.md)** — High-level version roadmap
@@ -362,7 +363,7 @@ Check back for updates or contact the maintainers for licensing questions.
 
 **Deep Dives:**
 - **AI & Models**: [`docs/ai/AI_PLAN.md`](docs/ai/AI_PLAN.md), [`docs/design/ON_DEVICE_LLM_PLAN.md`](docs/design/ON_DEVICE_LLM_PLAN.md)
-- **Architecture**: [`docs/design/PLUGIN_SYSTEM.md`](docs/design/PLUGIN_SYSTEM.md)
+- **Architecture**: [`docs/design/PLUGIN_SYSTEM.md`](docs/design/PLUGIN_SYSTEM.md), [`docs/design/WINDOWS_NATIVE_APP_CONVERSION_PLAN.md`](docs/design/WINDOWS_NATIVE_APP_CONVERSION_PLAN.md)
 - **Release Planning**: [`docs/updates/V1.0_ROADMAP.md`](docs/updates/V1.0_ROADMAP.md), [`docs/updates/RELEASE_PLAN.md`](docs/updates/RELEASE_PLAN.md)
 
 ---
