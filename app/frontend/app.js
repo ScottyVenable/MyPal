@@ -10,6 +10,15 @@ let multiplierDirty = false;
 let lastUserMessage = '';
 let typingEl = null;
 let currentProfileId = null;
+let brainGraph3D = null;
+let brainGraphData = { nodes: [], links: [] };
+let brainGraphResizeObserver = null;
+let neuralGraph3D = null;
+let neuralGraphData = { nodes: [], links: [] };
+let neuralNodeIndex = new Map();
+let neuralLinkIndex = new Map();
+let neuralGraphResizeObserver = null;
+let neuralGraphRefreshRaf = null;
 
 // ==============================================
 // COMPREHENSIVE LOGGING SYSTEM
@@ -627,6 +636,20 @@ function updateEmotionDisplay(emotion) {
   if (emotion.mood) {
     fill.classList.add(emotion.mood);
   }
+
+  const summary = $('#emotion-summary');
+  if (summary) {
+    let intensityValue = typeof emotion.intensity === 'number' ? emotion.intensity : 0.5;
+    intensityValue = Math.max(0, Math.min(1, intensityValue));
+    const intensityPercent = Math.round(intensityValue * 100);
+    const tone = emotion.description || emotion.mood || 'centered';
+    let energyText = '';
+    if (typeof emotion.energy === 'number') {
+      const energyPercent = Math.round(Math.max(0, Math.min(1, emotion.energy)) * 100);
+      energyText = ` · Energy ${energyPercent}%`;
+    }
+    summary.textContent = `Feeling ${tone} at ${intensityPercent}% intensity${energyText}`;
+  }
 }
 
 function switchTab(name) {
@@ -1103,51 +1126,96 @@ function connectNeuralSocket() {
 
 function handleNeuralEvent(event) {
   if (!event || !event.type) return;
-  
+
+  if (neuralState) {
+    if (!Array.isArray(neuralState.events)) {
+      neuralState.events = [];
+    }
+    neuralState.events.push(event);
+    if (neuralState.events.length > 200) {
+      neuralState.events = neuralState.events.slice(-200);
+    }
+  }
+
   if (event.type === 'neuron-fire') {
     const neuronId = event.neuronId;
-    // Extract region ID from neuron ID (format: region-xxx-neuron-yyy)
-    const regionMatch = neuronId.match(/^(.+?)-neuron-\d+$/);
-    const regionId = regionMatch ? regionMatch[1] : null;
-    
-    if (regionId) {
-      // Find all neurons in this region and flash them
-      const regionGroup = document.querySelector(`g[data-region='${regionId}']`);
-      if (regionGroup) {
-        const neurons = regionGroup.querySelectorAll('.neuron-node');
-        neurons.forEach(neuron => {
-          const origR = neuron.getAttribute('r') || '3';
-          const origOpacity = neuron.getAttribute('opacity') || '0.6';
-          neuron.setAttribute('r', parseFloat(origR) * 1.5);
-          neuron.setAttribute('opacity', '1');
-          setTimeout(() => {
-            neuron.setAttribute('r', origR);
-            neuron.setAttribute('opacity', origOpacity);
-          }, 300);
-        });
-        
-        // Also pulse the region background
-        const rect = regionGroup.querySelector('rect');
-        if (rect) {
-          const origOpacity = rect.getAttribute('opacity') || '0.1';
-          rect.setAttribute('opacity', '0.3');
-          setTimeout(() => {
-            rect.setAttribute('opacity', origOpacity);
-          }, 300);
-        }
-      }
+    const node = neuralNodeIndex.get(neuronId);
+    if (!node) return;
+
+    node.firePulse = true;
+    node.displaySize = node.baseSize * 1.35;
+    if (node.sourceNeuron) {
+      node.sourceNeuron.currentActivation = event.intensity ?? node.sourceNeuron.currentActivation;
     }
+    scheduleNeuralGraphRefresh();
+
+    if (neuralState?.metrics) {
+      neuralState.metrics.totalFirings = (neuralState.metrics.totalFirings || 0) + 1;
+      neuralState.metrics.mostRecentFiring = {
+        neuronId,
+        intensity: event.intensity || 0,
+        timestamp: event.timestamp || Date.now()
+      };
+    }
+
+    if (Array.isArray(node.sourceNeuron?.connections)) {
+      node.sourceNeuron.connections.forEach((connection) => {
+        const key = `${node.id}|${connection.targetNeuronId}`;
+        const link = neuralLinkIndex.get(key);
+        if (!link) return;
+        link.highlight = true;
+        link.width = Math.max(link.width, 1.4);
+        link.particleCount = Math.max(2, Math.ceil((event.intensity || 1) * 3));
+        link.particleSpeed = 0.012;
+        scheduleNeuralGraphRefresh();
+
+        setTimeout(() => {
+          link.highlight = false;
+          link.width = Math.max(0.35, link.weight * 0.9);
+          link.particleCount = 0;
+          link.particleSpeed = 0.008;
+          scheduleNeuralGraphRefresh();
+        }, connection.latency ? connection.latency * 1.5 : 240);
+      });
+    }
+
+    setTimeout(() => {
+      node.firePulse = false;
+      node.displaySize = node.baseSize;
+      scheduleNeuralGraphRefresh();
+    }, 420);
+  } else if (event.type === 'connection-signal') {
+    const key = `${event.fromNeuronId}|${event.toNeuronId}`;
+    const link = neuralLinkIndex.get(key);
+    if (!link) return;
+
+    const strength = Math.abs(event.signal || 0.75);
+    link.particleCount = Math.max(1, Math.ceil(strength * 4));
+    link.particleSpeed = Math.max(0.004, Math.min(0.02, 0.006 + strength * 0.01));
+    link.highlight = true;
+    link.width = Math.max(link.width, 1.2);
+    scheduleNeuralGraphRefresh();
+
+    const decayDelay = (event.latency || 120) * 1.6;
+    setTimeout(() => {
+      link.particleCount = 0;
+      link.particleSpeed = 0.008;
+      link.highlight = false;
+      link.width = Math.max(0.35, link.weight * 0.9);
+      scheduleNeuralGraphRefresh();
+    }, decayDelay);
   } else if (event.type === 'neural-growth') {
-    // Handle neural growth animation
     showNeuralGrowthAnimation(event);
   }
+
+  updateNeuralEvents();
+  updateNeuralStats();
 }
 
 // Show neural growth animation when leveling up
 function showNeuralGrowthAnimation(growthEvent) {
   const { regionId, newNeurons, level } = growthEvent;
-  
-  // Show celebration notification
+
   const celebration = document.createElement('div');
   celebration.className = 'neural-growth-celebration';
   celebration.innerHTML = `
@@ -1174,46 +1242,33 @@ function showNeuralGrowthAnimation(growthEvent) {
     animation: growthCelebration 4s ease-out forwards;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   `;
-  
+
   document.body.appendChild(celebration);
-  
-  // Animate the specific region
-  const regionGroup = document.querySelector(`g[data-region='${regionId}']`);
-  if (regionGroup) {
-    // Pulse the region with growth effect
-    const rect = regionGroup.querySelector('.region-background');
-    if (rect) {
-      rect.style.animation = 'neuralGrowthPulse 2s ease-out';
-      rect.addEventListener('animationend', () => {
-        rect.style.animation = '';
-      });
-    }
-    
-    // Animate new neurons appearing
-    const neurons = regionGroup.querySelectorAll('.neuron-node');
-    const lastNeurons = Array.from(neurons).slice(-newNeurons);
-    
-    lastNeurons.forEach((neuron, index) => {
-      neuron.style.opacity = '0';
-      neuron.style.transform = 'scale(0)';
+
+  const regionNodes = (neuralGraphData?.nodes || []).filter((node) => node.regionId === regionId);
+  regionNodes.forEach((node, index) => {
+    const delay = 400 + index * 80;
+    setTimeout(() => {
+      node.firePulse = true;
+      node.displaySize = node.baseSize * 1.25;
+      scheduleNeuralGraphRefresh();
+
       setTimeout(() => {
-        neuron.style.transition = 'all 0.5s ease-out';
-        neuron.style.opacity = '0.8';
-        neuron.style.transform = 'scale(1)';
-      }, index * 100 + 500);
-    });
-  }
-  
-  // Remove celebration after animation
+        node.firePulse = false;
+        node.displaySize = node.baseSize;
+        scheduleNeuralGraphRefresh();
+      }, 600);
+    }, delay);
+  });
+
   setTimeout(() => {
     if (celebration.parentNode) {
       celebration.parentNode.removeChild(celebration);
     }
   }, 4000);
-  
-  // Refresh neural visualization to show new structure
+
   setTimeout(() => {
-    fetchNeuralSnapshot().then(snapshot => {
+    fetchNeuralSnapshot().then((snapshot) => {
       if (snapshot) renderNeuralNetwork(snapshot);
     });
   }, 2000);
@@ -1419,156 +1474,167 @@ async function fetchChatLog(limit = 200) {
 
 function renderBrain(data) {
   const container = document.getElementById('brain-graph');
-  if (!container || typeof vis === 'undefined' || !vis.Network) return;
   const desc = document.getElementById('brain-description');
+  if (!container) return;
+
   if (!defaultBrainDescription && desc) {
     defaultBrainDescription = desc.textContent || '';
   }
-  
-  console.log('[BRAIN] renderBrain called with:', { 
-    nodesCount: data.nodes?.length || 0, 
-    linksCount: data.links?.length || 0,
-    conceptsCount: data.concepts?.length || 0 
-  });
-  
-  // Show loading placeholder
-  container.innerHTML = '<div class="graph-loading"><div class="loading-spinner"></div><p>Loading knowledge graph...</p></div>';
-  
-  const nodes = new vis.DataSet((data.nodes || []).map((n) => ({
-    id: n.id,
-    label: n.label,
-    value: n.value || 1,
-    group: n.group || 'language',
-  })));
-  const edges = new vis.DataSet((data.links || []).map((e) => ({
-    from: e.from,
-    to: e.to,
-    value: e.value || 1,
-  })));
-  const conceptCount = Array.isArray(data.concepts) ? data.concepts.length : 0;
-  
-  console.log('[BRAIN] Created vis datasets:', { nodes: nodes.length, edges: edges.length, concepts: conceptCount });
-  updateBrainSummary({ nodeCount: nodes.length, edgeCount: edges.length, conceptCount });
 
-  if (!nodes.length) {
-    container.innerHTML = '<div class="graph-empty">Teach Pal new ideas to grow this graph.</div>';
+  if (typeof ForceGraph3D === 'undefined') {
+    console.warn('[BRAIN] ForceGraph3D unavailable. WebGL not supported.');
     if (desc) {
-      desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
+      desc.textContent = 'Knowledge web visualization requires WebGL support.';
     }
     return;
   }
 
-  // Use setTimeout to allow loading UI to render before heavy computation
-  setTimeout(() => {
-    // Clear container completely to prevent duplicates
-    container.innerHTML = '';
-    
-    const options = {
-      layout: { improvedLayout: true },
-      nodes: {
-        shape: 'dot',
-        scaling: { min: 4, max: 24 },
-        color: {
-          background: '#2a306b',
-          border: '#9ab4ff',
-          highlight: { background: '#3240a8', border: '#dfe3ff' }
-        },
-        font: { color: '#dfe3ff', size: 12 },
-        shadow: {
-          enabled: true,
-          color: 'rgba(0,0,0,0.35)',
-          size: 8,
-          x: 2,
-          y: 2
-        }
-      },
-      edges: {
-        color: { color: '#2a306b', highlight: '#9ab4ff' },
-        smooth: { type: 'continuous', roundness: 0.15 },
-        width: 1
-      },
-      physics: {
-        enabled: true,
-        solver: 'forceAtlas2Based',
-        forceAtlas2Based: {
-          gravitationalConstant: -50,
-          centralGravity: 0.01,
-          springLength: 200,
-          springConstant: 0.04,
-          avoidOverlap: 0.5
-        },
-        maxVelocity: 30,
-        minVelocity: 0.5,
-        timestep: 0.35,
-        stabilization: { 
-          enabled: true,
-          iterations: 200,
-          updateInterval: 50,
-          fit: true 
-        }
-      },
-      interaction: {
-        hover: true,
-        zoomView: true,
-        dragNodes: true,
-        tooltipDelay: 200,
-        hideEdgesOnDrag: true,
-        hideEdgesOnZoom: false
-      },
-      groups: {
-        concept: {
-          shape: 'diamond',
-          color: {
-            background: '#642d91',
-            border: '#d6b7ff',
-            highlight: { background: '#8044b0', border: '#ffffff' }
-          },
-          font: { color: '#f3e9ff' }
-        }
-      }
-    };
-    
-    // Create canvas element for network
-    const canvas = document.createElement('div');
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    container.appendChild(canvas);
-    
-    const network = new vis.Network(canvas, { nodes, edges }, options);
-    
-    // Keep physics enabled but reduce activity after stabilization for interactive dragging
-    network.once('stabilizationIterationsDone', () => {
-      network.setOptions({ 
-        physics: { 
-          enabled: true,
-          solver: 'forceAtlas2Based',
-          forceAtlas2Based: {
-            gravitationalConstant: -26,
-            centralGravity: 0.005,
-            springLength: 230,
-            springConstant: 0.18,
-            damping: 0.95
-          },
-          stabilization: false
-        } 
-      });
-      if (window.perf) window.perf.mark('brain_network_stabilized');
-    });
+  const nodesInput = Array.isArray(data.nodes) ? data.nodes : [];
+  const linksInput = Array.isArray(data.links) ? data.links : [];
+  const conceptsInput = Array.isArray(data.concepts) ? data.concepts : [];
 
-    if (desc) {
-      if (conceptCount && data.concepts?.length) {
-        const sorted = [...data.concepts].sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0) || (b.totalMentions || 0) - (a.totalMentions || 0));
-        const top = sorted[0];
-        if (top) {
-          const topKeywords = top.keywords?.slice(0, 3).map((k) => k.word).filter(Boolean);
-          const keywordText = topKeywords && topKeywords.length ? `Keywords: ${topKeywords.join(', ')}` : '';
-          desc.textContent = `Dominant concept: ${top.name} (${top.category}). ${keywordText}`.trim();
-          return;
-        }
+  const conceptIndex = new Map(conceptsInput.map((concept) => [concept.id, concept]));
+  const nodes = nodesInput.map((node) => {
+    const concept = conceptIndex.get(node.id);
+    const isConcept = !!concept || node.group === 'concept';
+    const sentimentLabel = concept?.sentiment?.label || 'neutral';
+    const value = node.value || 1;
+    const displaySize = Math.max(3.5, Math.log(value + 1) * 4.5);
+
+    let color = '#6f86ff';
+    if (isConcept) {
+      color = sentimentLabel === 'positive'
+        ? '#66bb6a'
+        : sentimentLabel === 'negative'
+          ? '#ef5350'
+          : '#ffb74d';
+    }
+
+    const tooltipParts = [`${node.label}`];
+    if (isConcept && concept) {
+      tooltipParts.push(`${concept.category}`);
+      tooltipParts.push(`Importance: ${(concept.importanceScore || 0).toFixed(2)}`);
+      tooltipParts.push(`Mentions: ${concept.totalMentions || 0}`);
+    } else {
+      tooltipParts.push(`Frequency score: ${value}`);
+    }
+
+    return {
+      id: node.id,
+      label: node.label,
+      group: isConcept ? 'concept' : (node.group || 'language'),
+      value,
+      concept: concept || null,
+      color,
+      displaySize,
+      tooltip: tooltipParts.join('\n')
+    };
+  });
+
+  const links = linksInput.map((link) => {
+    const weight = link.value || 1;
+    return {
+      source: link.from,
+      target: link.to,
+      weight,
+      width: Math.max(0.4, Math.log(weight + 1)),
+      color: weight >= 4 ? '#8ea6ff' : '#394580',
+      particleCount: weight >= 6 ? 1 : 0,
+      particleSpeed: 0.0015 + Math.min(weight, 8) * 0.0004
+    };
+  });
+
+  brainGraphData = { nodes, links };
+
+  if (!brainGraph3D) {
+    container.innerHTML = '';
+    brainGraph3D = ForceGraph3D()(container);
+    brainGraph3D
+      .showNavInfo(false)
+      .backgroundColor('#0b0f2a')
+      .nodeId('id')
+      .nodeLabel((node) => node.tooltip || node.label)
+      .nodeVal((node) => node.displaySize || 4)
+      .nodeColor((node) => node.color || '#6f86ff')
+      .nodeOpacity(0.92)
+      .linkColor((link) => link.color || '#394580')
+      .linkWidth((link) => link.width || 1)
+      .linkOpacity(0.25)
+      .linkDirectionalParticles((link) => link.particleCount || 0)
+      .linkDirectionalParticleSpeed((link) => link.particleSpeed || 0.002)
+      .linkDirectionalParticleWidth(2)
+      .onNodeClick(handleBrainNodeClick);
+
+    const controls = brainGraph3D.controls();
+    controls.autoRotate = false;
+    controls.enableZoom = true;
+    controls.minDistance = 120;
+
+    const updateSize = () => {
+      const { clientWidth, clientHeight } = container;
+      brainGraph3D.width(clientWidth);
+      brainGraph3D.height(clientHeight);
+    };
+
+    updateSize();
+    if (typeof ResizeObserver !== 'undefined') {
+      brainGraphResizeObserver = new ResizeObserver(updateSize);
+      brainGraphResizeObserver.observe(container);
+    } else {
+      window.addEventListener('resize', updateSize);
+    }
+
+    brainGraph3D.cameraPosition({ x: 0, y: 0, z: 650 });
+  }
+
+  brainGraph3D.graphData(brainGraphData);
+  brainGraph3D.refresh();
+
+  updateBrainSummary({
+    nodeCount: nodes.length,
+    edgeCount: links.length,
+    conceptCount: conceptsInput.length
+  });
+
+  if (desc) {
+    if (conceptsInput.length) {
+      const sorted = [...conceptsInput].sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0) || (b.totalMentions || 0) - (a.totalMentions || 0));
+      const top = sorted[0];
+      if (top) {
+        const topKeywords = top.keywords?.slice(0, 3).map((k) => k.word).filter(Boolean);
+        const keywordText = topKeywords?.length ? `Keywords: ${topKeywords.join(', ')}` : '';
+        desc.textContent = `Dominant concept: ${top.name} (${top.category}). ${keywordText}`.trim();
+      } else {
+        desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
       }
+    } else {
       desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
     }
-  }, 10); // Small delay to let loading UI render
+  }
+}
+
+function handleBrainNodeClick(node) {
+  const desc = document.getElementById('brain-description');
+  if (!desc) return;
+
+  if (node.concept) {
+    const concept = node.concept;
+    const sentimentLabel = concept.sentiment?.label || 'neutral';
+    const importance = (concept.importanceScore || 0).toFixed(2);
+    const topKeywords = concept.keywords?.slice(0, 3).map((k) => `${k.word} (${k.count || 0})`).join(', ');
+    const details = [
+      `${concept.name} — ${concept.category}`,
+      `Sentiment: ${sentimentLabel}`,
+      `Mentions: ${concept.totalMentions || 0}`,
+      `Importance: ${importance}`
+    ];
+    if (topKeywords) {
+      details.push(`Keywords: ${topKeywords}`);
+    }
+    desc.textContent = details.join(' • ');
+  } else {
+    desc.textContent = `High-frequency word: "${node.label}" • Frequency score: ${node.value}`;
+  }
 }
 
 function renderMemories(payload) {
@@ -2301,6 +2367,7 @@ async function init() {
   wireTabs();
   wireChat();
   wireChatSearch();
+  setupChatInsightsPanel();
   wireSettings();
   setupBrainSubTabs();
   setupJournalSubTabs();
@@ -2498,6 +2565,59 @@ function wireChatSearch() {
   btn?.addEventListener('click', perform);
   input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); perform(); } });
   clear?.addEventListener('click', () => { if (input) input.value = ''; renderSearchResults([]); });
+}
+
+function setupChatInsightsPanel() {
+  const buttons = Array.from(document.querySelectorAll('.insight-view-btn'));
+  const panels = Array.from(document.querySelectorAll('.insight-view'));
+  if (!buttons.length || !panels.length) return;
+
+  const activate = (viewName) => {
+    if (!viewName) return;
+    buttons.forEach((btn) => {
+      const isActive = btn.dataset.insightView === viewName;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+      btn.setAttribute('tabindex', isActive ? '0' : '-1');
+    });
+    panels.forEach((panel) => {
+      const matches = panel.dataset.insightContent === viewName;
+      panel.classList.toggle('active', matches);
+      panel.setAttribute('aria-hidden', matches ? 'false' : 'true');
+    });
+  };
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => activate(btn.dataset.insightView));
+    btn.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        activate(btn.dataset.insightView);
+      }
+    });
+  });
+
+  const active = buttons.find((btn) => btn.classList.contains('active')) || buttons[0];
+  if (active) {
+    activate(active.dataset.insightView);
+  }
+
+  const brainLink = document.querySelector('.insight-link-btn[data-target-tab="brain"]');
+  if (brainLink) {
+    brainLink.addEventListener('click', () => {
+      try {
+        const brainButton = document.querySelector('nav button[data-tab="brain"]');
+        if (typeof switchTab === 'function') {
+          switchTab('brain');
+        } else {
+          brainButton?.click();
+        }
+        brainButton?.focus();
+      } catch (err) {
+        console.warn('Failed to open brain tab from insight link', err);
+      }
+    });
+  }
 }
 
 // --- Progress dashboard (stats tab) ---
@@ -2744,8 +2864,6 @@ async function refreshNeuralNetwork() {
   }
   
   renderNeuralNetwork(networkData);
-  updateNeuralStats();
-  updateNeuralEvents();
   
   if (btn) {
     btn.disabled = false;
@@ -2753,244 +2871,156 @@ async function refreshNeuralNetwork() {
   }
 }
 
-// Enhanced Neural Network Visualization using vis.js
 function renderNeuralNetwork(networkData) {
-  const data = networkData || neuralState;
-  if (!data || !data.regions) return;
-  
   const container = document.getElementById('neural-network-graph');
-  if (!container || typeof vis === 'undefined' || !vis.Network) return;
-  
-  console.log('[NEURAL] Rendering neural network with', data.regions.length, 'regions');
-  
-  // Store current data globally for access by other functions
+  const data = networkData || neuralState;
+  if (!container || !data || !data.regions) return;
+
+  if (typeof ForceGraph3D === 'undefined') {
+    console.warn('[NEURAL] ForceGraph3D unavailable. WebGL not supported.');
+    return;
+  }
+
   neuralState = data;
-  
-  // Show loading placeholder
-  container.innerHTML = '<div class="graph-loading"><div class="loading-spinner"></div><p>Loading neural network...</p></div>';
-  
-  // Build nodes and edges for vis.js
+
   const nodes = [];
-  const edges = [];
-  
-  // Create nodes for each neuron in each region
-  data.regions.forEach(region => {
-    const neurons = region.neurons || [];
-    const maxVisible = 30; // Show more neurons for better visualization
-    const visibleNeurons = neurons.slice(0, maxVisible);
-    
-    visibleNeurons.forEach(neuron => {
-      // Determine size based on activity and connections
-      const baseSize = neuron.type === 'excitatory' ? 12 : 8;
-      const activityBoost = (neuron.activityLevel || 0) * 8;
-      const connectionBoost = Math.min((neuron.connections?.length || 0) * 2, 10);
-      const size = baseSize + activityBoost + connectionBoost;
-      
-      nodes.push({
+  const links = [];
+  neuralNodeIndex = new Map();
+  neuralLinkIndex = new Map();
+
+  data.regions.forEach((region) => {
+    const neurons = Array.isArray(region.neurons) ? region.neurons : [];
+    neurons.forEach((neuron) => {
+      const baseSize = neuron.type === 'excitatory' ? 11 : 8;
+      const connectionBoost = Math.min(neuron.connections?.length || 0, 12);
+      const displaySize = baseSize + connectionBoost * 0.6;
+      const node = {
         id: neuron.id,
-        label: neuron.pattern || neuron.id.substring(0, 8),
-        value: size,
-        group: region.regionId,
-        title: `${region.regionName}\nType: ${neuron.type}\nActivity: ${(neuron.activityLevel * 100).toFixed(1)}%\nConnections: ${neuron.connections?.length || 0}`,
-        color: {
-          background: region.color,
-          border: neuron.type === 'excitatory' ? '#ffffff' : '#888888',
-          highlight: {
-            background: lightenColor(region.color, 30),
-            border: '#ffffff'
-          }
-        },
-        borderWidth: neuron.type === 'excitatory' ? 2 : 1,
-        font: {
-          color: '#dfe3ff',
-          size: 10
-        }
-      });
-      
-      // Create edges for neuron connections
-      if (neuron.connections && Array.isArray(neuron.connections)) {
-        neuron.connections.forEach(targetId => {
-          // Only add edge if target neuron exists in our visible set
-          if (visibleNeurons.some(n => n.id === targetId)) {
-            edges.push({
-              from: neuron.id,
-              to: targetId,
-              value: 1,
-              color: {
-                color: 'rgba(159, 180, 255, 0.3)',
-                highlight: 'rgba(159, 180, 255, 0.6)'
-              },
-              smooth: {
-                type: 'continuous',
-                roundness: 0.2
-              }
-            });
-          }
-        });
-      }
+        label: neuron.pattern || neuron.id.slice(-8),
+        kind: 'neuron',
+        regionId: region.regionId,
+        regionName: region.regionName,
+        neuronType: neuron.type,
+        connectionCount: neuron.connections?.length || 0,
+        activationThreshold: neuron.activationThreshold || 1,
+        restingPotential: neuron.restingPotential || 0,
+        color: region.color,
+        baseSize: displaySize,
+        displaySize,
+        firePulse: false,
+        sourceNeuron: neuron
+      };
+      nodes.push(node);
+      neuralNodeIndex.set(node.id, node);
     });
   });
-  
-  console.log('[NEURAL] Created', nodes.length, 'nodes and', edges.length, 'edges');
-  
+
+  const knownIds = new Set(neuralNodeIndex.keys());
+  data.regions.forEach((region) => {
+    const neurons = Array.isArray(region.neurons) ? region.neurons : [];
+    neurons.forEach((neuron) => {
+      if (!Array.isArray(neuron.connections)) return;
+      neuron.connections.forEach((connection) => {
+        if (!knownIds.has(connection.targetNeuronId)) return;
+        const key = `${neuron.id}|${connection.targetNeuronId}`;
+        if (neuralLinkIndex.has(key)) return;
+        const weight = connection.weight || 0.5;
+        const link = {
+          source: neuron.id,
+          target: connection.targetNeuronId,
+          weight,
+          latency: connection.latency || 60,
+          color: 'rgba(140, 162, 255, 0.32)',
+          width: Math.max(0.35, weight * 0.9),
+          particleCount: 0,
+          particleSpeed: 0.008,
+          highlight: false
+        };
+        links.push(link);
+        neuralLinkIndex.set(key, link);
+      });
+    });
+  });
+
   if (!nodes.length) {
     container.innerHTML = '<div class="graph-empty">Neural network not yet initialized.</div>';
     return;
   }
-  
-  // Use setTimeout to allow loading UI to render before heavy computation
-  setTimeout(() => {
-    // Clear container completely
+
+  neuralGraphData = { nodes, links };
+
+  if (!neuralGraph3D) {
     container.innerHTML = '';
-    
-    const nodesDataSet = new vis.DataSet(nodes);
-    const edgesDataSet = new vis.DataSet(edges);
-    
-    const options = {
-      layout: {
-        improvedLayout: true,
-        hierarchical: false
-      },
-      nodes: {
-        shape: 'dot',
-        scaling: {
-          min: 8,
-          max: 30
-        },
-        shadow: {
-          enabled: true,
-          color: 'rgba(0,0,0,0.4)',
-          size: 10,
-          x: 2,
-          y: 2
-        }
-      },
-      edges: {
-        width: 1,
-        smooth: {
-          type: 'continuous',
-          roundness: 0.2
-        },
-        arrows: {
-          to: {
-            enabled: true,
-            scaleFactor: 0.5
-          }
-        }
-      },
-      physics: {
-        enabled: true,
-        solver: 'forceAtlas2Based',
-        forceAtlas2Based: {
-          gravitationalConstant: -80,
-          centralGravity: 0.02,
-          springLength: 150,
-          springConstant: 0.08,
-          damping: 0.5,
-          avoidOverlap: 0.8
-        },
-        maxVelocity: 40,
-        minVelocity: 0.75,
-        timestep: 0.4,
-        stabilization: {
-          enabled: true,
-          iterations: 250,
-          updateInterval: 50,
-          fit: true
-        }
-      },
-      interaction: {
-        hover: true,
-        zoomView: true,
-        dragNodes: true,
-        tooltipDelay: 100,
-        hideEdgesOnDrag: true,
-        hideEdgesOnZoom: false
-      },
-      groups: {}
-    };
-    
-    // Configure groups for each brain region
-    data.regions.forEach(region => {
-      options.groups[region.regionId] = {
-        color: {
-          background: region.color,
-          border: '#ffffff',
-          highlight: {
-            background: lightenColor(region.color, 30),
-            border: '#ffffff'
-          }
-        }
-      };
-    });
-    
-    // Create canvas element for network
-    const canvas = document.createElement('div');
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    container.appendChild(canvas);
-    
-    const network = new vis.Network(canvas, { nodes: nodesDataSet, edges: edgesDataSet }, options);
-    
-    // Reduce physics after stabilization for better interaction
-    network.once('stabilizationIterationsDone', () => {
-      network.setOptions({
-        physics: {
-          enabled: true,
-          solver: 'forceAtlas2Based',
-          forceAtlas2Based: {
-            gravitationalConstant: -40,
-            centralGravity: 0.01,
-            springLength: 180,
-            springConstant: 0.12,
-            damping: 0.85
-          },
-          stabilization: false
+    neuralGraph3D = ForceGraph3D()(container);
+    neuralGraph3D
+      .showNavInfo(false)
+      .backgroundColor('#070b23')
+      .nodeId('id')
+      .nodeOpacity(0.95)
+      .nodeVal((node) => node.displaySize || 6)
+      .nodeColor((node) => (node.firePulse ? '#ffffff' : node.color))
+      .nodeLabel(formatNeuronTooltip)
+      .linkColor((link) => (link.highlight ? '#ffe082' : link.color))
+      .linkWidth((link) => link.width || 0.5)
+      .linkOpacity(0.2)
+      .linkDirectionalParticles((link) => link.particleCount || 0)
+      .linkDirectionalParticleSpeed((link) => link.particleSpeed || 0.008)
+      .linkDirectionalParticleWidth(3)
+      .onNodeClick((node) => {
+        if (node.kind === 'neuron' && node.sourceNeuron) {
+          showNeuronDetails(node.sourceNeuron);
         }
       });
-      console.log('[NEURAL] Network stabilized');
-    });
-    
-    // Handle node clicks to show details
-    network.on('click', (params) => {
-      if (params.nodes.length > 0) {
-        const nodeId = params.nodes[0];
-        const neuron = data.regions
-          .flatMap(r => r.neurons || [])
-          .find(n => n.id === nodeId);
-        if (neuron) {
-          showNeuronDetails(neuron);
-        }
-      }
-    });
-    
-    console.log('[NEURAL] Network rendered successfully');
-  }, 100);
-  
-  // Update stats display
+
+    const controls = neuralGraph3D.controls();
+    controls.autoRotate = false;
+    controls.enableZoom = true;
+    controls.minDistance = 110;
+
+    const updateSize = () => {
+      const { clientWidth, clientHeight } = container;
+      neuralGraph3D.width(clientWidth);
+      neuralGraph3D.height(clientHeight);
+    };
+
+    updateSize();
+    if (typeof ResizeObserver !== 'undefined') {
+      neuralGraphResizeObserver = new ResizeObserver(updateSize);
+      neuralGraphResizeObserver.observe(container);
+    } else {
+      window.addEventListener('resize', updateSize);
+    }
+
+    neuralGraph3D.cameraPosition({ x: 0, y: 0, z: 720 });
+  }
+
+  neuralGraph3D.graphData(neuralGraphData);
+  neuralGraph3D.refresh();
+
   updateNeuralStats();
+  updateNeuralEvents();
 }
 
-// Helper function to lighten a hex color
-function lightenColor(hex, percent) {
-  // Remove # if present
-  hex = hex.replace('#', '');
-  
-  // Convert to RGB
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  
-  // Lighten
-  const newR = Math.min(255, Math.floor(r + (255 - r) * (percent / 100)));
-  const newG = Math.min(255, Math.floor(g + (255 - g) * (percent / 100)));
-  const newB = Math.min(255, Math.floor(b + (255 - b) * (percent / 100)));
-  
-  // Convert back to hex
-  return '#' + [newR, newG, newB].map(x => {
-    const hex = x.toString(16);
-    return hex.length === 1 ? '0' + hex : hex;
-  }).join('');
+function formatNeuronTooltip(node) {
+  if (node.kind !== 'neuron') return node.label;
+  const activation = node.sourceNeuron?.currentActivation ?? 0;
+  const threshold = node.activationThreshold ?? 1;
+  return [
+    `Neuron ${node.label}`,
+    `Region: ${node.regionName}`,
+    `Type: ${node.neuronType}`,
+    `Connections: ${node.connectionCount}`,
+    `Activation: ${activation.toFixed(2)} / ${threshold}`
+  ].join('\n');
+}
+
+function scheduleNeuralGraphRefresh() {
+  if (!neuralGraph3D) return;
+  if (neuralGraphRefreshRaf) return;
+  neuralGraphRefreshRaf = requestAnimationFrame(() => {
+    neuralGraphRefreshRaf = null;
+    neuralGraph3D.refresh();
+  });
 }
 
 // LEGACY SVG-BASED FUNCTIONS - No longer used with vis.js visualization

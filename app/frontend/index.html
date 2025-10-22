@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="services/perf.js"></script>
+  <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/force-graph@1.41.0/dist/force-graph-3d.min.js"></script>
   <script type="module" src="app.js" defer></script>
 </head>
 <body>
@@ -73,27 +75,85 @@
 
   <main>
     <section id="tab-chat" class="tab active">
-      <div class="emotion-display" id="emotion-display">
-        <div class="emotion-icon" id="emotion-icon">😊</div>
-        <div class="emotion-details">
-          <div class="emotion-mood" id="emotion-mood">Pal is calm</div>
-          <div class="emotion-bar">
-            <div class="emotion-fill" id="emotion-fill" style="width: 50%"></div>
+      <div class="chat-layout">
+        <div class="chat-column chat-conversation">
+          <div class="chat-tools">
+            <input id="chat-search" placeholder="Search chat history..." autocomplete="off" />
+            <button id="chat-search-btn" type="button">Search</button>
+            <button id="chat-search-clear" type="button">Clear</button>
+            <button id="popout-chat-btn" type="button" title="Pop out chat to floating window">dY"O Pop Out</button>
           </div>
+          <div id="chat-search-results" class="search-results hidden" aria-live="polite"></div>
+          <div id="chat-window"></div>
+          <form id="chat-form">
+            <input id="chat-input" placeholder="Teach Pal..." autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
         </div>
+
+        <aside class="chat-column chat-insights" aria-label="Pal insight center">
+          <div class="chat-insight-card emotion-center">
+            <div class="insight-header">
+              <div class="insight-title">
+                <h2>Emotion Center</h2>
+                <p class="insight-subtitle">Live mood and intensity</p>
+              </div>
+              <button class="insight-link-btn" type="button" data-target-tab="brain">Open Brain Tab</button>
+            </div>
+            <div class="insight-body">
+              <div class="emotion-display" id="emotion-display">
+                <div class="emotion-icon" id="emotion-icon">dY~S</div>
+                <div class="emotion-details">
+                  <div class="emotion-mood" id="emotion-mood">Pal is calm</div>
+                  <div class="emotion-bar">
+                    <div class="emotion-fill" id="emotion-fill" style="width: 50%"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="emotion-summary" id="emotion-summary" aria-live="polite">
+                Tune in to see how Pal is feeling moment to moment.
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-insight-card chat-insight-card--fill">
+            <div class="insight-header">
+              <div class="insight-title">
+                <h2>Thinking Canvas</h2>
+                <p class="insight-subtitle">Peek inside Pal&apos;s inner world</p>
+              </div>
+              <div class="insight-view-toggle" role="tablist" aria-label="Thinking canvas view">
+                <button type="button" class="insight-view-btn active" data-insight-view="neurons" role="tab" aria-selected="true" id="insight-tab-neurons" aria-controls="insight-panel-neurons">Neurons</button>
+                <button type="button" class="insight-view-btn" data-insight-view="emotions" role="tab" aria-selected="false" id="insight-tab-emotions" aria-controls="insight-panel-emotions">Emotions</button>
+                <button type="button" class="insight-view-btn" data-insight-view="thoughts" role="tab" aria-selected="false" id="insight-tab-thoughts" aria-controls="insight-panel-thoughts">Thoughts</button>
+                <button type="button" class="insight-view-btn" data-insight-view="memories" role="tab" aria-selected="false" id="insight-tab-memories" aria-controls="insight-panel-memories">Memories</button>
+              </div>
+            </div>
+            <div class="insight-body">
+              <div class="insight-view active" data-insight-content="neurons" role="tabpanel" id="insight-panel-neurons" aria-labelledby="insight-tab-neurons" aria-hidden="false">
+                <div class="insight-placeholder" id="insight-neurons">
+                  Neural activity preview will appear here once available.
+                </div>
+              </div>
+              <div class="insight-view" data-insight-content="emotions" role="tabpanel" id="insight-panel-emotions" aria-labelledby="insight-tab-emotions" aria-hidden="true">
+                <div class="insight-placeholder" id="insight-emotions">
+                  Emotional patterns and cycles will display here.
+                </div>
+              </div>
+              <div class="insight-view" data-insight-content="thoughts" role="tabpanel" id="insight-panel-thoughts" aria-labelledby="insight-tab-thoughts" aria-hidden="true">
+                <div class="insight-placeholder" id="insight-thoughts">
+                  Key thoughts in progress will surface here.
+                </div>
+              </div>
+              <div class="insight-view" data-insight-content="memories" role="tabpanel" id="insight-panel-memories" aria-labelledby="insight-tab-memories" aria-hidden="true">
+                <div class="insight-placeholder" id="insight-memories">
+                  Recent memory updates and anchors will be summarized here.
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
-      <div class="chat-tools">
-        <input id="chat-search" placeholder="Search chat history..." autocomplete="off" />
-        <button id="chat-search-btn" type="button">Search</button>
-        <button id="chat-search-clear" type="button">Clear</button>
-        <button id="popout-chat-btn" type="button" title="Pop out chat to floating window">📌 Pop Out</button>
-      </div>
-      <div id="chat-search-results" class="search-results hidden" aria-live="polite"></div>
-      <div id="chat-window"></div>
-      <form id="chat-form">
-        <input id="chat-input" placeholder="Teach Pal…" autocomplete="off" />
-        <button type="submit">Send</button>
-      </form>
     </section>
 
     <section id="tab-stats" class="tab">
@@ -528,6 +588,6 @@
   </div> <!-- End main-app -->
 
   <!-- Graph library -->
-  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 </body>
 </html>
+

@@ -31,6 +31,8 @@ Add these to the main todo list when available.
 - Create a "Help" tab at the top to consolidate all help-related resources, FAQs, and tutorials for easy access. There should be sections for education on psychology, neurology, and developmental concepts used in MyPal.
 - 
 
+## Debug
+- When starting the server, create a new log named as the date of the server start for easier log management (instead of all in the same file)
 
 ## Features
 - Complete categorization in the journal feature for Thoughts, Ideas, Personality, People, and Interests.
@@ -43,3 +45,7 @@ Add these to the main todo list when available.
 This needs to be integrated with the existing communication modes and should be selectable by the user. We need to determine, do all Pals have hands? What form does the Pal take? Humanoid? Animal-like? Robot-like?
 - Implement a "mood ring" feature that visually represents the Pal's current emotional state using colors or icons. This could be displayed next to the Pal's name or avatar and would change dynamically based on the Pal's interactions and experiences. Can also be displayed in the Brain menu next to Emotion.
 - Develop a system when certain features unlock like emotions, facial expressions, and body language as the Pal "develops" over time or reaches certain milestones. This could be tied to the Pal's age, experiences, or achievements within the app?
+
+
+## MASSIVE CHANGE
+- Overhaul to switch from an HTML frontend to using Avalonia for cross-platform desktop application support and better performance. This will involve rewriting the UI components and ensuring compatibility with existing backend services. Make sure that the backend will fit right into a new Avalonia based frontend system.
