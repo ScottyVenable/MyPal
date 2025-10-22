@@ -4395,27 +4395,72 @@ app.get('/api/neural-network', (req, res) => {
 app.post('/api/settings', (req, res) => {
   const { state } = getCollections();
   const { xpMultiplier, apiProvider, apiKey, telemetry, authRequired } = req.body || {};
-  if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
-    state.settings.xpMultiplier = xpMultiplier;
+  
+  // Check if we're in profile mode
+  const currentProfileId = profileManager.getCurrentProfileId();
+  const isProfileMode = !!currentProfileId;
+  
+  if (isProfileMode) {
+    // Load profile-specific settings
+    let profileSettings = profileManager.getCurrentProfileData('settings.json') || {
+      xpMultiplier: 1,
+      apiProvider: 'local',
+      telemetry: false,
+      authRequired: false
+    };
+    
+    // Update settings
+    if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
+      profileSettings.xpMultiplier = xpMultiplier;
+    }
+    if (typeof apiProvider === 'string' && ['local','openai','azure','gemini'].includes(apiProvider)) {
+      profileSettings.apiProvider = apiProvider;
+    }
+    if (typeof telemetry === 'boolean') {
+      profileSettings.telemetry = telemetry;
+    }
+    if (typeof authRequired === 'boolean') {
+      profileSettings.authRequired = authRequired;
+    }
+    if (typeof apiKey === 'string' && apiKey.length > 0) {
+      const secrets = readSecrets();
+      secrets.apiKey = apiKey;
+      writeSecrets(secrets);
+      // Mask stored in settings for UI only
+      profileSettings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
+    }
+    
+    // Save to profile
+    profileManager.saveCurrentProfileData('settings.json', profileSettings);
+    
+    // Also update state.settings for consistency
+    state.settings = { ...profileSettings };
+    
+    res.json({ settings: profileSettings });
+  } else {
+    // Legacy mode - save to state.json
+    if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
+      state.settings.xpMultiplier = xpMultiplier;
+    }
+    if (typeof apiProvider === 'string' && ['local','openai','azure','gemini'].includes(apiProvider)) {
+      state.settings.apiProvider = apiProvider;
+    }
+    if (typeof telemetry === 'boolean') {
+      state.settings.telemetry = telemetry;
+    }
+    if (typeof authRequired === 'boolean') {
+      state.settings.authRequired = authRequired;
+    }
+    if (typeof apiKey === 'string' && apiKey.length > 0) {
+      const secrets = readSecrets();
+      secrets.apiKey = apiKey;
+      writeSecrets(secrets);
+      // Mask stored in state for UI only
+      state.settings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
+    }
+    saveState(state);
+    res.json({ settings: state.settings });
   }
-  if (typeof apiProvider === 'string' && ['local','openai','azure','gemini'].includes(apiProvider)) {
-    state.settings.apiProvider = apiProvider;
-  }
-  if (typeof telemetry === 'boolean') {
-    state.settings.telemetry = telemetry;
-  }
-  if (typeof authRequired === 'boolean') {
-    state.settings.authRequired = authRequired;
-  }
-  if (typeof apiKey === 'string' && apiKey.length > 0) {
-    const secrets = readSecrets();
-    secrets.apiKey = apiKey;
-    writeSecrets(secrets);
-    // Mask stored in state for UI only
-    state.settings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
-  }
-  saveState(state);
-  res.json({ settings: state.settings });
 });
 
 // --- Auth endpoints

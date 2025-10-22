@@ -113,6 +113,7 @@ class ProfileManager {
       'journal.json': [],
       'concepts.json': [],
       'facts.json': [],
+      'neural.json': null,
       'settings.json': {
         xpMultiplier: 1,
         apiProvider: 'local',

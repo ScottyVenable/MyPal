@@ -1762,6 +1762,18 @@ function wireTabs() {
     switchTab(tab);
     
     if (tab === 'journal') {
+      // Ensure the thoughts subtab is active by default
+      const thoughtsBtn = document.querySelector('.brain-tab-btn[data-journal-tab="thoughts"]');
+      if (thoughtsBtn && !thoughtsBtn.classList.contains('active')) {
+        thoughtsBtn.classList.add('active');
+      }
+      
+      // Show the thoughts content by default
+      const thoughtsContent = document.getElementById('journal-tab-thoughts');
+      if (thoughtsContent && !thoughtsContent.classList.contains('active')) {
+        thoughtsContent.classList.add('active');
+      }
+      
       await loadJournal(true);
     } else if (tab === 'brain') {
       await loadBrainInsights();
@@ -2125,6 +2137,12 @@ function wireSettings() {
       localStorage.removeItem('mypal_current_profile');
       showProfileMenu();
       await initProfileMenu();
+      
+      // Ensure profile cards are visible when switching profiles
+      const profileCards = $('#profile-cards');
+      if (profileCards) {
+        profileCards.classList.remove('hidden');
+      }
     }
   });
   
@@ -2427,9 +2445,36 @@ async function renderProgressDashboard() {
   let payload;
   try {
     payload = await fetchMemories(400);
-  } catch { return; }
+  } catch (err) {
+    console.error('Failed to fetch memories for progress dashboard:', err);
+    return;
+  }
+  
   const memories = payload?.memories || [];
-  if (!memories.length) return;
+  
+  // Show empty state messages if no data
+  const xpCanvas = document.getElementById('xpChart');
+  const convoCanvas = document.getElementById('convoChart');
+  
+  if (!memories.length) {
+    // Show empty state for XP chart
+    if (xpCanvas) {
+      const xpContainer = xpCanvas.parentElement;
+      if (xpContainer) {
+        xpContainer.innerHTML = '<p class="graph-empty">Start chatting to track your XP progress!</p>';
+      }
+    }
+    
+    // Show empty state for conversation chart
+    if (convoCanvas) {
+      const convoContainer = convoCanvas.parentElement;
+      if (convoContainer) {
+        convoContainer.innerHTML = '<p class="graph-empty">Conversation data will appear here as you chat.</p>';
+      }
+    }
+    
+    return;
+  }
 
   const byDay = new Map();
   const xpSeries = [];
@@ -2444,7 +2489,7 @@ async function renderProgressDashboard() {
   const convoLabels = Array.from(byDay.keys());
   const convoData = Array.from(byDay.values());
 
-  const xpCtx = document.getElementById('xpChart')?.getContext('2d');
+  const xpCtx = xpCanvas?.getContext('2d');
   if (xpCtx) {
     // Reuse chart instance for better performance
     if (xpChartEl) {
@@ -2496,7 +2541,7 @@ async function renderProgressDashboard() {
       });
     }
   }
-  const convoCtx = document.getElementById('convoChart')?.getContext('2d');
+  const convoCtx = convoCanvas?.getContext('2d');
   if (convoCtx) {
     // Reuse chart instance for better performance
     if (convoChartEl) {
