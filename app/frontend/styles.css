@@ -235,6 +235,7 @@ body { font-family: system-ui, Segoe UI, Arial; margin: 0; background: #0f1220; 
   padding: 2rem;
   max-width: 400px;
   width: 90%;
+  pointer-events: auto;
 }
 
 .modal-content h2 {

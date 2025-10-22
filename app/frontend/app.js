@@ -264,10 +264,23 @@ function wireProfileManagement() {
     newPalName.value = '';
     // Ensure input is editable and focusable
     newPalName.removeAttribute('readonly');
+    newPalName.removeAttribute('aria-disabled');
+    newPalName.readOnly = false;
     newPalName.disabled = false;
     newPalError.classList.add('hidden');
     // Delay focus to ensure modal is rendered
-    setTimeout(() => newPalName.focus(), 50);
+    setTimeout(() => {
+      try {
+        // Prefer requestAnimationFrame for reliable caret placement
+        requestAnimationFrame(() => {
+          newPalName.focus({ preventScroll: true });
+          // Select to ensure caret visibility
+          newPalName.select();
+        });
+      } catch {
+        newPalName.focus();
+      }
+    }, 50);
   });
   
   loadPalBtn?.addEventListener('click', async () => {
@@ -1621,39 +1634,12 @@ async function init() {
   // Wire up profile management first
   wireProfileManagement();
   
-  // Check for existing profile
-  const savedProfileId = localStorage.getItem('mypal_current_profile');
-  
   await checkHealth();
   
   if (backendHealthy) {
-    // Try to load profiles
-    const profilesData = await loadProfilesList();
-    
-    if (profilesData && profilesData.profiles.length > 0) {
-      // If we have a saved profile, try to load it
-      if (savedProfileId) {
-        try {
-          await loadProfile(savedProfileId);
-          currentProfileId = savedProfileId;
-          hideProfileMenu();
-          await refreshStats();
-        } catch (err) {
-          console.error('Failed to auto-load profile:', err);
-          localStorage.removeItem('mypal_current_profile');
-          showProfileMenu();
-          await initProfileMenu();
-        }
-      } else {
-        // No saved profile, show menu
-        showProfileMenu();
-        await initProfileMenu();
-      }
-    } else {
-      // No profiles exist, show menu to create one
-      showProfileMenu();
-      await initProfileMenu();
-    }
+    // Always show profile menu on startup - let user choose their profile
+    showProfileMenu();
+    await initProfileMenu();
   } else {
     showStatusModal();
     showProfileMenu();

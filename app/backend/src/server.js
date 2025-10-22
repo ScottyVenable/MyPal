@@ -419,7 +419,7 @@ function addXp(state, rawXp, collections = null) {
  * Trigger neural network growth when leveling up
  */
 function triggerNeuralGrowth(newLevel, collections) {
-  console.log(`🧠 Neural growth triggered for level ${newLevel}`);
+  console.log(`[NEURAL] Neural growth triggered for level ${newLevel}`);
   
   const neuralNetwork = getNeuralNetwork(collections);
   let totalNewNeurons = 0;
@@ -450,7 +450,7 @@ function triggerNeuralGrowth(newLevel, collections) {
   // Save updated neural network
   collections.neuralNetwork = neuralNetwork.toJSON();
   
-  console.log(`✅ Added ${totalNewNeurons} new neurons across all regions`);
+  console.log(`[SUCCESS] Added ${totalNewNeurons} new neurons across all regions`);
 }
 
 /**
@@ -710,7 +710,7 @@ class NeuralNetwork {
  * Initialize default neural network structure
  */
 function initializeNeuralNetwork(level = 0) {
-  console.log('🧠 Initializing neural network...');
+  console.log('[NEURAL] Initializing neural network...');
 
   const regions = [
     {
@@ -804,7 +804,7 @@ function initializeNeuralNetwork(level = 0) {
   });
 
   network.updateMetrics();
-  console.log(`✅ Neural network initialized with ${network.metrics.totalNeurons} neurons`);
+  console.log(`[SUCCESS] Neural network initialized with ${network.metrics.totalNeurons} neurons`);
 
   return network;
 }
@@ -962,7 +962,7 @@ function activateNeuralPattern(taskType, neuralNetwork) {
   const pattern = neuralPatterns[taskType];
   if (!pattern) return;
 
-  console.log(`🧠 Activating neural pattern: ${taskType}`);
+  console.log(`[NEURAL] Activating neural pattern: ${taskType}`);
 
   // Find neurons in specified regions
   const targetNeurons = [];
@@ -1353,7 +1353,7 @@ function learnFromDefinition(vocabulary, definitions, level, state) {
       }
     }
     
-    console.log(`✅ Learned definition: "${concept}" = "${definition}" (bonus: +${learningBonus})`);
+    console.log(`[LEARNING] Learned definition: "${concept}" = "${definition}" (bonus: +${learningBonus})`);
   }
 }
 
@@ -2939,15 +2939,112 @@ function generateLevel1Response(ctx, vocabulary, state = {}, memories = []) {
 
 // LEVEL 2: Single words + possessives and simple modifiers (400-1000 XP)
 // Transitional stage: Grammar shadows appear, word combinations begin
+// Attempt concise factual answers for low-level questions
+function attemptDirectAnswer(ctx, vocabulary = []) {
+  if (!ctx || !ctx.hasQuestion) return null;
+  const q = String(ctx.raw || '').trim().toLowerCase();
+
+  // 1) Simple geography: capital of <country>
+  const mCap = q.match(/(?:what\s+is\s+)?the\s+capital\s+of\s+([a-z\s]+)\??$/i);
+  if (mCap) {
+    const country = mCap[1].trim().replace(/\s+/g, ' ');
+    const KNOWN_CAPITALS = {
+      'france': 'Paris',
+      'spain': 'Madrid',
+      'germany': 'Berlin',
+      'italy': 'Rome',
+      'united kingdom': 'London',
+      'uk': 'London',
+      'england': 'London',
+      'scotland': 'Edinburgh',
+      'wales': 'Cardiff',
+      'ireland': 'Dublin',
+      'portugal': 'Lisbon',
+      'netherlands': 'Amsterdam',
+      'belgium': 'Brussels',
+      'switzerland': 'Bern',
+      'austria': 'Vienna',
+      'poland': 'Warsaw',
+      'czech republic': 'Prague',
+      'czechia': 'Prague',
+      'hungary': 'Budapest',
+      'greece': 'Athens',
+      'russia': 'Moscow',
+      'turkey': 'Ankara',
+      'usa': 'Washington, D.C.',
+      'united states': 'Washington, D.C.',
+      'united states of america': 'Washington, D.C.',
+      'canada': 'Ottawa',
+      'mexico': 'Mexico City',
+      'brazil': 'Brasília',
+      'argentina': 'Buenos Aires',
+      'chile': 'Santiago',
+      'peru': 'Lima',
+      'colombia': 'Bogotá',
+      'venezuela': 'Caracas',
+      'australia': 'Canberra',
+      'new zealand': 'Wellington',
+      'japan': 'Tokyo',
+      'china': 'Beijing',
+      'india': 'New Delhi',
+      'pakistan': 'Islamabad',
+      'bangladesh': 'Dhaka',
+      'indonesia': 'Jakarta',
+      'philippines': 'Manila',
+      'vietnam': 'Hanoi',
+      'thailand': 'Bangkok',
+      'singapore': 'Singapore',
+      'malaysia': 'Kuala Lumpur',
+      'egypt': 'Cairo',
+      'south africa': 'Pretoria',
+      'nigeria': 'Abuja',
+      'kenya': 'Nairobi',
+      'ethiopia': 'Addis Ababa',
+      'morocco': 'Rabat',
+    };
+    const key = country;
+    if (KNOWN_CAPITALS[key]) {
+      return {
+        utterance_type: 'factual-answer',
+        output: KNOWN_CAPITALS[key],
+        focus: country,
+        reasoning: [`Direct answer: capital of ${country}`],
+        analysis: ctx,
+        strategy: 'factual-retrieval',
+      };
+    }
+  }
+
+  // 2) Definitions from learned vocabulary: "what is <term>"
+  const mDef = q.match(/^what\s+is\s+(?:a\s+|an\s+|the\s+)?([a-z][a-z0-9\-\s]{1,40})\??$/i);
+  if (mDef) {
+    const term = mDef[1].trim();
+    const entry = Array.isArray(vocabulary) ? vocabulary.find(v => v.word?.toLowerCase?.() === term.toLowerCase()) : null;
+    const def = entry?.definitions?.[entry.definitions.length - 1]?.definition || entry?.definitions?.[0]?.definition;
+    if (def && def.length) {
+      return {
+        utterance_type: 'factual-answer',
+        output: `${capitalize(term)} is ${def}.`,
+        focus: term,
+        reasoning: ['Direct answer from learned definition.'],
+        analysis: ctx,
+        strategy: 'definition-retrieval',
+      };
+    }
+  }
+
+  return null;
+}
+
 function generateLevel2Response(ctx, vocabulary, state = {}, memories = []) {
   const focus = ctx.keywords?.[0];
   const focus2 = ctx.keywords?.[1];
   const vocabSize = vocabulary.length;
   const personality = state.personality || {};
-  
+
   // Check for quoted phrases that Pal can use
   const quotedPhrase = findRelevantQuotedPhrase(vocabulary, ctx.keywords, state.level);
-  
+
   // Use taught phrases when appropriate (30% chance if available)
   if (quotedPhrase && Math.random() < 0.3) {
     return {
@@ -2961,37 +3058,24 @@ function generateLevel2Response(ctx, vocabulary, state = {}, memories = []) {
     };
   }
   
-  // More sophisticated questions with focus
+  // When user asks a question at Level 2, try to answer concisely instead of asking back
   if (ctx.hasQuestion) {
-    if (focus) {
-      const targetedQuestions = [
-        `why ${focus}?`,
-        `what ${focus}?`,
-        `${focus} how?`,
-        `where ${focus}?`,
-        `${focus}... why?`,
-        `tell ${focus}?`,
-      ];
-      return {
-        utterance_type: 'focused-interrogative',
-        output: chooseVariant(targetedQuestions),
-        focus,
-        reasoning: [`Asking targeted question about "${focus}" - causal reasoning emerging.`],
-        analysis: ctx,
-        strategy: 'conceptual-inquiry',
-        developmental_note: 'Wh-questions emerge in order: what, where, who, why, when, how',
-      };
-    }
-    
-    const generalQuestions = ['why that?', 'what this?', 'how work?', 'you mean?', 'tell more?'];
+    const direct = attemptDirectAnswer(ctx, vocabulary);
+    if (direct) return direct;
+    const unknownAnswers = [
+      'not sure',
+      'me not know yet',
+      "I don't know",
+      'hmm not sure',
+    ];
     return {
-      utterance_type: 'general-interrogative',
-      output: chooseVariant(generalQuestions),
-      focus: null,
-      reasoning: ['Expressing curiosity about explanations.'],
+      utterance_type: 'unknown-answer',
+      output: chooseVariant(unknownAnswers),
+      focus: focus || null,
+      reasoning: ['Question detected; no known answer at this level.'],
       analysis: ctx,
-      strategy: 'explanation-seeking',
-      developmental_note: 'Desire for causal understanding intensifies',
+      strategy: 'concise-admission',
+      developmental_note: 'Direct answer preference at Level 2',
     };
   }
   
@@ -4363,7 +4447,7 @@ app.post('/api/chat', (req, res) => {
   console.log('📨 Chat request received');
   const { message } = req.body || {};
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
-  console.log('💬 User message:', message);
+  console.log('[CHAT] User message:', message);
 
   const collections = getCollections();
   const { state, vocabulary, chatLog, memories, concepts, journal } = collections;
@@ -4466,7 +4550,7 @@ app.post('/api/chat', (req, res) => {
     // Normal response generation
     console.log('🤔 Generating normal response...');
     constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
-    console.log('✅ Response generated');
+    console.log('[SUCCESS] Response generated');
   }
 
   // XP: standard typed user response
@@ -4550,7 +4634,7 @@ app.post('/api/chat', (req, res) => {
   // Try to save collections, but don't let save errors prevent response
   try {
     saveCollections({ ...collections, chatLog, state, vocabulary, memories, concepts, journal });
-    console.log('💾 Collections saved successfully');
+    console.log('[SAVE] Collections saved successfully');
   } catch (saveError) {
     console.error('Error saving collections (response will still be sent):', saveError);
   }
@@ -4571,7 +4655,7 @@ app.post('/api/chat', (req, res) => {
     thoughtId: thought.id,
     emotion: palEmotion,
   });
-  console.log('✅ Response sent successfully');
+  console.log('[SUCCESS] Response sent successfully');
 });
 
 app.post('/api/reinforce', (req, res) => {
