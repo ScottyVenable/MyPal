@@ -1887,6 +1887,12 @@ function wireChat() {
     try {
       logInfo('API', `Sending chat request to backend`, { chatId });
       const res = await sendChat(msg);
+      
+      // Validate response
+      if (!res) {
+        throw new Error('Empty response from server');
+      }
+      
       logInfo('API', `Backend response received`, { 
         chatId, 
         hasReply: !!(res?.reply),
