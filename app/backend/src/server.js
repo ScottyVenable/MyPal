@@ -329,16 +329,98 @@ function thresholdsFor(level) {
   return base + extraLevels * 6000;
 }
 
-function addXp(state, rawXp) {
+function addXp(state, rawXp, collections = null) {
   const mult = state.settings?.xpMultiplier ?? 1;
   const gained = Math.floor(rawXp * mult);
+  const previousLevel = state.level;
   state.xp += gained;
   state.cp = Math.floor(state.xp / 100);
+  
   // Level up loop
   while (state.xp >= thresholdsFor(state.level)) {
     state.level += 1;
   }
+  
+  // Check if level increased for neural growth
+  if (state.level > previousLevel && collections) {
+    triggerNeuralGrowth(state.level, collections);
+  }
+  
   return gained;
+}
+
+/**
+ * Trigger neural network growth when leveling up
+ */
+function triggerNeuralGrowth(newLevel, collections) {
+  console.log(`🧠 Neural growth triggered for level ${newLevel}`);
+  
+  const neuralNetwork = getNeuralNetwork(collections);
+  let totalNewNeurons = 0;
+  
+  // Add new neurons to each region based on level
+  for (const region of neuralNetwork.regions) {
+    const newNeuronsForRegion = calculateNeuronGrowth(newLevel, region.regionId);
+    
+    if (newNeuronsForRegion > 0) {
+      const newNeurons = generateRegionNeurons(region.regionId, getRegionPrefix(region.regionId), newNeuronsForRegion, newLevel);
+      region.neurons.push(...newNeurons);
+      totalNewNeurons += newNeuronsForRegion;
+      
+      // Emit growth event for visualization
+      neuralNetwork.emitNeuralEvent({
+        type: 'neural-growth',
+        regionId: region.regionId,
+        newNeurons: newNeuronsForRegion,
+        level: newLevel,
+        timestamp: Date.now()
+      });
+    }
+  }
+  
+  // Update metrics
+  neuralNetwork.updateMetrics();
+  
+  // Save updated neural network
+  collections.neuralNetwork = neuralNetwork.toJSON();
+  
+  console.log(`✅ Added ${totalNewNeurons} new neurons across all regions`);
+}
+
+/**
+ * Calculate number of new neurons to add based on level and region
+ */
+function calculateNeuronGrowth(level, regionId) {
+  const baseGrowth = {
+    'sensory-input': 2,
+    'language-center': 4,
+    'association-cortex': 6,
+    'frontal-lobe': 3,
+    'amygdala': 1,
+    'memory-systems': 3,
+    'motor-output': 2
+  };
+  
+  const base = baseGrowth[regionId] || 2;
+  // Exponential growth that slows down at higher levels
+  return Math.floor(base * (1 + level * 0.3));
+}
+
+/**
+ * Get region prefix for neuron ID generation
+ */
+function getRegionPrefix(regionId) {
+  const prefixMap = {
+    'sensory-input': 'si',
+    'language-center': 'lang',
+    'association-cortex': 'assoc',
+    'frontal-lobe': 'fl',
+    'amygdala': 'amyg',
+    'memory-systems': 'mem',
+    'motor-output': 'mo'
+  };
+  
+  return prefixMap[regionId] || 'unk';
 }
 
 // ========================================
@@ -4322,7 +4404,7 @@ app.post('/api/chat', (req, res) => {
   }
 
   // XP: standard typed user response
-  const gained = addXp(state, 10);
+  const gained = addXp(state, 10, collections);
 
   const userMsg = { id: nanoid(), role: 'user', text: message, ts: Date.now() };
   const palMsg = { id: nanoid(), role: 'pal', text: constrained.output, kind: constrained.utterance_type, ts: Date.now() };
@@ -4423,7 +4505,7 @@ app.post('/api/chat', (req, res) => {
 app.post('/api/reinforce', (req, res) => {
   const collections = getCollections();
   const { state } = collections;
-  const gained = addXp(state, 25);
+  const gained = addXp(state, 25, collections);
   saveCollections(collections);
   res.json({ xpGained: gained, level: state.level });
 });
@@ -5131,19 +5213,85 @@ try {
     }
 
     ws.on('message', (msg) => {
-      // Accept manual trigger requests: { action: 'triggerNeuron', neuronId }
+      // Accept manual trigger requests
       try {
         const data = JSON.parse(String(msg));
-        if (data && data.action === 'triggerNeuron' && data.neuronId) {
-          // Use current profile's neural network
-          const collections = getCollections();
-          const neural = getNeuralNetwork(collections);
+        if (!data || !data.action) return;
+
+        const collections = getCollections();
+        const { state } = collections;
+        const neural = getNeuralNetwork(collections);
+
+        if (data.action === 'triggerNeuron' && data.neuronId) {
+          // Check CP cost (2 CP per neuron)
+          const cost = data.cost || 2;
+          if (state.cp < cost) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              message: `Insufficient CP. Need ${cost} CP to trigger neuron.` 
+            }));
+            return;
+          }
+
+          // Deduct CP
+          state.cp -= cost;
           neural.metrics.manualTriggers++;
+          
+          // Trigger the neuron
           neural.triggerNeuron(data.neuronId, 1.0);
-          // Persist neural state to current profile
-          saveCollections({ ...collections, neuralNetwork: neural.toJSON() });
+          
+          // Persist updated state and neural network
+          saveCollections({ ...collections, state, neuralNetwork: neural.toJSON() });
+          
+          // Send success response
+          ws.send(JSON.stringify({ 
+            type: 'trigger-success', 
+            action: 'neuron', 
+            neuronId: data.neuronId,
+            cpRemaining: state.cp 
+          }));
+
+        } else if (data.action === 'triggerRegion' && data.regionId) {
+          // Check CP cost (5 CP per region)
+          const cost = data.cost || 5;
+          if (state.cp < cost) {
+            ws.send(JSON.stringify({ 
+              type: 'error', 
+              message: `Insufficient CP. Need ${cost} CP to activate region.` 
+            }));
+            return;
+          }
+
+          // Deduct CP
+          state.cp -= cost;
+          neural.metrics.manualTriggers++;
+
+          // Find region and trigger multiple neurons
+          const region = neural.regions.find(r => r.regionId === data.regionId);
+          if (region && region.neurons) {
+            // Trigger 3-5 random neurons in the region
+            const neuronsToTrigger = Math.min(region.neurons.length, 3 + Math.floor(Math.random() * 3));
+            const shuffled = [...region.neurons].sort(() => Math.random() - 0.5);
+            
+            for (let i = 0; i < neuronsToTrigger; i++) {
+              neural.triggerNeuron(shuffled[i].id, 0.8);
+            }
+          }
+
+          // Persist updated state and neural network
+          saveCollections({ ...collections, state, neuralNetwork: neural.toJSON() });
+          
+          // Send success response
+          ws.send(JSON.stringify({ 
+            type: 'trigger-success', 
+            action: 'region', 
+            regionId: data.regionId,
+            cpRemaining: state.cp 
+          }));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('WebSocket message error:', e);
+      }
     });
 
     ws.on('close', () => {

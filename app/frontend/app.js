@@ -647,9 +647,10 @@ function connectNeuralSocket() {
   if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) return;
   try {
     // Use localhost:3001 directly since we might be running in Electron with file:// protocol
+    // Use secure WebSocket (wss://) when on HTTPS to prevent mixed content issues
     const wsUrl = window.location.protocol === 'file:' 
       ? 'ws://localhost:3001/neural-stream'
-      : 'ws://' + window.location.host.replace(/:\d+$/, ':3001') + '/neural-stream';
+      : (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host.replace(/:\d+$/, ':3001') + '/neural-stream';
     neuralSocket = new WebSocket(wsUrl);
   } catch (e) {
     console.error('WebSocket connect error', e);
@@ -682,6 +683,7 @@ function connectNeuralSocket() {
 
 function handleNeuralEvent(event) {
   if (!event || !event.type) return;
+  
   if (event.type === 'neuron-fire') {
     const neuronId = event.neuronId;
     // Extract region ID from neuron ID (format: region-xxx-neuron-yyy)
@@ -715,7 +717,86 @@ function handleNeuralEvent(event) {
         }
       }
     }
+  } else if (event.type === 'neural-growth') {
+    // Handle neural growth animation
+    showNeuralGrowthAnimation(event);
   }
+}
+
+// Show neural growth animation when leveling up
+function showNeuralGrowthAnimation(growthEvent) {
+  const { regionId, newNeurons, level } = growthEvent;
+  
+  // Show celebration notification
+  const celebration = document.createElement('div');
+  celebration.className = 'neural-growth-celebration';
+  celebration.innerHTML = `
+    <div class="growth-icon">🧠✨</div>
+    <div class="growth-text">
+      <div class="growth-title">Neural Growth!</div>
+      <div class="growth-details">Level ${level} • +${newNeurons} neurons in ${formatRegionName(regionId)}</div>
+    </div>
+  `;
+  celebration.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #5b6fd8 0%, #66bb6a 100%);
+    color: white;
+    padding: 20px 30px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 1002;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    animation: growthCelebration 4s ease-out forwards;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+  
+  document.body.appendChild(celebration);
+  
+  // Animate the specific region
+  const regionGroup = document.querySelector(`g[data-region='${regionId}']`);
+  if (regionGroup) {
+    // Pulse the region with growth effect
+    const rect = regionGroup.querySelector('.region-background');
+    if (rect) {
+      rect.style.animation = 'neuralGrowthPulse 2s ease-out';
+      rect.addEventListener('animationend', () => {
+        rect.style.animation = '';
+      });
+    }
+    
+    // Animate new neurons appearing
+    const neurons = regionGroup.querySelectorAll('.neuron-node');
+    const lastNeurons = Array.from(neurons).slice(-newNeurons);
+    
+    lastNeurons.forEach((neuron, index) => {
+      neuron.style.opacity = '0';
+      neuron.style.transform = 'scale(0)';
+      setTimeout(() => {
+        neuron.style.transition = 'all 0.5s ease-out';
+        neuron.style.opacity = '0.8';
+        neuron.style.transform = 'scale(1)';
+      }, index * 100 + 500);
+    });
+  }
+  
+  // Remove celebration after animation
+  setTimeout(() => {
+    if (celebration.parentNode) {
+      celebration.parentNode.removeChild(celebration);
+    }
+  }, 4000);
+  
+  // Refresh neural visualization to show new structure
+  setTimeout(() => {
+    fetchNeuralSnapshot().then(snapshot => {
+      if (snapshot) renderNeuralNetwork(snapshot);
+    });
+  }, 2000);
 }
 
 // Wire up Neural tab button to initialize
@@ -1940,9 +2021,10 @@ async function refreshNeuralNetwork() {
   }
 }
 
-// Render neural network SVG
-function renderNeuralNetwork() {
-  if (!neuralData || !neuralData.regions) return;
+// Enhanced Neural Network Visualization
+function renderNeuralNetwork(networkData) {
+  const data = networkData || neuralState;
+  if (!data || !data.regions) return;
   
   const svg = document.getElementById('neural-canvas');
   if (!svg) return;
@@ -1950,54 +2032,210 @@ function renderNeuralNetwork() {
   // Clear existing content
   svg.innerHTML = '';
   
+  // Create gradient definitions for firing effects
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  
+  // Pulsing gradient for active neurons
+  const pulseGradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+  pulseGradient.setAttribute('id', 'pulse-gradient');
+  pulseGradient.innerHTML = `
+    <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.8" />
+    <stop offset="50%" style="stop-color:#64b5f6;stop-opacity:0.6" />
+    <stop offset="100%" style="stop-color:#1976d2;stop-opacity:0.3" />
+    <animateTransform attributeName="gradientTransform" type="scale" 
+      values="1;1.5;1" dur="0.5s" repeatCount="indefinite" />
+  `;
+  defs.appendChild(pulseGradient);
+  svg.appendChild(defs);
+  
+  // Store current data globally for access by other functions
+  neuralState = data;
+  
+  // Create inter-region connections first (so they appear behind regions)
+  if (data.regions && data.regions.length > 1) {
+    renderInterRegionConnections(svg, data.regions);
+  }
+  
   // Create SVG groups for each region
-  neuralData.regions.forEach(region => {
+  data.regions.forEach(region => {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.classList.add('region-group');
     g.setAttribute('data-region', region.regionId);
+    g.setAttribute('transform', `translate(${region.position.x}, ${region.position.y})`);
     
-    // Draw region background
+    // Draw region background with rounded corners and subtle shadow
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', region.position.x);
-    rect.setAttribute('y', region.position.y);
+    rect.setAttribute('x', 0);
+    rect.setAttribute('y', 0);
     rect.setAttribute('width', region.size.width);
     rect.setAttribute('height', region.size.height);
     rect.setAttribute('fill', region.color);
-    rect.setAttribute('opacity', '0.1');
-    rect.setAttribute('rx', '8');
+    rect.setAttribute('opacity', '0.15');
+    rect.setAttribute('rx', '12');
+    rect.setAttribute('ry', '12');
+    rect.setAttribute('stroke', region.color);
+    rect.setAttribute('stroke-width', '2');
+    rect.setAttribute('stroke-opacity', '0.3');
+    rect.classList.add('region-background');
     g.appendChild(rect);
     
-    // Draw region label
+    // Draw region label with better styling
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', region.position.x + region.size.width / 2);
-    label.setAttribute('y', region.position.y - 5);
+    label.setAttribute('x', region.size.width / 2);
+    label.setAttribute('y', -8);
     label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', '#dfe3ff');
+    label.setAttribute('font-size', '14');
+    label.setAttribute('font-weight', 'bold');
     label.classList.add('region-label');
     label.textContent = region.regionName;
     g.appendChild(label);
     
-    // Draw simplified neuron representation (cluster indicator)
-    const neuronCount = region.neuronCount || 0;
-    const gridSize = Math.ceil(Math.sqrt(neuronCount / 5)); // Show subset
-    const spacing = Math.min(region.size.width / (gridSize + 1), region.size.height / (gridSize + 1), 30);
-    
-    for (let i = 0; i < Math.min(neuronCount / 5, 25); i++) {
-      const row = Math.floor(i / gridSize);
-      const col = i % gridSize;
-      const x = region.position.x + (col + 1) * spacing;
-      const y = region.position.y + (row + 1) * spacing + 10;
-      
-      const neuron = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      neuron.setAttribute('cx', x);
-      neuron.setAttribute('cy', y);
-      neuron.setAttribute('r', '3');
-      neuron.setAttribute('fill', region.color);
-      neuron.setAttribute('opacity', '0.6');
-      neuron.classList.add('neuron-node');
-      g.appendChild(neuron);
+    // Draw individual neurons with better positioning and interaction
+    if (region.neurons && region.neurons.length > 0) {
+      renderNeuronsInRegion(g, region);
     }
     
+    // Add region click handler for selection
+    rect.addEventListener('click', () => selectRegion(region));
+    rect.style.cursor = 'pointer';
+    
     svg.appendChild(g);
+  });
+  
+  // Update stats display
+  updateNeuralStats();
+}
+
+// Render neurons within a region with proper clustering
+function renderNeuronsInRegion(regionGroup, region) {
+  const neurons = region.neurons || [];
+  const maxVisible = 20; // Limit visible neurons for performance
+  const visibleNeurons = neurons.slice(0, maxVisible);
+  
+  // Create clusters based on neuron types
+  const excitatory = visibleNeurons.filter(n => n.type === 'excitatory');
+  const inhibitory = visibleNeurons.filter(n => n.type === 'inhibitory');
+  
+  // Position neurons in organic clusters
+  const clusterPositions = generateClusterPositions(region.size, excitatory.length, inhibitory.length);
+  
+  // Draw excitatory neurons (larger, brighter)
+  excitatory.forEach((neuron, index) => {
+    if (index < clusterPositions.excitatory.length) {
+      const pos = clusterPositions.excitatory[index];
+      const circle = createNeuronElement(neuron, pos, region.color, 'excitatory');
+      regionGroup.appendChild(circle);
+    }
+  });
+  
+  // Draw inhibitory neurons (smaller, different color)
+  inhibitory.forEach((neuron, index) => {
+    if (index < clusterPositions.inhibitory.length) {
+      const pos = clusterPositions.inhibitory[index];
+      const circle = createNeuronElement(neuron, pos, region.color, 'inhibitory');
+      regionGroup.appendChild(circle);
+    }
+  });
+}
+
+// Generate organic cluster positions for neurons
+function generateClusterPositions(regionSize, excitatoryCount, inhibitoryCount) {
+  const padding = 20;
+  const width = regionSize.width - 2 * padding;
+  const height = regionSize.height - 2 * padding;
+  
+  const positions = {
+    excitatory: [],
+    inhibitory: []
+  };
+  
+  // Generate excitatory positions in main cluster
+  for (let i = 0; i < excitatoryCount && i < 15; i++) {
+    const angle = (i / excitatoryCount) * 2 * Math.PI;
+    const radius = Math.random() * Math.min(width, height) * 0.3;
+    const x = padding + width/2 + Math.cos(angle) * radius;
+    const y = padding + height/2 + Math.sin(angle) * radius;
+    positions.excitatory.push({ x, y });
+  }
+  
+  // Generate inhibitory positions around edges
+  for (let i = 0; i < inhibitoryCount && i < 5; i++) {
+    const x = padding + Math.random() * width;
+    const y = padding + Math.random() * height;
+    positions.inhibitory.push({ x, y });
+  }
+  
+  return positions;
+}
+
+// Create individual neuron SVG element
+function createNeuronElement(neuron, position, regionColor, type) {
+  const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  circle.setAttribute('cx', position.x);
+  circle.setAttribute('cy', position.y);
+  circle.setAttribute('r', type === 'excitatory' ? '4' : '2.5');
+  circle.setAttribute('fill', regionColor);
+  circle.setAttribute('opacity', type === 'excitatory' ? '0.8' : '0.6');
+  circle.setAttribute('stroke', '#ffffff');
+  circle.setAttribute('stroke-width', '0.5');
+  circle.classList.add('neuron-node', `neuron-${type}`);
+  circle.setAttribute('data-neuron-id', neuron.id);
+  
+  // Add click handler for neuron details
+  circle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showNeuronDetails(neuron);
+  });
+  
+  // Add hover effects
+  circle.addEventListener('mouseenter', () => {
+    circle.setAttribute('r', type === 'excitatory' ? '6' : '4');
+    circle.setAttribute('opacity', '1');
+  });
+  
+  circle.addEventListener('mouseleave', () => {
+    circle.setAttribute('r', type === 'excitatory' ? '4' : '2.5');
+    circle.setAttribute('opacity', type === 'excitatory' ? '0.8' : '0.6');
+  });
+  
+  circle.style.cursor = 'pointer';
+  
+  return circle;
+}
+
+// Render connections between brain regions
+function renderInterRegionConnections(svg, regions) {
+  const connectionPairs = [
+    ['sensory-input', 'language-center'],
+    ['sensory-input', 'association-cortex'],
+    ['language-center', 'association-cortex'],
+    ['language-center', 'motor-output'],
+    ['association-cortex', 'frontal-lobe'],
+    ['association-cortex', 'memory-systems'],
+    ['association-cortex', 'amygdala'],
+    ['frontal-lobe', 'motor-output'],
+    ['amygdala', 'frontal-lobe'],
+    ['memory-systems', 'association-cortex']
+  ];
+  
+  connectionPairs.forEach(([fromId, toId]) => {
+    const fromRegion = regions.find(r => r.regionId === fromId);
+    const toRegion = regions.find(r => r.regionId === toId);
+    
+    if (fromRegion && toRegion) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', fromRegion.position.x + fromRegion.size.width / 2);
+      line.setAttribute('y1', fromRegion.position.y + fromRegion.size.height / 2);
+      line.setAttribute('x2', toRegion.position.x + toRegion.size.width / 2);
+      line.setAttribute('y2', toRegion.position.y + toRegion.size.height / 2);
+      line.setAttribute('stroke', '#2a306b');
+      line.setAttribute('stroke-width', '2');
+      line.setAttribute('stroke-opacity', '0.3');
+      line.setAttribute('stroke-dasharray', '5,5');
+      line.classList.add('inter-region-connection');
+      svg.appendChild(line);
+    }
   });
 }
 
@@ -2050,6 +2288,206 @@ function updateNeuralEvents() {
 function formatRegionName(regionId) {
   if (!regionId) return '';
   return regionId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Show detailed neuron information modal
+function showNeuronDetails(neuron) {
+  const modal = document.createElement('div');
+  modal.className = 'neuron-modal';
+  modal.innerHTML = `
+    <div class="neuron-modal-content">
+      <div class="neuron-modal-header">
+        <h3>Neuron Details: ${neuron.id}</h3>
+        <button class="neuron-modal-close" onclick="this.closest('.neuron-modal').remove()">×</button>
+      </div>
+      <div class="neuron-modal-body">
+        <div class="neuron-detail-row">
+          <strong>Type:</strong> ${neuron.type || 'Unknown'}
+        </div>
+        <div class="neuron-detail-row">
+          <strong>Activation Threshold:</strong> ${(neuron.activationThreshold || 0).toFixed(2)}
+        </div>
+        <div class="neuron-detail-row">
+          <strong>Current Activation:</strong> ${(neuron.currentActivation || 0).toFixed(2)}
+        </div>
+        <div class="neuron-detail-row">
+          <strong>Connections:</strong> ${neuron.connections ? neuron.connections.length : 0}
+        </div>
+        <div class="neuron-detail-row">
+          <strong>Firing History:</strong> ${neuron.firingHistory ? neuron.firingHistory.length : 0} events
+        </div>
+        <div class="neuron-detail-row">
+          <strong>Developed at Level:</strong> ${neuron.developedAtLevel || 0}
+        </div>
+        <div class="neuron-actions">
+          <button onclick="triggerNeuronManually('${neuron.id}')" class="neuron-trigger-btn">
+            ⚡ Trigger (Cost: 2 CP)
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  
+  // Close on background click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+}
+
+// Select and highlight a brain region
+function selectRegion(region) {
+  // Remove previous selection
+  document.querySelectorAll('.region-group').forEach(g => {
+    g.classList.remove('selected');
+  });
+  
+  // Highlight selected region
+  const regionGroup = document.querySelector(`g[data-region="${region.regionId}"]`);
+  if (regionGroup) {
+    regionGroup.classList.add('selected');
+    
+    // Show region details
+    showRegionDetails(region);
+  }
+}
+
+// Show region details panel
+function showRegionDetails(region) {
+  const sidebar = document.querySelector('.neural-sidebar');
+  if (!sidebar) return;
+  
+  // Create or update region details section
+  let detailsSection = sidebar.querySelector('.region-details');
+  if (!detailsSection) {
+    detailsSection = document.createElement('div');
+    detailsSection.className = 'region-details';
+    sidebar.appendChild(detailsSection);
+  }
+  
+  detailsSection.innerHTML = `
+    <h4>Selected Region</h4>
+    <div class="region-detail-card">
+      <h5 style="color: ${region.color}">${region.regionName}</h5>
+      <div class="region-stat">
+        <strong>Neurons:</strong> ${region.neurons ? region.neurons.length : 0}
+      </div>
+      <div class="region-stat">
+        <strong>Activity Level:</strong> ${(region.activityLevel || 0).toFixed(2)}
+      </div>
+      <div class="region-stat">
+        <strong>Developed at Level:</strong> ${region.developedAtLevel || 0}
+      </div>
+      <div class="region-actions">
+        <button onclick="triggerRegionActivity('${region.regionId}')" class="region-trigger-btn">
+          🧠 Activate Region (Cost: 5 CP)
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+// Manual Neural Triggering Functions
+async function triggerNeuronManually(neuronId) {
+  try {
+    // Check if user has enough CP
+    const stats = await getStats();
+    if (stats.cp < 2) {
+      alert('Not enough CP! You need 2 CP to trigger a neuron.');
+      return;
+    }
+    
+    // Confirm action
+    if (!confirm(`Trigger neuron ${neuronId} for 2 CP?`)) {
+      return;
+    }
+    
+    // Send trigger request via WebSocket
+    if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) {
+      neuralSocket.send(JSON.stringify({
+        action: 'triggerNeuron',
+        neuronId: neuronId,
+        cost: 2
+      }));
+      
+      // Refresh stats to show CP deduction
+      setTimeout(() => refreshStats(), 500);
+      
+      // Show feedback
+      showTriggerFeedback(`Neuron ${neuronId} triggered!`);
+    } else {
+      alert('Neural connection not available. Please refresh the page.');
+    }
+  } catch (err) {
+    console.error('Failed to trigger neuron:', err);
+    alert('Failed to trigger neuron. Please try again.');
+  }
+}
+
+async function triggerRegionActivity(regionId) {
+  try {
+    // Check if user has enough CP
+    const stats = await getStats();
+    if (stats.cp < 5) {
+      alert('Not enough CP! You need 5 CP to activate a region.');
+      return;
+    }
+    
+    // Confirm action
+    if (!confirm(`Activate ${formatRegionName(regionId)} region for 5 CP?`)) {
+      return;
+    }
+    
+    // Send region activation request
+    if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) {
+      neuralSocket.send(JSON.stringify({
+        action: 'triggerRegion',
+        regionId: regionId,
+        cost: 5
+      }));
+      
+      // Refresh stats to show CP deduction
+      setTimeout(() => refreshStats(), 500);
+      
+      // Show feedback
+      showTriggerFeedback(`${formatRegionName(regionId)} region activated!`);
+    } else {
+      alert('Neural connection not available. Please refresh the page.');
+    }
+  } catch (err) {
+    console.error('Failed to trigger region:', err);
+    alert('Failed to trigger region. Please try again.');
+  }
+}
+
+// Show visual feedback for manual triggers
+function showTriggerFeedback(message) {
+  const feedback = document.createElement('div');
+  feedback.className = 'neural-trigger-feedback';
+  feedback.textContent = message;
+  feedback.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #66bb6a;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: bold;
+    z-index: 1000;
+    animation: fadeInOut 3s ease-in-out forwards;
+  `;
+  
+  document.body.appendChild(feedback);
+  
+  // Remove after animation
+  setTimeout(() => {
+    if (feedback.parentNode) {
+      feedback.parentNode.removeChild(feedback);
+    }
+  }, 3000);
 }
 
 // Wire up refresh button

@@ -2,7 +2,7 @@
 
 ## 🐛 BUGS & CRITICAL ISSUES
 ### P0 - Production Breaking
-- [ ] [BUG-001] Pal returns question instead of answering at Level 2
+- 🔴 **[BUG-001] Pal returns question instead of answering at Level 2**
     - **Environment:** MyPal app (Level 2 cognitive setting)
     - **Severity:** Critical
     - **Steps to reproduce:**
@@ -15,7 +15,7 @@
     - **Suspected causes:** Curiosity thresholds too aggressive for Level 2, intent classification issues
     - **Due:** ASAP
 
-- [ ] [BUG-002] New Pal name textbox uneditable after returning to main menu
+- 🔴 **[BUG-002] New Pal name textbox uneditable after returning to main menu**
     - **Environment:** MyPal UI (New Pal dialog)
     - **Severity:** High - prevents creating new Pal
     - **Steps to reproduce:**
@@ -30,13 +30,13 @@
     - **Due:** Current Sprint
 
 ### P1 - High Priority Bugs
-- [ ] [BUG-003] Race condition when multiple chats arrive before data save completes
-- [ ] [BUG-004] Duplicate keyword echoing in journal focus selection
-- [ ] [BUG-005] Intermittent telemetry write failures on Windows sandboxed installs
+- 🔴 **[BUG-003] Race condition when multiple chats arrive before data save completes**
+- 🔴 **[BUG-004] Duplicate keyword echoing in journal focus selection**
+- 🔴 **[BUG-005] Intermittent telemetry write failures on Windows sandboxed installs**
 
 ## 🚀 FEATURES & ENHANCEMENTS
 ### Current Sprint - Critical Priority
-- [ ] [FEAT-001] AI meaningful response system
+- 🟡 **[FEAT-001] AI meaningful response system**
     - **Description:** Create plan for AI to respond meaningfully to user messages
     - **Status:** IN PROGRESS
     - **Progress:** 
@@ -46,73 +46,73 @@
         - 🔄 Need to test and iterate based on results
     - **Estimate:** L
 
-- [ ] [FEAT-002] Proper concurrency handling for JSON file operations
+- 🔴 **[FEAT-002] Proper concurrency handling for JSON file operations**
     - **Description:** Implement thread-safe file operations
     - **Priority:** Critical
     - **Estimate:** M
 
-- [ ] [FEAT-003] Bootstrap profile files structure correction
+- 🔴 **[FEAT-003] Bootstrap profile files structure correction**
     - **Description:** Fix chat-log.json, memories.json, vocabulary.json, journal.json array structures
     - **Priority:** Critical
     - **Estimate:** S
 
 ### High Priority - Essential Features
-- [ ] [FEAT-004] Test new learning systems
+- 🔴 **[FEAT-004] Test new learning systems**
     - **Description:** Comprehensive testing of recently implemented systems
     - **Acceptance Criteria:**
-        - [ ] Test affirmation system ("Yes, happy is good" reinforces concepts)
-        - [ ] Test temporal memory system with decay
-        - [ ] Test curiosity system (low knowledge → "Why?" questions)
-        - [ ] Test priority learning chains (3.5-4.0x multiplier)
-        - [ ] Test definitional learning ("X means Y" patterns)
-        - [ ] Test quotation learning and correction system
+        - 🔴 Test affirmation system ("Yes, happy is good" reinforces concepts)
+        - 🔴 Test temporal memory system with decay
+        - 🔴 Test curiosity system (low knowledge → "Why?" questions)
+        - 🔴 Test priority learning chains (3.5-4.0x multiplier)
+        - 🔴 Test definitional learning ("X means Y" patterns)
+        - 🔴 Test quotation learning and correction system
     - **Estimate:** L
     - **Note:** **RESTART MYPAL APP to activate new features**
 
-- [ ] [FEAT-005] Developer debug mode
+- 🔴 **[FEAT-005] Developer debug mode**
     - **Description:** Create debug/developer mode toggle in Settings
     - **Acceptance Criteria:**
-        - [ ] Enable verbose logging
-        - [ ] Add testing features in frontend UI
-        - [ ] Developer tool access
+        - 🔴 Enable verbose logging
+        - 🔴 Add testing features in frontend UI
+        - 🔴 Developer tool access
     - **Estimate:** M
 
-- [ ] [FEAT-006] Enhanced help system
+- 🔴 **[FEAT-006] Enhanced help system**
     - **Description:** Expand help tooltips across all tabs
     - **Acceptance Criteria:**
-        - [ ] Stats tab (XP/CP/Level/Advancement explanations)
-        - [ ] Brain tab (node/edge visualization guide)  
-        - [ ] Settings tab (explain each configuration option)
+        - 🔴 Stats tab (XP/CP/Level/Advancement explanations)
+        - 🔴 Brain tab (node/edge visualization guide)  
+        - 🔴 Settings tab (explain each configuration option)
     - **Status:** Memories and Journal tooltips completed
     - **Estimate:** M
 
-- [ ] [FEAT-007] Change "Concepts" menu to "Knowledge Base" throughout UI and docs for clarity
+- 🔴 **[FEAT-007] Change "Concepts" menu to "Knowledge Base" throughout UI and docs for clarity**
     - **Description:** Rename all instances of "Concepts" to "Knowledge Base"
     - **Acceptance Criteria:**
-        - [ ] Update menu/tab labels in UI
-        - [ ] Update documentation references
-        - [ ] Ensure consistency across app
+        - 🔴 Update menu/tab labels in UI
+        - 🔴 Update documentation references
+        - 🔴 Ensure consistency across app
     - **Estimate:** S
 
-- [ ] [FEAT-008] UI refactor for style consistency
+- 🔴 **[FEAT-008] UI refactor for style consistency**
     - **Description:** Update UI components to match STYLE_DESIGN_IDEA.md guidelines
     - **Acceptance Criteria:**
-        - [ ] Update fonts to 'Rounded Elegance' for headings
-        - [ ] Ensure color palette matches design doc
-        - [ ] Standardize button and input field styles
+        - 🔴 Update fonts to 'Rounded Elegance' for headings
+        - 🔴 Ensure color palette matches design doc
+        - 🔴 Standardize button and input field styles
     - **Estimate:** M
+
 ### Backlog - Medium Priority
-- [ ] [FEAT-007] Local database implementation
+- 🔴 **[FEAT-007] Local database implementation**
     - **Description:** Replace JSON file persistence with proper local database (lowdb or nedb)
     - **Estimate:** L
 
-- [ ] [FEAT-008] Brain visualization enhancements
+- 🔴 **[FEAT-008] Brain visualization enhancements**
     - **Description:** Interactive brain graph improvements
     - **Acceptance Criteria:**
-        - [ ] Double-click node to zoom and isolate
-        - [ ] Dynamic strength/opacity edges
-        - [ ] Lobe coloring
-        - [ ] Auto-reconnection for WebSocket
+        - 🔴 Double-click node to zoom and isolate
+        - 🔴 Dynamic strength/opacity edges
+        - 🔴 Lobe coloring
     - **Estimate:** L
 
 - [ ] [FEAT-009] Conversation system improvements
