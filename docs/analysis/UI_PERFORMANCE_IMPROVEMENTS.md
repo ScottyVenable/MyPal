@@ -38,7 +38,7 @@ These serve as guardrails. Exceeding them requires justification and mitigation.
 - Journal/History
   - Pagination fetch: ≤ 150ms network (LAN localhost) + ≤ 50ms render per page
   - Infinite scroll: never more than O(visible) DOM nodes
-
+  
 ---
 
 ## 2) Measurement & Instrumentation Protocol
