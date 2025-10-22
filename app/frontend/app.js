@@ -1827,7 +1827,15 @@ function wireChat() {
     
     const input = $('#chat-input');
     const floatingInput = $('#floating-chat-input');
-    const msg = input.value.trim();
+    const rawValue = input.value;
+    const msg = rawValue.trim();
+    
+    logDebug('CHAT', `Message validation`, { 
+      rawLength: rawValue.length, 
+      trimmedLength: msg.length,
+      rawValue: rawValue.substring(0, 50),
+      isEmpty: !msg
+    });
     
     if (!msg) {
       logDebug('CHAT', 'Empty message submitted - ignoring');
