@@ -2486,13 +2486,20 @@ function collectPalCorpus(memories = [], chatLog = [], vocabulary = []) {
   // IMPORTANT: Only train on USER messages to avoid learning from Pal's own gibberish
   // This breaks the feedback loop where broken responses become training data
   
-  // Collect user text from memories
-  for (const memory of memories) {
+  // MEMORY OPTIMIZATION: Limit data to prevent heap exhaustion
+  const MAX_MEMORIES = 50;
+  const MAX_CHAT_MESSAGES = 100;
+  const MAX_CONTEXTS_PER_WORD = 3;
+  
+  // Collect user text from memories (last 50 only)
+  const recentMemories = memories.slice(-MAX_MEMORIES);
+  for (const memory of recentMemories) {
     if (memory?.userText) corpus.push(memory.userText);
   }
   
-  // Collect user messages from chat log
-  for (const entry of chatLog) {
+  // Collect user messages from chat log (last 100 only)
+  const recentChat = chatLog.slice(-MAX_CHAT_MESSAGES);
+  for (const entry of recentChat) {
     if (entry?.role === 'user' && entry.text) corpus.push(entry.text);
   }
   
@@ -2510,9 +2517,12 @@ function collectPalCorpus(memories = [], chatLog = [], vocabulary = []) {
   }
   
   // Vocabulary contexts are still included (they might contain user phrases)
+  // LIMITED to prevent memory exhaustion
   for (const vocabEntry of vocabulary) {
     if (!Array.isArray(vocabEntry?.contexts)) continue;
-    for (const ctx of vocabEntry.contexts) {
+    // Limit contexts per word to prevent memory issues
+    const limitedContexts = vocabEntry.contexts.slice(-MAX_CONTEXTS_PER_WORD);
+    for (const ctx of limitedContexts) {
       // Only include contexts that look like user input (simple heuristic)
       if (ctx && ctx.length > 0 && ctx.length < 200) {
         corpus.push(ctx);
