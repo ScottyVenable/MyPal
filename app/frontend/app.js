@@ -38,7 +38,7 @@ const LOG_CATEGORIES = {
 let logLevel = LOG_LEVELS.DEBUG; // Set to INFO for production
 let logSequence = 0;
 
-function formatTimestamp() {
+function getLogTimestamp() {
   const now = new Date();
   const time = now.toLocaleTimeString('en-US', { 
     hour12: false, 
@@ -53,7 +53,7 @@ function formatTimestamp() {
 function log(level, category, message, data = null) {
   if (level < logLevel) return;
   
-  const timestamp = formatTimestamp();
+  const timestamp = getLogTimestamp();
   const seq = String(++logSequence).padStart(4, '0');
   const categoryInfo = LOG_CATEGORIES[category] || { text: 'UNKNOWN', emoji: '📝' };
   const levelName = Object.keys(LOG_LEVELS)[level];
@@ -416,31 +416,43 @@ function wireProfileManagement() {
   const newPalModal = $('#new-pal-modal');
   const newPalForm = $('#new-pal-form');
   const newPalCancel = $('#new-pal-cancel');
-  const newPalName = $('#new-pal-name');
   const newPalError = $('#new-pal-error');
   
   newPalBtn?.addEventListener('click', () => {
+    // Re-query the input element to avoid stale references
+    const newPalName = $('#new-pal-name');
+    if (!newPalName) return;
+    
     newPalModal.classList.remove('hidden');
     newPalName.value = '';
-    // Ensure input is editable and focusable
+    
+    // Ensure input is editable and focusable - comprehensive cleanup
     newPalName.removeAttribute('readonly');
+    newPalName.removeAttribute('disabled');
     newPalName.removeAttribute('aria-disabled');
+    newPalName.removeAttribute('tabindex');
     newPalName.readOnly = false;
     newPalName.disabled = false;
     newPalError.classList.add('hidden');
-    // Delay focus to ensure modal is rendered
+    
+    // Delay focus to ensure modal is fully rendered and DOM is settled
     setTimeout(() => {
+      // Double-check attributes before focusing
+      newPalName.removeAttribute('readonly');
+      newPalName.removeAttribute('disabled');
+      newPalName.readOnly = false;
+      newPalName.disabled = false;
+      
       try {
-        // Prefer requestAnimationFrame for reliable caret placement
+        // Use requestAnimationFrame for reliable caret placement
         requestAnimationFrame(() => {
           newPalName.focus({ preventScroll: true });
-          // Select to ensure caret visibility
           newPalName.select();
         });
       } catch {
         newPalName.focus();
       }
-    }, 50);
+    }, 100);
   });
   
   loadPalBtn?.addEventListener('click', async () => {
@@ -467,6 +479,10 @@ function wireProfileManagement() {
   newPalForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     
+    // Re-query to ensure we have the current element
+    const newPalName = $('#new-pal-name');
+    if (!newPalName) return;
+    
     const name = newPalName.value.trim();
     if (!name) {
       newPalError.textContent = 'Please enter a name';
@@ -491,6 +507,28 @@ function wireProfileManagement() {
     if (e.target === newPalModal) {
       newPalModal.classList.add('hidden');
     }
+  });
+  
+  // Add a fallback click handler on the input itself to ensure it can always receive focus
+  const newPalNameInput = $('#new-pal-name');
+  newPalNameInput?.addEventListener('click', function() {
+    // Remove any attributes that might prevent input
+    this.removeAttribute('readonly');
+    this.removeAttribute('disabled');
+    this.readOnly = false;
+    this.disabled = false;
+    // Ensure focus
+    if (document.activeElement !== this) {
+      this.focus();
+    }
+  });
+  
+  // Also handle focus events to ensure the input is always editable when focused
+  newPalNameInput?.addEventListener('focus', function() {
+    this.removeAttribute('readonly');
+    this.removeAttribute('disabled');
+    this.readOnly = false;
+    this.disabled = false;
   });
 }
 
@@ -3588,22 +3626,6 @@ function hideFloatingTyping(el) {
   
   // Additional cleanup
   clearFloatingTypingIndicators();
-}
-
-function clearFloatingTypingIndicators() {
-  const floatingWindow = $('#floating-chat-window');
-  if (!floatingWindow) return;
-  
-  const existingTyping = floatingWindow.querySelectorAll('.msg.pal.typing');
-  existingTyping.forEach(el => {
-    try {
-      if (el && el.parentElement) {
-        el.parentElement.removeChild(el);
-      }
-    } catch (err) {
-      console.warn('Error clearing floating typing indicator:', err);
-    }
-  });
 }
 
 // Auto-close floating chat when Chat tab becomes active
