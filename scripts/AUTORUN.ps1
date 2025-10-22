@@ -156,7 +156,7 @@ switch ($modeChoice) {
         Write-Host "Current port: 3001 (default)" -ForegroundColor Gray
         $customPort = Read-Host "Enter custom port (press Enter for default)"
         if (-not [string]::IsNullOrWhiteSpace($customPort)) {
-            $env:MYPAL_BACKEND_PORT = $customPort
+            $env:PORT = $customPort
         }
         
         # Telemetry
@@ -243,8 +243,8 @@ Write-Host ""
 Write-Host "Final configuration:" -ForegroundColor Cyan
 Write-Host "  Data: $env:MYPAL_DATA_DIR" -ForegroundColor White
 Write-Host "  Logs: $env:MYPAL_LOGS_DIR" -ForegroundColor White
-if ($env:MYPAL_BACKEND_PORT) {
-    Write-Host "  Port: $env:MYPAL_BACKEND_PORT" -ForegroundColor White
+if ($env:PORT) {
+    Write-Host "  Port: $env:PORT" -ForegroundColor White
 }
 Write-Host ""
 

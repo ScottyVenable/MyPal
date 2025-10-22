@@ -16,6 +16,8 @@ coverage/
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Environment and local config
 .env
@@ -47,3 +49,6 @@ docs/performance_logs/*.json
 
 # Issues files -- for developers only
 issues/
+
+# Trash folder with outdated/fixed items
+TRASH/
