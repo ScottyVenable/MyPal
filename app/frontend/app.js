@@ -1884,9 +1884,30 @@ function wireChat() {
       floatingChatOpen: typeof floatingChatOpen !== 'undefined' ? floatingChatOpen : 'undefined'
     });
     
+    // FAILSAFE: Force re-enable inputs after 65 seconds no matter what
+    const failsafeTimeout = setTimeout(() => {
+      logWarn('FAILSAFE', `Force re-enabling inputs after timeout`, { chatId });
+      clearAllTypingIndicators();
+      clearFloatingTypingIndicators();
+      if (input) {
+        input.disabled = false;
+        input.value = '';
+        input.placeholder = 'Type a message...';
+      }
+      if (floatingInput) {
+        floatingInput.disabled = false;
+        floatingInput.value = '';
+        floatingInput.placeholder = 'Type a message...';
+      }
+      addMessage('pal', '⚠️ Something went wrong. Please try again.');
+    }, 65000);
+    
     try {
       logInfo('API', `Sending chat request to backend`, { chatId });
       const res = await sendChat(msg);
+      
+      // Clear failsafe timeout since we got a response
+      clearTimeout(failsafeTimeout);
       
       // Validate response
       if (!res) {
@@ -1966,6 +1987,9 @@ function wireChat() {
       logDebug('STATE', `Post-chat cleanup completed`, { chatId });
       
     } catch (e) {
+      // Clear failsafe timeout since we're handling the error
+      clearTimeout(failsafeTimeout);
+      
       logError('CHAT', `Chat request failed`, { 
         chatId,
         error: e.message,
