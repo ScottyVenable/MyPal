@@ -12,6 +12,150 @@ let typingEl = null;
 let currentProfileId = null;
 
 // ==============================================
+// COMPREHENSIVE LOGGING SYSTEM
+// ==============================================
+
+const LOG_LEVELS = {
+  DEBUG: 0,
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3
+};
+
+const LOG_CATEGORIES = {
+  CHAT: { text: 'CHAT', emoji: '💬' },
+  TYPING: { text: 'TYPING', emoji: '⌨️' },
+  UI: { text: 'UI', emoji: '🖥️' },
+  API: { text: 'API', emoji: '🌐' },
+  WEBSOCKET: { text: 'WEBSOCKET', emoji: '🔌' },
+  PROFILE: { text: 'PROFILE', emoji: '👤' },
+  NEURAL: { text: 'NEURAL', emoji: '🧠' },
+  PERFORMANCE: { text: 'PERFORMANCE', emoji: '⚡' },
+  STATE: { text: 'STATE', emoji: '📊' },
+  ERROR: { text: 'ERROR', emoji: '❌' }
+};
+
+let logLevel = LOG_LEVELS.DEBUG; // Set to INFO for production
+let logSequence = 0;
+
+function formatTimestamp() {
+  const now = new Date();
+  const time = now.toLocaleTimeString('en-US', { 
+    hour12: false, 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit',
+    fractionalSecondDigits: 3
+  });
+  return `${time}`;
+}
+
+function log(level, category, message, data = null) {
+  if (level < logLevel) return;
+  
+  const timestamp = formatTimestamp();
+  const seq = String(++logSequence).padStart(4, '0');
+  const categoryInfo = LOG_CATEGORIES[category] || { text: 'UNKNOWN', emoji: '📝' };
+  const levelName = Object.keys(LOG_LEVELS)[level];
+  
+  // Clean text-only prefix for file logs and telemetry
+  const cleanPrefix = `[${timestamp}] [${seq}] [${categoryInfo.text}] [${levelName}]`;
+  
+  // Enhanced console prefix with emoji for better visual scanning
+  const consolePrefix = `[${timestamp}] [${seq}] ${categoryInfo.emoji} [${levelName}]`;
+  
+  // Choose appropriate console method
+  const consoleMethod = level >= LOG_LEVELS.ERROR ? 'error' :
+                       level >= LOG_LEVELS.WARN ? 'warn' :
+                       level >= LOG_LEVELS.INFO ? 'info' : 'log';
+  
+  if (data !== null) {
+    console[consoleMethod](`${consolePrefix} ${message}`, data);
+  } else {
+    console[consoleMethod](`${consolePrefix} ${message}`);
+  }
+  
+  // Send to backend telemetry for critical logs (clean text only)
+  if (level >= LOG_LEVELS.WARN) {
+    try {
+      fetch(`${API_BASE}/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          source: 'frontend', 
+          type: levelName.toLowerCase(), 
+          category: categoryInfo.text,
+          message: `${cleanPrefix} ${message} ${data ? JSON.stringify(data) : ''}`,
+          timestamp: Date.now(),
+          sequence: logSequence
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  }
+}
+
+// Convenience functions
+const logDebug = (category, message, data) => log(LOG_LEVELS.DEBUG, category, message, data);
+const logInfo = (category, message, data) => log(LOG_LEVELS.INFO, category, message, data);
+const logWarn = (category, message, data) => log(LOG_LEVELS.WARN, category, message, data);
+const logError = (category, message, data) => log(LOG_LEVELS.ERROR, category, message, data);
+
+// Performance timing helpers
+const perfTimers = new Map();
+
+function startTimer(name) {
+  perfTimers.set(name, performance.now());
+  logDebug('PERFORMANCE', `Timer started: ${name}`);
+}
+
+function endTimer(name) {
+  const startTime = perfTimers.get(name);
+  if (startTime) {
+    const duration = performance.now() - startTime;
+    perfTimers.delete(name);
+    logInfo('PERFORMANCE', `Timer completed: ${name} (${duration.toFixed(2)}ms)`);
+    return duration;
+  }
+  return null;
+}
+
+// Global logging controls for console access
+window.MyPalLogging = {
+  setLevel: (level) => {
+    const newLevel = typeof level === 'string' ? LOG_LEVELS[level.toUpperCase()] : level;
+    if (newLevel !== undefined) {
+      logLevel = newLevel;
+      logInfo('STATE', `Log level changed to ${Object.keys(LOG_LEVELS)[newLevel]}`);
+    } else {
+      console.warn('Invalid log level. Use: DEBUG, INFO, WARN, ERROR or 0-3');
+    }
+  },
+  getLevel: () => Object.keys(LOG_LEVELS)[logLevel],
+  debug: logDebug,
+  info: logInfo,
+  warn: logWarn,
+  error: logError,
+  forceEnableInputs: forceEnableAllInputs,
+  clearTyping: clearAllTypingIndicators,
+  getLevels: () => LOG_LEVELS,
+  getCategories: () => LOG_CATEGORIES
+};
+
+// Initialize logging
+logInfo('STATE', 'Frontend logging system initialized', { 
+  logLevel: Object.keys(LOG_LEVELS)[logLevel],
+  categories: Object.keys(LOG_CATEGORIES),
+  globalObject: 'MyPalLogging',
+  cleanLogging: true
+});
+
+console.log('%c🎯 MyPal Logging Initialized!', 'color: #66bb6a; font-weight: bold; font-size: 14px;');
+console.log('%cLogs use clean text for files/telemetry, emojis for console only', 'color: #9ab4ff;');
+console.log('%cUse MyPalLogging.setLevel("DEBUG") to see all logs', 'color: #9ab4ff;');
+console.log('%cAvailable commands: setLevel, getLevel, forceEnableInputs, clearTyping', 'color: #9ab4ff;');
+
+// ==============================================
 // PROFILE MANAGEMENT
 // ==============================================
 
@@ -88,9 +232,17 @@ async function createProfile(name) {
 }
 
 async function loadProfile(profileId) {
+  logInfo('PROFILE', `Loading profile`, { profileId });
+  
   try {
     const res = await apiFetch(`/profiles/${profileId}/load`, {
       method: 'POST'
+    });
+    
+    logDebug('API', `Profile load response`, { 
+      profileId, 
+      status: res.status,
+      ok: res.ok
     });
     
     if (!res.ok) throw new Error('Failed to load profile');
@@ -99,15 +251,23 @@ async function loadProfile(profileId) {
     currentProfileId = profileId;
     localStorage.setItem('mypal_current_profile', profileId);
     
+    logInfo('PROFILE', `Profile loaded successfully`, { 
+      profileId,
+      profileName: profile.name,
+      level: profile.level,
+      xp: profile.xp
+    });
+    
     // Update profile badge in header
     const profileBadge = $('#current-profile-name');
     if (profileBadge) {
       profileBadge.textContent = profile.name;
+      logDebug('UI', `Profile badge updated`, { profileName: profile.name });
     }
     
     return profile;
   } catch (err) {
-    console.error('Error loading profile:', err);
+    logError('PROFILE', `Error loading profile`, { profileId, error: err.message });
     throw err;
   }
 }
@@ -432,9 +592,11 @@ function updateEmotionDisplay(emotion) {
 }
 
 function switchTab(name) {
+  logInfo('UI', `Switching to tab: ${name}`);
+  
   const target = document.getElementById(`tab-${name}`);
   if (!target) {
-    console.warn(`Tab "${name}" not found; ignoring switch request.`);
+    logWarn('UI', `Tab "${name}" not found; ignoring switch request`);
     return;
   }
 
@@ -448,6 +610,8 @@ function switchTab(name) {
     btn.classList.toggle('active', isActive);
     btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
+  
+  logDebug('UI', `Tab switch completed`, { activeTab: name });
 }
 
 async function reinforceClick(btn) {
@@ -572,6 +736,8 @@ function addMessage(role, text, metaText) {
         addMessage('pal', errorMsg);
       } finally {
         hideTyping(indicator);
+        // Additional cleanup to ensure no typing indicators persist
+        clearAllTypingIndicators();
         // Re-enable button
         tryBtn.disabled = false;
         tryBtn.textContent = 'Try again';
@@ -585,32 +751,167 @@ function addMessage(role, text, metaText) {
 }
 
 function showTyping() {
-  if (typingEl && typingEl.isConnected) return typingEl;
+  logDebug('TYPING', 'showTyping() called');
+  
+  // Always clear any existing typing indicators first
+  const existingCount = document.querySelectorAll('.msg.pal.typing').length;
+  if (existingCount > 0) {
+    logWarn('TYPING', `Found ${existingCount} existing typing indicators before cleanup`);
+  }
+  clearAllTypingIndicators();
+  
   const wrap = document.createElement('div');
   wrap.className = 'msg pal typing';
+  wrap.setAttribute('data-created', Date.now());
+  
   const bubble = document.createElement('div');
   bubble.className = 'bubble typing-bubble';
   bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
   wrap.appendChild(bubble);
+  
   const win = document.getElementById('chat-window');
   if (win) {
     win.appendChild(wrap);
     win.scrollTop = win.scrollHeight;
+    logInfo('TYPING', 'Typing indicator created and added to DOM', { 
+      elementId: wrap.getAttribute('data-created'),
+      totalTypingElements: win.querySelectorAll('.msg.pal.typing').length
+    });
+  } else {
+    logError('TYPING', 'Chat window not found - typing indicator not added');
   }
+  
   typingEl = wrap;
   return wrap;
 }
 
 function hideTyping(el = typingEl) {
-  try { if (el && el.parentElement) el.parentElement.removeChild(el); } catch {}
-  if (el === typingEl) typingEl = null;
+  const elementId = el ? el.getAttribute('data-created') : 'unknown';
+  logDebug('TYPING', `hideTyping() called for element ${elementId}`);
+  
+  try { 
+    if (el && el.parentElement) {
+      el.parentElement.removeChild(el);
+      logInfo('TYPING', `Typing indicator removed from DOM`, { elementId });
+    } else {
+      logWarn('TYPING', `Cannot remove typing indicator - element or parent missing`, { 
+        hasElement: !!el,
+        hasParent: el ? !!el.parentElement : false,
+        elementId
+      });
+    }
+  } catch (err) {
+    logError('TYPING', 'Error removing typing indicator', { error: err.message, elementId });
+  }
+  
+  // Clear global reference if this was the current typing element
+  if (el === typingEl) {
+    typingEl = null;
+    logDebug('TYPING', 'Global typingEl reference cleared');
+  }
+  
+  // Additional cleanup: remove any lingering typing indicators
+  clearAllTypingIndicators();
+}
+
+function clearAllTypingIndicators() {
+  logDebug('TYPING', 'clearAllTypingIndicators() called');
+  
+  const win = document.getElementById('chat-window');
+  if (!win) {
+    logWarn('TYPING', 'Chat window not found during typing indicator cleanup');
+    return;
+  }
+  
+  const existingTyping = win.querySelectorAll('.msg.pal.typing');
+  if (existingTyping.length === 0) {
+    logDebug('TYPING', 'No typing indicators found to clear');
+    return;
+  }
+  
+  logInfo('TYPING', `Clearing ${existingTyping.length} typing indicators`);
+  
+  existingTyping.forEach((el, index) => {
+    try {
+      const elementId = el.getAttribute('data-created') || `index-${index}`;
+      if (el && el.parentElement) {
+        el.parentElement.removeChild(el);
+        logDebug('TYPING', `Removed typing indicator ${elementId}`);
+      }
+    } catch (err) {
+      logError('TYPING', `Error clearing typing indicator ${index}`, { error: err.message });
+    }
+  });
+  
+  // Reset global state
+  if (typingEl) {
+    logDebug('TYPING', 'Resetting global typingEl reference');
+    typingEl = null;
+  }
+  
+  // Verify cleanup
+  const remainingTyping = win.querySelectorAll('.msg.pal.typing');
+  if (remainingTyping.length > 0) {
+    logWarn('TYPING', `${remainingTyping.length} typing indicators still remain after cleanup`);
+  } else {
+    logInfo('TYPING', 'All typing indicators successfully cleared');
+  }
+}
+
+function clearFloatingTypingIndicators() {
+  // Clear floating chat typing indicators if they exist
+  const floatingWin = document.getElementById('floating-chat-window');
+  if (!floatingWin) return;
+  
+  const existingTyping = floatingWin.querySelectorAll('.msg.pal.typing');
+  existingTyping.forEach(el => {
+    try {
+      if (el && el.parentElement) {
+        el.parentElement.removeChild(el);
+      }
+    } catch (err) {
+      console.warn('Error clearing floating typing indicator:', err);
+    }
+  });
+}
+
+function forceEnableAllInputs() {
+  logWarn('UI', 'Emergency function called: forceEnableAllInputs');
+  
+  // Emergency function to force re-enable all chat inputs
+  const inputs = ['#chat-input', '#floating-chat-input'];
+  let enabledCount = 0;
+  
+  inputs.forEach(selector => {
+    const input = document.querySelector(selector);
+    if (input) {
+      const wasDisabled = input.disabled;
+      input.disabled = false;
+      input.placeholder = 'Type a message...';
+      if (wasDisabled) {
+        enabledCount++;
+        logInfo('UI', `Force enabled input: ${selector}`);
+      }
+    } else {
+      logWarn('UI', `Input not found: ${selector}`);
+    }
+  });
+  
+  logInfo('UI', `Emergency enable completed - ${enabledCount} inputs were re-enabled`);
 }
 
 async function sendChat(message) {
+  const requestId = Date.now();
+  logDebug('API', `sendChat() called`, { requestId, messageLength: message.length });
+  
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+  const timeout = setTimeout(() => {
+    logWarn('API', `Chat request timeout triggered`, { requestId });
+    controller.abort();
+  }, 30000); // 30 second timeout
   
   try {
+    logDebug('API', `Making chat API request`, { requestId, endpoint: '/chat' });
     const res = await apiFetch(`/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -618,13 +919,45 @@ async function sendChat(message) {
       signal: controller.signal
     });
     clearTimeout(timeout);
-    if (!res.ok) throw new Error('Chat failed');
-    return res.json();
+    
+    logDebug('API', `Chat API response received`, { 
+      requestId, 
+      status: res.status,
+      ok: res.ok,
+      statusText: res.statusText
+    });
+    
+    if (!res.ok) {
+      logError('API', `Chat API returned error status`, { 
+        requestId, 
+        status: res.status,
+        statusText: res.statusText
+      });
+      throw new Error('Chat failed');
+    }
+    
+    const data = await res.json();
+    logInfo('API', `Chat response parsed successfully`, { 
+      requestId,
+      hasReply: !!data.reply,
+      hasOutput: !!data.output,
+      hasEmotion: !!data.emotion
+    });
+    
+    return data;
   } catch (err) {
     clearTimeout(timeout);
+    
     if (err.name === 'AbortError') {
+      logError('API', `Chat request aborted (timeout)`, { requestId });
       throw new Error('Request timed out after 30 seconds');
     }
+    
+    logError('API', `Chat request failed`, { 
+      requestId,
+      error: err.message,
+      name: err.name
+    });
     throw err;
   }
 }
@@ -664,32 +997,44 @@ let neuralEventBatch = [];
 let neuralEventRafId = null;
 
 function connectNeuralSocket() {
-  if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) return;
+  if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) {
+    logDebug('WEBSOCKET', 'Neural socket already connected');
+    return;
+  }
+  
   try {
     // Use localhost:3001 directly since we might be running in Electron with file:// protocol
     // Use secure WebSocket (wss://) when on HTTPS to prevent mixed content issues
     const wsUrl = window.location.protocol === 'file:' 
       ? 'ws://localhost:3001/neural-stream'
       : (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host.replace(/:\d+$/, ':3001') + '/neural-stream';
+    
+    logInfo('WEBSOCKET', `Connecting to neural stream`, { url: wsUrl });
     neuralSocket = new WebSocket(wsUrl);
   } catch (e) {
-    console.error('WebSocket connect error', e);
+    logError('WEBSOCKET', 'WebSocket connect error', { error: e.message });
     return;
   }
 
   neuralSocket.addEventListener('open', () => {
-    console.log('Neural socket open');
+    logInfo('WEBSOCKET', 'Neural socket connected successfully');
   });
 
   neuralSocket.addEventListener('message', (ev) => {
     try {
       const data = JSON.parse(ev.data);
       if (!data) return;
+      
       if (data.type === 'neural-snapshot') {
+        logDebug('NEURAL', 'Neural snapshot received', { 
+          totalNeurons: data.payload?.metrics?.totalNeurons,
+          regions: data.payload?.regions?.length
+        });
         renderNeuralNetwork(data.payload);
         const summary = document.getElementById('neural-summary');
         if (summary) summary.textContent = `Neurons: ${data.payload.metrics.totalNeurons} · Regions: ${data.payload.regions.length} · Firings: ${data.payload.metrics.totalFirings}`;
       } else if (data.type === 'neural-event') {
+        logDebug('NEURAL', 'Neural event received', { eventType: data.payload?.type });
         // Batch neural events using requestAnimationFrame
         neuralEventBatch.push(data.payload);
         if (!neuralEventRafId) {
@@ -699,13 +1044,21 @@ function connectNeuralSocket() {
             events.forEach(handleNeuralEvent);
           });
         }
+      } else {
+        logDebug('WEBSOCKET', 'Unknown neural message type', { type: data.type });
       }
-    } catch (e) { console.error('Neural message error', e); }
+    } catch (e) { 
+      logError('WEBSOCKET', 'Neural message parsing error', { error: e.message });
+    }
   });
 
   neuralSocket.addEventListener('close', () => {
-    console.log('Neural socket closed');
+    logWarn('WEBSOCKET', 'Neural socket closed');
     neuralSocket = null;
+  });
+
+  neuralSocket.addEventListener('error', (e) => {
+    logError('WEBSOCKET', 'Neural socket error', { error: e.message || 'Unknown error' });
   });
 }
 
@@ -1388,15 +1741,29 @@ function wireTabs() {
 }
 
 function wireChat() {
+  logInfo('UI', 'Wiring chat form event handlers');
+  
   const form = $('#chat-form');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (window.perf) window.perf.mark('chat_msg_submit');
+    const chatId = Date.now();
+    startTimer(`chat_${chatId}`);
+    logInfo('CHAT', `Chat submission started`, { chatId, timestamp: chatId });
     
     const input = $('#chat-input');
     const floatingInput = $('#floating-chat-input');
     const msg = input.value.trim();
-    if (!msg) return;
+    
+    if (!msg) {
+      logDebug('CHAT', 'Empty message submitted - ignoring');
+      return;
+    }
+    
+    logInfo('CHAT', `User message prepared`, { 
+      chatId, 
+      messageLength: msg.length,
+      message: msg.substring(0, 100) + (msg.length > 100 ? '...' : '')
+    });
     
     lastUserMessage = msg;
     addMessage('user', msg);
@@ -1412,32 +1779,63 @@ function wireChat() {
     }
     
     input.value = '';
+    logDebug('CHAT', `Input cleared and UI state changing`, { chatId });
     
     // Disable both inputs while waiting for response
     input.disabled = true;
     input.placeholder = 'Pal is thinking...';
+    logInfo('UI', `Main input disabled - waiting for response`, { chatId });
+    
     if (floatingInput) {
       floatingInput.disabled = true;
       floatingInput.placeholder = 'Pal is thinking...';
+      logDebug('UI', `Floating input disabled`, { chatId });
     }
     
     const indicator = showTyping();
     const floatingIndicator = floatingChatOpen ? showFloatingTyping() : null;
+    logInfo('CHAT', `Typing indicators created`, { 
+      chatId,
+      mainIndicator: !!indicator,
+      floatingIndicator: !!floatingIndicator,
+      floatingChatOpen: typeof floatingChatOpen !== 'undefined' ? floatingChatOpen : 'undefined'
+    });
     
     try {
+      logInfo('API', `Sending chat request to backend`, { chatId });
       const res = await sendChat(msg);
+      logInfo('API', `Backend response received`, { 
+        chatId, 
+        hasReply: !!(res?.reply),
+        hasOutput: !!(res?.output),
+        hasEmotion: !!(res?.emotion),
+        kind: res?.kind
+      });
+      
       const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
       const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
       addMessage('pal', replyText, meta);
+      logInfo('CHAT', `Pal message added to main chat`, { 
+        chatId,
+        responseLength: replyText.length,
+        meta
+      });
       
       // If floating chat is open, sync the response there too
       if (floatingChatOpen) {
         addFloatingMessage('pal', replyText, meta);
+        logDebug('CHAT', `Response synced to floating chat`, { chatId });
       }
       
       // Update emotion display if emotion data is present
       if (res?.emotion) {
         updateEmotionDisplay(res.emotion);
+        logDebug('UI', `Emotion display updated`, { 
+          chatId,
+          emotion: res.emotion.expression,
+          mood: res.emotion.mood,
+          intensity: res.emotion.intensity
+        });
         if (floatingChatOpen) {
           updateFloatingEmotion(res.emotion);
         }
@@ -1449,40 +1847,108 @@ function wireChat() {
       if (journalLoaded) {
         await loadJournal(true);
       }
+      logDebug('STATE', `Post-chat cleanup completed`, { chatId });
+      
     } catch (e) {
-      console.error('Chat error:', e);
+      logError('CHAT', `Chat request failed`, { 
+        chatId,
+        error: e.message,
+        stack: e.stack,
+        backendHealthy
+      });
+      
       let errorMsg = 'Sorry, I had trouble responding.';
       
       // Provide more specific error messages
       if (!backendHealthy) {
         errorMsg = 'Server not running. Please start the backend.';
+        logWarn('STATE', `Backend unhealthy - showing status modal`, { chatId });
         showStatusModal();
       } else if (e.message?.includes('fetch') || e.message?.includes('network')) {
         errorMsg = 'Network error. Please check your connection.';
+        logWarn('API', `Network error detected`, { chatId, error: e.message });
       } else if (e.message?.includes('timeout')) {
         errorMsg = 'Response timed out. Please try again.';
+        logWarn('API', `Request timeout`, { chatId });
       } else if (e.message?.includes('Chat failed')) {
         errorMsg = 'Unable to generate response. Please try again.';
+        logWarn('API', `Chat generation failed`, { chatId });
+      } else {
+        logError('API', `Unexpected error`, { chatId, error: e.message });
       }
       
       addMessage('pal', errorMsg);
       if (floatingChatOpen) {
         addFloatingMessage('pal', errorMsg);
       }
+      logInfo('CHAT', `Error message displayed to user`, { chatId, errorMsg });
     } finally {
+      logInfo('CHAT', `Chat cleanup starting`, { chatId });
+      
+      // Ensure typing indicators are always removed
       hideTyping(indicator);
       if (floatingIndicator) {
         hideFloatingTyping(floatingIndicator);
       }
       
-      // Re-enable both inputs
-      input.disabled = false;
-      input.placeholder = 'Type a message...';
+      // Additional cleanup to ensure no typing indicators persist
+      clearAllTypingIndicators();
+      clearFloatingTypingIndicators();
+      
+      // Re-enable both inputs with extra safety checks
+      if (input) {
+        input.disabled = false;
+        input.placeholder = 'Type a message...';
+        logInfo('UI', `Main input re-enabled`, { chatId });
+      } else {
+        logWarn('UI', `Main input not found during re-enable`, { chatId });
+      }
+      
       if (floatingInput) {
         floatingInput.disabled = false;
         floatingInput.placeholder = 'Type a message...';
+        logDebug('UI', `Floating input re-enabled`, { chatId });
       }
-      input.focus();
+      
+      // Additional safety: Force re-enable in case of any issues
+      setTimeout(() => {
+        const chatInput = $('#chat-input');
+        const floatInput = $('#floating-chat-input');
+        let needsForceEnable = false;
+        
+        if (chatInput && chatInput.disabled) {
+          chatInput.disabled = false;
+          chatInput.placeholder = 'Type a message...';
+          needsForceEnable = true;
+          logWarn('UI', `Main input force re-enabled via timeout`, { chatId });
+        }
+        if (floatInput && floatInput.disabled) {
+          floatInput.disabled = false;
+          floatInput.placeholder = 'Type a message...';
+          needsForceEnable = true;
+          logWarn('UI', `Floating input force re-enabled via timeout`, { chatId });
+        }
+        
+        if (!needsForceEnable) {
+          logDebug('UI', `No forced input re-enabling needed`, { chatId });
+        }
+      }, 100);
+      
+      // Focus the input
+      if (input) {
+        try {
+          input.focus();
+          logDebug('UI', `Input focused successfully`, { chatId });
+        } catch (e) {
+          logWarn('UI', `Could not focus input`, { chatId, error: e.message });
+        }
+      }
+      
+      const totalTime = endTimer(`chat_${chatId}`);
+      logInfo('CHAT', `Chat cycle completed`, { 
+        chatId,
+        totalTime: totalTime ? `${totalTime.toFixed(2)}ms` : 'unknown'
+      });
     }
   });
 }
@@ -1736,11 +2202,21 @@ async function init() {
   });
   dismiss?.addEventListener('click', hideStatusModal);
 
-  // Dev tools
+  // Dev tools and emergency shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && (e.key === 'd' || e.key === 'D')) {
       e.preventDefault();
       toggleDevPanel();
+    }
+    
+    // Emergency shortcut: Ctrl + Shift + R to force re-enable inputs
+    if (e.ctrlKey && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+      e.preventDefault();
+      logWarn('UI', 'Emergency shortcut triggered: Ctrl+Shift+R');
+      forceEnableAllInputs();
+      clearAllTypingIndicators();
+      clearFloatingTypingIndicators();
+      logInfo('UI', 'Emergency input recovery completed');
     }
   });
   const ping = document.getElementById('dev-ping');
@@ -3085,6 +3561,9 @@ function showFloatingTyping() {
   const floatingWindow = $('#floating-chat-window');
   if (!floatingWindow) return null;
   
+  // Clear any existing floating typing indicators first
+  clearFloatingTypingIndicators();
+  
   const wrap = document.createElement('div');
   wrap.className = 'msg pal typing';
   const bubble = document.createElement('div');
@@ -3099,7 +3578,32 @@ function showFloatingTyping() {
 }
 
 function hideFloatingTyping(el) {
-  try { if (el && el.parentElement) el.parentElement.removeChild(el); } catch {}
+  try { 
+    if (el && el.parentElement) {
+      el.parentElement.removeChild(el); 
+    }
+  } catch (err) {
+    console.warn('Error removing floating typing indicator:', err);
+  }
+  
+  // Additional cleanup
+  clearFloatingTypingIndicators();
+}
+
+function clearFloatingTypingIndicators() {
+  const floatingWindow = $('#floating-chat-window');
+  if (!floatingWindow) return;
+  
+  const existingTyping = floatingWindow.querySelectorAll('.msg.pal.typing');
+  existingTyping.forEach(el => {
+    try {
+      if (el && el.parentElement) {
+        el.parentElement.removeChild(el);
+      }
+    } catch (err) {
+      console.warn('Error clearing floating typing indicator:', err);
+    }
+  });
 }
 
 // Auto-close floating chat when Chat tab becomes active

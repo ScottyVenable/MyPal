@@ -44,12 +44,18 @@ const consoleStream = createStream(consoleLogPath);
 const errorStream = createStream(errorLogPath);
 let logsClosed = false;
 
-const formatArgs = (args) => args.map((arg) => typeof arg === 'string' ? arg : util.inspect(arg, { depth: null })).join(' ');
+const formatArgs = (args) => stripEmojis(args.map((arg) => typeof arg === 'string' ? arg : util.inspect(arg, { depth: null })).join(' '));
+
+// Strip emojis and other Unicode symbols for clean file logging
+function stripEmojis(text) {
+  return text.replace(/[\u{1F000}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F300}-\u{1F5FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2018}\u{2019}\u{201C}\u{201D}]|≡ƒ[ô¿ñöôñ]/gu, '');
+}
 
 function writeLine(stream, level, line) {
   if (!stream) return;
   try {
-    stream.write(`${new Date().toISOString()} [${level}] ${line}\n`);
+    const cleanLine = stripEmojis(line);
+    stream.write(`${new Date().toISOString()} [${level}] ${cleanLine}\n`);
   } catch {}
 }
 
@@ -116,7 +122,17 @@ function logAccess(line) {
 }
 function logTelemetry(enabled, event) {
   if (!enabled && !TELEMETRY_FORCE) return;
-  try { fs.appendFileSync(telemetryLogPath, JSON.stringify({ ts: Date.now(), ...event }) + '\n'); } catch {}
+  try { 
+    // Clean emojis from telemetry data
+    const cleanEvent = { ...event };
+    if (cleanEvent.message && typeof cleanEvent.message === 'string') {
+      cleanEvent.message = stripEmojis(cleanEvent.message);
+    }
+    if (cleanEvent.category && typeof cleanEvent.category === 'string') {
+      cleanEvent.category = stripEmojis(cleanEvent.category);
+    }
+    fs.appendFileSync(telemetryLogPath, JSON.stringify({ ts: Date.now(), ...cleanEvent }) + '\n'); 
+  } catch {}
 }
 
 const MAX_VOCAB_SIZE = 500;
@@ -1275,7 +1291,7 @@ function learnFromDefinition(vocabulary, definitions, level, state) {
   const nowISO = new Date(now).toISOString();
   
   for (const { concept, definition } of definitions) {
-    console.log(`📖 Definition detected: "${concept}" means "${definition}"`);
+    console.log(`[LEARN] Definition detected: "${concept}" means "${definition}"`);
     
     // Find or create the concept entry
     let conceptEntry = vocabulary.find((item) => item.word === concept);
@@ -4444,7 +4460,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.post('/api/chat', (req, res) => {
-  console.log('📨 Chat request received');
+  console.log('[CHAT] Chat request received');
   const { message } = req.body || {};
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
   console.log('[CHAT] User message:', message);
@@ -4548,7 +4564,7 @@ app.post('/api/chat', (req, res) => {
     };
   } else {
     // Normal response generation
-    console.log('🤔 Generating normal response...');
+    console.log('[CHAT] Generating normal response...');
     constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
     console.log('[SUCCESS] Response generated');
   }
@@ -4639,7 +4655,7 @@ app.post('/api/chat', (req, res) => {
     console.error('Error saving collections (response will still be sent):', saveError);
   }
 
-  console.log('📤 Sending response to client');
+  console.log('[CHAT] Sending response to client');
   res.json({
     reply: palMsg.text,
     kind: palMsg.kind,
