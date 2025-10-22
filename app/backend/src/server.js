@@ -954,13 +954,21 @@ function createInterRegionConnections(regions) {
 function getNeuralNetwork(collections) {
   let { neuralNetwork } = collections;
 
-  if (!neuralNetwork) {
-    // Initialize for the first time
+  // Check if neural network exists AND has regions with neurons
+  const needsInitialization = !neuralNetwork || 
+                              !neuralNetwork.regions || 
+                              neuralNetwork.regions.length === 0 ||
+                              neuralNetwork.regions.every(r => !r.neurons || r.neurons.length === 0);
+
+  if (needsInitialization) {
+    // Initialize or reinitialize neural network
+    console.log('[NEURAL] Initializing neural network for profile...');
     const network = initializeNeuralNetwork(collections.state?.level || 0);
     neuralNetwork = network.toJSON();
     collections.neuralNetwork = neuralNetwork;
     
     // Immediately save the newly initialized neural network to ensure profile isolation
+    console.log(`[NEURAL] Saving ${network.metrics.totalNeurons} neurons to profile...`);
     saveCollections(collections);
   }
 
