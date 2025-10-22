@@ -1,7 +1,9 @@
 param(
-    [string]$IssuesDirectory = (Join-Path $PSScriptRoot "issues"),
+    [string]$IssuesDirectory = $PSScriptRoot,
     [switch]$DryRun,
-    [string]$Assignee = "ScottyVenable"
+    [switch]$KeepFiles,
+    [string]$Assignee = "ScottyVenable",
+    [int]$ProjectNumber = 4
 )
 
 Set-StrictMode -Version Latest
@@ -35,7 +37,7 @@ if (-not (Test-Path -LiteralPath $IssuesDirectory)) {
     throw "Issues directory '$IssuesDirectory' does not exist."
 }
 
-$issueFiles = Get-ChildItem -Path $IssuesDirectory -Filter "*.md" -File |
+$issueFiles = Get-ChildItem -Path $IssuesDirectory -Filter "*.md" -File -Recurse |
     Where-Object { $_.Name -ne "ISSUE_TEMPLATE.md" }
 
 if (-not $issueFiles) {
@@ -85,6 +87,28 @@ foreach ($file in $issueFiles) {
     try {
         $output = & gh @ghArgs
         Write-Host $output
+        
+        # Extract issue number from output URL (e.g., https://github.com/ScottyVenable/MyPal/issues/5)
+        if ($output -match '/issues/(\d+)') {
+            $issueNumber = $Matches[1]
+            
+            # Add issue to project board
+            if ($ProjectNumber -gt 0) {
+                Write-Host "  Adding issue #$issueNumber to Project #$ProjectNumber..."
+                try {
+                    $projectOutput = & gh project item-add $ProjectNumber --owner ScottyVenable --url "https://github.com/ScottyVenable/MyPal/issues/$issueNumber"
+                    Write-Host "  Added to project board" -ForegroundColor Green
+                } catch {
+                    Write-Warning "  Failed to add issue to project: $_"
+                }
+            }
+        }
+        
+        # Delete the file after successful creation (unless -KeepFiles flag is set)
+        if (-not $KeepFiles) {
+            Remove-Item -LiteralPath $file.FullName -Force
+            Write-Host "  Deleted: $($file.Name)" -ForegroundColor Green
+        }
     } catch {
         Write-Error "Failed to create issue for '$($file.Name)': $_"
     }
