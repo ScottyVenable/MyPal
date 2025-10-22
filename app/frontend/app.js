@@ -2753,92 +2753,250 @@ async function refreshNeuralNetwork() {
   }
 }
 
-// Enhanced Neural Network Visualization
+// Enhanced Neural Network Visualization using vis.js
 function renderNeuralNetwork(networkData) {
   const data = networkData || neuralState;
   if (!data || !data.regions) return;
   
-  const svg = document.getElementById('neural-canvas');
-  if (!svg) return;
+  const container = document.getElementById('neural-network-graph');
+  if (!container || typeof vis === 'undefined' || !vis.Network) return;
   
-  // Clear existing content
-  svg.innerHTML = '';
-  
-  // Create gradient definitions for firing effects
-  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-  
-  // Pulsing gradient for active neurons
-  const pulseGradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
-  pulseGradient.setAttribute('id', 'pulse-gradient');
-  pulseGradient.innerHTML = `
-    <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.8" />
-    <stop offset="50%" style="stop-color:#64b5f6;stop-opacity:0.6" />
-    <stop offset="100%" style="stop-color:#1976d2;stop-opacity:0.3" />
-    <animateTransform attributeName="gradientTransform" type="scale" 
-      values="1;1.5;1" dur="0.5s" repeatCount="indefinite" />
-  `;
-  defs.appendChild(pulseGradient);
-  svg.appendChild(defs);
+  console.log('[NEURAL] Rendering neural network with', data.regions.length, 'regions');
   
   // Store current data globally for access by other functions
   neuralState = data;
   
-  // Create inter-region connections first (so they appear behind regions)
-  if (data.regions && data.regions.length > 1) {
-    renderInterRegionConnections(svg, data.regions);
+  // Show loading placeholder
+  container.innerHTML = '<div class="graph-loading"><div class="loading-spinner"></div><p>Loading neural network...</p></div>';
+  
+  // Build nodes and edges for vis.js
+  const nodes = [];
+  const edges = [];
+  
+  // Create nodes for each neuron in each region
+  data.regions.forEach(region => {
+    const neurons = region.neurons || [];
+    const maxVisible = 30; // Show more neurons for better visualization
+    const visibleNeurons = neurons.slice(0, maxVisible);
+    
+    visibleNeurons.forEach(neuron => {
+      // Determine size based on activity and connections
+      const baseSize = neuron.type === 'excitatory' ? 12 : 8;
+      const activityBoost = (neuron.activityLevel || 0) * 8;
+      const connectionBoost = Math.min((neuron.connections?.length || 0) * 2, 10);
+      const size = baseSize + activityBoost + connectionBoost;
+      
+      nodes.push({
+        id: neuron.id,
+        label: neuron.pattern || neuron.id.substring(0, 8),
+        value: size,
+        group: region.regionId,
+        title: `${region.regionName}\nType: ${neuron.type}\nActivity: ${(neuron.activityLevel * 100).toFixed(1)}%\nConnections: ${neuron.connections?.length || 0}`,
+        color: {
+          background: region.color,
+          border: neuron.type === 'excitatory' ? '#ffffff' : '#888888',
+          highlight: {
+            background: lightenColor(region.color, 30),
+            border: '#ffffff'
+          }
+        },
+        borderWidth: neuron.type === 'excitatory' ? 2 : 1,
+        font: {
+          color: '#dfe3ff',
+          size: 10
+        }
+      });
+      
+      // Create edges for neuron connections
+      if (neuron.connections && Array.isArray(neuron.connections)) {
+        neuron.connections.forEach(targetId => {
+          // Only add edge if target neuron exists in our visible set
+          if (visibleNeurons.some(n => n.id === targetId)) {
+            edges.push({
+              from: neuron.id,
+              to: targetId,
+              value: 1,
+              color: {
+                color: 'rgba(159, 180, 255, 0.3)',
+                highlight: 'rgba(159, 180, 255, 0.6)'
+              },
+              smooth: {
+                type: 'continuous',
+                roundness: 0.2
+              }
+            });
+          }
+        });
+      }
+    });
+  });
+  
+  console.log('[NEURAL] Created', nodes.length, 'nodes and', edges.length, 'edges');
+  
+  if (!nodes.length) {
+    container.innerHTML = '<div class="graph-empty">Neural network not yet initialized.</div>';
+    return;
   }
   
-  // Create SVG groups for each region
-  data.regions.forEach(region => {
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.classList.add('region-group');
-    g.setAttribute('data-region', region.regionId);
-    g.setAttribute('transform', `translate(${region.position.x}, ${region.position.y})`);
+  // Use setTimeout to allow loading UI to render before heavy computation
+  setTimeout(() => {
+    // Clear container completely
+    container.innerHTML = '';
     
-    // Draw region background with rounded corners and subtle shadow
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', 0);
-    rect.setAttribute('y', 0);
-    rect.setAttribute('width', region.size.width);
-    rect.setAttribute('height', region.size.height);
-    rect.setAttribute('fill', region.color);
-    rect.setAttribute('opacity', '0.15');
-    rect.setAttribute('rx', '12');
-    rect.setAttribute('ry', '12');
-    rect.setAttribute('stroke', region.color);
-    rect.setAttribute('stroke-width', '2');
-    rect.setAttribute('stroke-opacity', '0.3');
-    rect.classList.add('region-background');
-    g.appendChild(rect);
+    const nodesDataSet = new vis.DataSet(nodes);
+    const edgesDataSet = new vis.DataSet(edges);
     
-    // Draw region label with better styling
-    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', region.size.width / 2);
-    label.setAttribute('y', -8);
-    label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('fill', '#dfe3ff');
-    label.setAttribute('font-size', '14');
-    label.setAttribute('font-weight', 'bold');
-    label.classList.add('region-label');
-    label.textContent = region.regionName;
-    g.appendChild(label);
+    const options = {
+      layout: {
+        improvedLayout: true,
+        hierarchical: false
+      },
+      nodes: {
+        shape: 'dot',
+        scaling: {
+          min: 8,
+          max: 30
+        },
+        shadow: {
+          enabled: true,
+          color: 'rgba(0,0,0,0.4)',
+          size: 10,
+          x: 2,
+          y: 2
+        }
+      },
+      edges: {
+        width: 1,
+        smooth: {
+          type: 'continuous',
+          roundness: 0.2
+        },
+        arrows: {
+          to: {
+            enabled: true,
+            scaleFactor: 0.5
+          }
+        }
+      },
+      physics: {
+        enabled: true,
+        solver: 'forceAtlas2Based',
+        forceAtlas2Based: {
+          gravitationalConstant: -80,
+          centralGravity: 0.02,
+          springLength: 150,
+          springConstant: 0.08,
+          damping: 0.5,
+          avoidOverlap: 0.8
+        },
+        maxVelocity: 40,
+        minVelocity: 0.75,
+        timestep: 0.4,
+        stabilization: {
+          enabled: true,
+          iterations: 250,
+          updateInterval: 50,
+          fit: true
+        }
+      },
+      interaction: {
+        hover: true,
+        zoomView: true,
+        dragNodes: true,
+        tooltipDelay: 100,
+        hideEdgesOnDrag: true,
+        hideEdgesOnZoom: false
+      },
+      groups: {}
+    };
     
-    // Draw individual neurons with better positioning and interaction
-    if (region.neurons && region.neurons.length > 0) {
-      renderNeuronsInRegion(g, region);
-    }
+    // Configure groups for each brain region
+    data.regions.forEach(region => {
+      options.groups[region.regionId] = {
+        color: {
+          background: region.color,
+          border: '#ffffff',
+          highlight: {
+            background: lightenColor(region.color, 30),
+            border: '#ffffff'
+          }
+        }
+      };
+    });
     
-    // Add region click handler for selection
-    rect.addEventListener('click', () => selectRegion(region));
-    rect.style.cursor = 'pointer';
+    // Create canvas element for network
+    const canvas = document.createElement('div');
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    container.appendChild(canvas);
     
-    svg.appendChild(g);
-  });
+    const network = new vis.Network(canvas, { nodes: nodesDataSet, edges: edgesDataSet }, options);
+    
+    // Reduce physics after stabilization for better interaction
+    network.once('stabilizationIterationsDone', () => {
+      network.setOptions({
+        physics: {
+          enabled: true,
+          solver: 'forceAtlas2Based',
+          forceAtlas2Based: {
+            gravitationalConstant: -40,
+            centralGravity: 0.01,
+            springLength: 180,
+            springConstant: 0.12,
+            damping: 0.85
+          },
+          stabilization: false
+        }
+      });
+      console.log('[NEURAL] Network stabilized');
+    });
+    
+    // Handle node clicks to show details
+    network.on('click', (params) => {
+      if (params.nodes.length > 0) {
+        const nodeId = params.nodes[0];
+        const neuron = data.regions
+          .flatMap(r => r.neurons || [])
+          .find(n => n.id === nodeId);
+        if (neuron) {
+          showNeuronDetails(neuron);
+        }
+      }
+    });
+    
+    console.log('[NEURAL] Network rendered successfully');
+  }, 100);
   
   // Update stats display
   updateNeuralStats();
 }
 
+// Helper function to lighten a hex color
+function lightenColor(hex, percent) {
+  // Remove # if present
+  hex = hex.replace('#', '');
+  
+  // Convert to RGB
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  
+  // Lighten
+  const newR = Math.min(255, Math.floor(r + (255 - r) * (percent / 100)));
+  const newG = Math.min(255, Math.floor(g + (255 - g) * (percent / 100)));
+  const newB = Math.min(255, Math.floor(b + (255 - b) * (percent / 100)));
+  
+  // Convert back to hex
+  return '#' + [newR, newG, newB].map(x => {
+    const hex = x.toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  }).join('');
+}
+
+// LEGACY SVG-BASED FUNCTIONS - No longer used with vis.js visualization
+// Kept for reference only
+
+/*
 // Render neurons within a region with proper clustering
 function renderNeuronsInRegion(regionGroup, region) {
   const neurons = region.neurons || [];
@@ -2970,6 +3128,8 @@ function renderInterRegionConnections(svg, regions) {
     }
   });
 }
+*/
+
 
 // Update neural stats
 function updateNeuralStats() {
