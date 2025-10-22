@@ -1851,6 +1851,33 @@ function wireChat() {
         kind: res?.kind
       });
       
+      // CRITICAL: Clear typing indicators and re-enable inputs BEFORE displaying message
+      logInfo('CHAT', `Cleaning up UI before displaying response`, { chatId });
+      
+      // Remove typing indicators first
+      hideTyping(indicator);
+      if (floatingIndicator) {
+        hideFloatingTyping(floatingIndicator);
+      }
+      clearAllTypingIndicators();
+      clearFloatingTypingIndicators();
+      
+      // Re-enable and reset inputs
+      if (input) {
+        input.disabled = false;
+        input.value = '';
+        input.placeholder = 'Type a message...';
+        logDebug('UI', `Main input re-enabled before message display`, { chatId });
+      }
+      
+      if (floatingInput) {
+        floatingInput.disabled = false;
+        floatingInput.value = '';
+        floatingInput.placeholder = 'Type a message...';
+        logDebug('UI', `Floating input re-enabled before message display`, { chatId });
+      }
+      
+      // NOW display the response after UI is ready
       const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
       const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
       addMessage('pal', replyText, meta);
@@ -1896,6 +1923,26 @@ function wireChat() {
         backendHealthy
       });
       
+      // Clear UI state before showing error
+      hideTyping(indicator);
+      if (floatingIndicator) {
+        hideFloatingTyping(floatingIndicator);
+      }
+      clearAllTypingIndicators();
+      clearFloatingTypingIndicators();
+      
+      // Re-enable inputs before showing error message
+      if (input) {
+        input.disabled = false;
+        input.value = '';
+        input.placeholder = 'Type a message...';
+      }
+      if (floatingInput) {
+        floatingInput.disabled = false;
+        floatingInput.value = '';
+        floatingInput.placeholder = 'Type a message...';
+      }
+      
       let errorMsg = 'Sorry, I had trouble responding.';
       
       // Provide more specific error messages
@@ -1924,56 +1971,27 @@ function wireChat() {
     } finally {
       logInfo('CHAT', `Chat cleanup starting`, { chatId });
       
-      // Ensure typing indicators are always removed
-      hideTyping(indicator);
-      if (floatingIndicator) {
-        hideFloatingTyping(floatingIndicator);
-      }
-      
-      // Additional cleanup to ensure no typing indicators persist
+      // Final safety check - ensure everything is cleared (defensive programming)
       clearAllTypingIndicators();
       clearFloatingTypingIndicators();
       
-      // Re-enable both inputs with extra safety checks
-      if (input) {
-        input.disabled = false;
-        input.value = ''; // Ensure input is cleared
-        input.placeholder = 'Type a message...';
-        logInfo('UI', `Main input re-enabled and cleared`, { chatId });
-      } else {
-        logWarn('UI', `Main input not found during re-enable`, { chatId });
-      }
-      
-      if (floatingInput) {
-        floatingInput.disabled = false;
-        floatingInput.value = ''; // Ensure floating input is cleared
-        floatingInput.placeholder = 'Type a message...';
-        logDebug('UI', `Floating input re-enabled and cleared`, { chatId });
-      }
-      
-      // Additional safety: Force re-enable in case of any issues
+      // Safety timeout to catch any edge cases
       setTimeout(() => {
         const chatInput = $('#chat-input');
         const floatInput = $('#floating-chat-input');
-        let needsForceEnable = false;
         
+        // Only log if we needed to force re-enable (shouldn't happen now)
         if (chatInput && chatInput.disabled) {
           chatInput.disabled = false;
-          chatInput.value = ''; // Clear any residual value
+          chatInput.value = '';
           chatInput.placeholder = 'Type a message...';
-          needsForceEnable = true;
-          logWarn('UI', `Main input force re-enabled via timeout`, { chatId });
+          logWarn('UI', `Main input force re-enabled via safety timeout`, { chatId });
         }
         if (floatInput && floatInput.disabled) {
           floatInput.disabled = false;
-          floatInput.value = ''; // Clear any residual value
+          floatInput.value = '';
           floatInput.placeholder = 'Type a message...';
-          needsForceEnable = true;
-          logWarn('UI', `Floating input force re-enabled via timeout`, { chatId });
-        }
-        
-        if (!needsForceEnable) {
-          logDebug('UI', `No forced input re-enabling needed`, { chatId });
+          logWarn('UI', `Floating input force re-enabled via safety timeout`, { chatId });
         }
       }, 100);
       
@@ -3380,10 +3398,25 @@ function setupFloatingChat() {
       
       try {
         const res = await sendChat(msg);
+        
+        // Clear UI state before displaying response
+        hideTyping(indicator);
+        hideFloatingTyping(floatingIndicator);
+        clearAllTypingIndicators();
+        clearFloatingTypingIndicators();
+        
+        // Re-enable inputs before displaying message
+        floatingInput.disabled = false;
+        $('#chat-input').disabled = false;
+        floatingInput.value = '';
+        $('#chat-input').value = '';
+        $('#chat-input').placeholder = 'Type a message...';
+        floatingInput.placeholder = 'Type a message...';
+        
+        // NOW display the response
         const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
         const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
         
-        // Add response to both windows
         addMessage('pal', replyText, meta);
         addFloatingMessage('pal', replyText, meta);
         
@@ -3401,6 +3434,21 @@ function setupFloatingChat() {
         }
       } catch (e) {
         console.error('Chat error:', e);
+        
+        // Clear UI state before showing error
+        hideTyping(indicator);
+        hideFloatingTyping(floatingIndicator);
+        clearAllTypingIndicators();
+        clearFloatingTypingIndicators();
+        
+        // Re-enable inputs before error message
+        floatingInput.disabled = false;
+        $('#chat-input').disabled = false;
+        floatingInput.value = '';
+        $('#chat-input').value = '';
+        $('#chat-input').placeholder = 'Type a message...';
+        floatingInput.placeholder = 'Type a message...';
+        
         let errorMsg = 'Sorry, I had trouble responding.';
         
         if (!backendHealthy) {
@@ -3417,16 +3465,9 @@ function setupFloatingChat() {
         addMessage('pal', errorMsg);
         addFloatingMessage('pal', errorMsg);
       } finally {
-        hideTyping(indicator);
-        hideFloatingTyping(floatingIndicator);
-        
-        // Re-enable both inputs and ensure they're cleared
-        floatingInput.disabled = false;
-        $('#chat-input').disabled = false;
-        floatingInput.value = ''; // Ensure floating input is cleared
-        $('#chat-input').value = ''; // Ensure main input is cleared
-        $('#chat-input').placeholder = 'Type a message...';
-        floatingInput.placeholder = 'Type a message...';
+        // Final safety check
+        clearAllTypingIndicators();
+        clearFloatingTypingIndicators();
         floatingInput.focus();
       }
     });
