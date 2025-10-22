@@ -177,6 +177,41 @@ for (const entry of CONCEPT_HINT_SETS) {
   }
 }
 
+// Common stop words that should NOT become topics/concepts or be learned as vocabulary
+const STOP_WORDS = new Set([
+  // Articles
+  'a', 'an', 'the',
+  // Pronouns
+  'i', 'me', 'my', 'mine', 'myself', 'you', 'your', 'yours', 'yourself',
+  'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
+  'it', 'its', 'itself', 'we', 'us', 'our', 'ours', 'ourselves',
+  'they', 'them', 'their', 'theirs', 'themselves',
+  // Common verbs (be, have, do forms)
+  'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing',
+  // Prepositions
+  'at', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'to', 'with',
+  'about', 'above', 'across', 'after', 'against', 'along', 'among',
+  'around', 'as', 'before', 'behind', 'below', 'beneath', 'beside',
+  'between', 'beyond', 'during', 'except', 'inside', 'near', 'off',
+  'outside', 'over', 'through', 'toward', 'under', 'until', 'up', 'upon',
+  'within', 'without',
+  // Conjunctions
+  'and', 'but', 'or', 'nor', 'so', 'yet', 'because', 'if', 'when',
+  'where', 'while', 'although', 'though', 'unless', 'since', 'than',
+  // Common adverbs
+  'very', 'too', 'also', 'just', 'still', 'even', 'only', 'quite',
+  'rather', 'really', 'then', 'there', 'here', 'now', 'well',
+  // Question words
+  'what', 'which', 'who', 'whom', 'whose', 'why', 'how',
+  // Other common words
+  'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would',
+  'not', "n't", 'no', 'yes', 'this', 'that', 'these', 'those',
+  'some', 'any', 'all', 'both', 'each', 'every', 'either', 'neither',
+  'more', 'most', 'much', 'many', 'few', 'less', 'little', 'other', 'another',
+  'such', 'own', 'same', 'so', 'than', 'too'
+]);
+
 const defaultState = {
   level: 0,
   xp: 0,
@@ -1146,7 +1181,36 @@ function determineEmotionalState(constrained, responseContext, state) {
 }
 
 function tokenizeMessage(text) {
-  return (String(text || '').toLowerCase().match(/[a-z]{2,}/g) || []).slice(0, 40);
+  // Extract words (2+ alphabetic characters)
+  const rawWords = (String(text || '').toLowerCase().match(/\*?[a-z]{2,}\*?/g) || []).slice(0, 40);
+  
+  // Filter out:
+  // 1. Actions (words wrapped in asterisks like *blink* or *smile*)
+  // 2. Stop words (articles, pronouns, common words)
+  // 3. Very short words (unless they're meaningful)
+  const meaningfulWords = rawWords.filter(word => {
+    // Remove asterisks for checking
+    const cleaned = word.replace(/\*/g, '');
+    
+    // Skip if it was wrapped in asterisks (action)
+    if (word.startsWith('*') || word.endsWith('*')) {
+      return false;
+    }
+    
+    // Skip stop words
+    if (STOP_WORDS.has(cleaned)) {
+      return false;
+    }
+    
+    // Skip very short words unless mapped as concepts
+    if (cleaned.length < 3 && !KEYWORD_TO_CONCEPT.get(cleaned)) {
+      return false;
+    }
+    
+    return true;
+  });
+  
+  return meaningfulWords;
 }
 
 /**
@@ -3795,7 +3859,22 @@ function sentimentToScore(sentiment) {
 
 function inferConceptAssignment(word) {
   if (!word) return null;
-  const normalized = word.toLowerCase();
+  
+  // Remove asterisks and check if it's an action (e.g., "*blink*", "*smile*")
+  const isAction = word.startsWith('*') && word.endsWith('*');
+  if (isAction) return null; // Actions should not become concepts
+  
+  const normalized = word.toLowerCase().replace(/[*]/g, '');
+  
+  // Skip stop words
+  if (STOP_WORDS.has(normalized)) return null;
+  
+  // Skip very short words (1-2 characters) unless they're mapped concepts
+  if (normalized.length <= 2 && !KEYWORD_TO_CONCEPT.get(normalized)) return null;
+  
+  // Skip words that are just punctuation or numbers
+  if (/^[^a-z]+$/i.test(normalized)) return null;
+  
   const hint = KEYWORD_TO_CONCEPT.get(normalized);
   if (hint) {
     return {
@@ -3805,6 +3884,10 @@ function inferConceptAssignment(word) {
       keyword: normalized,
     };
   }
+  
+  // Only create topics for meaningful words (4+ characters or mapped)
+  if (normalized.length < 4) return null;
+  
   return {
     key: `topic:${normalized}`,
     name: `Topic: ${capitalize(normalized)}`,
