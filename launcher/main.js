@@ -42,14 +42,12 @@ function shutdownBackend(signal = 'SIGTERM') {
 
 function createTray(rootDir) {
   // Create a native image for the tray icon
-  // Electron will use a default icon if we don't provide one
   let trayIcon = nativeImage.createEmpty();
   
   const iconCandidates = [
-    path.join(rootDir, 'media', 'images', 'icon.ico'),
-    path.join(rootDir, 'launcher', 'icon.png'),
-    path.join(rootDir, 'app', 'frontend', 'favicon.ico'),
-    path.join(__dirname, 'icon.png')
+    path.join(__dirname, 'icon.ico'),
+    path.join(rootDir, 'app', 'media', 'images', 'icon.ico'),
+    path.join(rootDir, 'app', 'media', 'images', 'icons', 'neuron_shadow.ico')
   ];
   
   for (const candidate of iconCandidates) {

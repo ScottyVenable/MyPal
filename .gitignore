@@ -16,6 +16,8 @@ coverage/
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Environment and local config
 .env
@@ -41,3 +43,12 @@ Developer Files/
 
 # Generated hardware specs
 docs/detect_user_specs/user_hardware.json
+
+# Performance logs (can be very large)
+docs/performance_logs/*.json
+
+# Issues files -- for developers only
+issues/
+
+# Trash folder with outdated/fixed items
+TRASH/

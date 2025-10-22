@@ -1,6 +1,6 @@
 {
   "name": "mypal-launcher",
-  "version": "0.1.1",
+  "version": "0.2.0-alpha",
   "description": "Desktop launcher that boots the MyPal backend and shows the SPA in a dedicated window.",
   "main": "main.js",
   "private": true,
