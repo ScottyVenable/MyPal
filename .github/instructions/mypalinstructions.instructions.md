@@ -1,3 +1,6 @@
+---
+applyTo: '**'
+---
 # MyPal AI Companion - Copilot Instructions
 
 This is a cross-platform AI companion application with both desktop and mobile implementations. The desktop version uses Electron with a vanilla JavaScript frontend and Node.js/Express backend. The mobile version (in development) uses React Native with an embedded Node.js backend server locally on the device. Both provide offline-first AI interactions with local model support and authentic cognitive development simulation.

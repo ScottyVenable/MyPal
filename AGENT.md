@@ -39,6 +39,77 @@ MyPal ("Pal") is an evolving AI companion that starts as a digital *tabula rasa*
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Core Technologies Stack
+- **Frontend**: Vanilla JavaScript ES6+ with Chart.js and vis-network
+- **Backend**: Node.js/Express with WebSocket support
+- **Database**: JSON file-based storage with SQLite consideration for future
+- **Desktop Wrapper**: Electron for cross-platform desktop deployment
+- **Real-time**: WebSocket for neural network visualization
+- **State Management**: Local storage and in-memory state synchronization
+
+---
+
+## DEVELOPMENT ENVIRONMENT SETUP
+
+### Prerequisites
+- **Node.js**: Version 16+ (LTS recommended)
+- **Package Managers**: npm (included with Node.js)
+- **Git**: Latest version with proper SSH/HTTPS setup
+- **Code Editor**: VS Code recommended with extensions:
+  - JavaScript (ES6) code snippets
+  - REST Client for API testing
+  - Live Server for frontend development
+  - GitLens for Git integration
+
+### Project Setup Instructions
+1. **Clone Repository**:
+   ```bash
+   git clone https://github.com/ScottyVenable/MyPal.git
+   cd MyPal
+   git checkout mypal-0.2-alpha
+   ```
+
+2. **Install Dependencies**:
+   ```bash
+   # Backend dependencies
+   cd app/backend
+   npm install
+   
+   # Launcher dependencies (for desktop app)
+   cd ../../launcher
+   npm install
+   cd ..
+   ```
+
+3. **Development Tools Configuration**:
+   - Install recommended VS Code extensions
+   - Configure environment variables if needed
+   - Set up debugging configuration for Node.js backend
+
+4. **Build and Run**:
+   ```bash
+   # Start backend server
+   cd app/backend
+   npm start  # Starts on localhost:3001
+   
+   # Open frontend (in separate terminal/browser)
+   # Navigate to app/frontend/index.html in browser
+   # OR use Live Server extension in VS Code
+   ```
+
+5. **Verify Installation**:
+   - Backend health check: `curl http://localhost:3001/api/health`
+   - Open frontend and test all three tabs (Chat, Stats, Brain)
+   - Create a test profile and send messages
+   - Verify neural network visualization works
+
+### Development Tools Integration
+- **Backend Debugging**: Use VS Code's Node.js debugger with breakpoints
+- **API Testing**: Thunder Client or Postman for endpoint testing  
+- **WebSocket Testing**: Browser dev tools Network tab for WebSocket inspection
+- **Performance Monitoring**: Chrome DevTools for frontend performance analysis
+- **Logging**: Built-in console logging with structured output
+
 ---
 
 ## DEVELOPMENTAL CONSTRAINTS (CRITICAL)
@@ -156,7 +227,76 @@ function createProfile(name) { ... }
 
 ## DEVELOPMENT PROTOCOLS
 
-### 1. Code Quality Standards
+### 1. Git Workflow & Version Control
+
+**CRITICAL**: Always commit changes after completing any bugfix, feature implementation, or patch.
+
+#### Commit Requirements
+- **Commit After Each Change**: Never leave work uncommitted - always commit after completing any bugfix, feature implementation, or patch
+- **Descriptive Commit Messages**: Use clear, descriptive commit messages that explain what was changed and why
+  - Format: `[TYPE] Brief description`
+  - Types: `[BUGFIX]`, `[FEATURE]`, `[PATCH]`, `[REFACTOR]`, `[DOCS]`, `[TEST]`
+  - Example: `[BUGFIX] Fix persistent typing indicator blocking new messages`
+  - Example: `[FEATURE] Add comprehensive logging system with timestamps`
+  - Example: `[PATCH] Clean emoji usage in backend log files`
+- **Atomic Commits**: Each commit should represent a single logical change
+- **Branch Naming**: Use descriptive branch names with prefixes
+  - `feature/description-here`
+  - `bugfix/issue-description`  
+  - `patch/small-fix-description`
+- **Working Branch**: Currently on `mypal-0.2-alpha` branch
+- **Commit Frequency**: Commit early and often - don't let changes accumulate
+- **Pre-Commit Validation**: Ensure code compiles and basic tests pass before committing
+
+### Issue Management & GitHub Integration
+- **Issue Creation**: When bugs are discovered or features are needed that require GitHub issue tracking, create an individual file using the template in `/issues/ISSUE_TEMPLATE.md`
+- **File Naming Convention**: Use format `[type]--[brief-description].md`
+  - Examples: `[bug]--typing-indicator-blocking.md`, `[feature]--offline-ai-models.md`
+- **Issue Types**: `[bug]`, `[feature]`, `[enhancement]`, `[docs]`, `[question]`
+- **Template Usage**: Always fill out the complete template with all relevant sections:
+  - Issue information (title, type, priority, labels)
+  - Description and context
+  - Reproduction steps (for bugs) or acceptance criteria (for features)
+  - Technical details and implementation notes
+  - GitHub CLI command for issue creation
+- **GitHub Issue Creation**: Use the provided GitHub CLI command in the template to create actual GitHub issues
+- **Commit Pattern**: After creating GitHub issues, commit with format: `[GITHUB] Create issue #XXX: [Title]`
+- **Local Tracking**: Keep local issue files updated with GitHub issue numbers and links for cross-reference
+
+### 2. AI Development Best Practices
+- **Model Management**: 
+  - Currently using local processing only (no external LLM integration yet)
+  - Future: Implement lazy loading for AI models to preserve memory
+  - Plan for model pooling for frequently accessed models
+  - Implement proper model cleanup and garbage collection
+  - Monitor model memory usage and implement limits
+  - Support hot-swapping models without app restart
+- **Prompt Engineering**:
+  - Use standardized prompt templates with variable substitution
+  - Implement prompt versioning and A/B testing capabilities
+  - Maintain context-aware prompt construction
+  - Store and reuse effective prompt patterns
+  - Implement prompt validation and sanitization
+- **Response Processing**:
+  - Stream AI responses for better user experience (planned)
+  - Implement response caching for common queries
+  - Handle partial responses and connection interruptions
+  - Parse and validate AI output before displaying
+  - Implement response post-processing and formatting
+- **Context Management**:
+  - Track conversation context and token limits
+  - Implement intelligent context pruning strategies
+  - Maintain conversation history with efficient storage
+  - Support context serialization for session persistence
+  - Handle context overflow gracefully
+- **Inference Optimization**:
+  - Use background queues for AI processing
+  - Implement request batching where applicable
+  - Monitor inference performance and optimize bottlenecks
+  - Use appropriate model quantization for future mobile deployment
+  - Implement progressive model loading strategies
+
+### 3. Code Quality Standards
 
 #### JavaScript (ES6+)
 ```javascript
@@ -601,6 +741,76 @@ Every modification must include:
 3. **Testing**: How the change was validated
 4. **Compatibility**: Any breaking changes or migration needs
 
+### Code Review Guidelines
+
+#### AI Integration Review Checklist
+- **Developmental Stage Compliance**:
+  - [ ] Response validation against current stage constraints
+  - [ ] XP/CP calculation correctness
+  - [ ] Proper vocabulary and context management
+  - [ ] Piaget stage transition logic accuracy
+- **Prompt Engineering**:
+  - [ ] Use of standardized response templates
+  - [ ] Input validation and sanitization
+  - [ ] Context preservation strategies
+  - [ ] Response parsing and validation
+- **Performance**:
+  - [ ] Proper async/await usage
+  - [ ] Memory leak prevention
+  - [ ] Response timeout handling
+  - [ ] Background processing optimization
+
+#### Frontend Development Review
+- **JavaScript Patterns**:
+  - [ ] Proper event listener management
+  - [ ] DOM manipulation best practices
+  - [ ] State synchronization (main/floating chat)
+  - [ ] Error boundary implementation
+- **Performance Optimization**:
+  - [ ] Efficient DOM updates
+  - [ ] Memory management for visualizations
+  - [ ] WebSocket connection handling
+  - [ ] Chart.js and vis-network optimization
+- **User Experience**:
+  - [ ] Responsive design implementation
+  - [ ] Accessibility compliance
+  - [ ] Loading states and error feedback
+  - [ ] Cross-browser compatibility
+
+#### Backend & API Review
+- **Express.js Backend**:
+  - [ ] Proper middleware usage
+  - [ ] Error handling and logging
+  - [ ] WebSocket connection management
+  - [ ] File system operations safety
+- **API Design**:
+  - [ ] RESTful endpoint patterns
+  - [ ] Proper HTTP status codes
+  - [ ] Request/response validation
+  - [ ] Profile isolation enforcement
+- **Security**:
+  - [ ] Input validation on all endpoints
+  - [ ] No sensitive data exposure
+  - [ ] Proper file path validation
+  - [ ] CSP compliance verification
+
+#### Code Quality Standards
+- **JavaScript ES6+**:
+  - [ ] Modern syntax usage (const/let, arrow functions)
+  - [ ] Proper error handling with try/catch
+  - [ ] Consistent code formatting
+  - [ ] No console.log in production code
+- **Documentation**:
+  - [ ] JSDoc comments for complex functions
+  - [ ] README updates for new features
+  - [ ] Code comments for developmental psychology logic
+  - [ ] API endpoint documentation updates
+- **Testing**:
+  - [ ] Manual testing across all developmental stages
+  - [ ] Profile switching and isolation tests
+  - [ ] WebSocket functionality verification
+  - [ ] Cross-tab state synchronization tests
+
 ---
 
 ## DEPLOYMENT & ENVIRONMENT
@@ -731,6 +941,89 @@ async function saveMultipleCollections(profileId, collections) {
 
 ---
 
+## DEBUGGING & TROUBLESHOOTING GUIDELINES
+
+### Backend Debugging
+- **Server Startup Issues**:
+  - Check port availability: `netstat -ano | findstr :3001`
+  - Verify Node.js version compatibility (16+ required)
+  - Check file permissions for data directory
+  - Monitor memory usage during startup
+- **API Endpoint Failures**:
+  - Use structured logging with timestamps
+  - Test endpoints independently with REST client
+  - Check WebSocket connection status
+  - Validate request/response formats
+- **Profile Loading Problems**:
+  - Verify profile directory structure exists
+  - Check JSON file integrity and format
+  - Implement proper error handling for corrupted data
+  - Use backup/recovery mechanisms
+
+### Frontend Debugging
+- **JavaScript Runtime Errors**:
+  - Use browser dev tools console for error tracking
+  - Enable source maps for better debugging
+  - Check for CSP violations and inline event handlers
+  - Monitor memory usage and potential leaks
+- **WebSocket Connection Issues**:
+  - Verify WebSocket server is running on correct port
+  - Check browser WebSocket API compatibility
+  - Implement reconnection logic with exponential backoff
+  - Monitor connection state changes
+- **Neural Visualization Problems**:
+  - Check Chart.js and vis-network library loading
+  - Verify data format matches expected schema
+  - Monitor canvas rendering performance
+  - Implement proper cleanup on component destruction
+
+### Cross-Platform Issues
+- **Desktop App (Electron)**:
+  - Check Electron version compatibility
+  - Verify main/renderer process communication
+  - Test auto-updater functionality
+  - Handle platform-specific permissions
+- **Browser Compatibility**:
+  - Test in multiple browsers (Chrome, Firefox, Safari, Edge)
+  - Check ES6+ feature support and polyfills
+  - Verify WebSocket and modern JavaScript API support
+  - Test responsive design and accessibility features
+
+### Performance Debugging
+- **Memory Management**:
+  - Use browser dev tools memory profiler
+  - Implement proper cleanup for event listeners
+  - Monitor neural network data size and cleanup
+  - Profile JavaScript execution and identify bottlenecks
+- **Network Performance**:
+  - Monitor WebSocket message frequency and size
+  - Optimize API response payloads
+  - Implement request debouncing and throttling
+  - Use browser network tab for performance analysis
+
+### Common Solutions
+- **Clean Development Environment**:
+  ```bash
+  # Complete cleanup and reinstall
+  cd app/backend
+  rm -rf node_modules package-lock.json
+  npm install
+  
+  cd ../../launcher  
+  rm -rf node_modules package-lock.json
+  npm install
+  ```
+- **Profile Data Issues**:
+  - Backup profile data before making changes
+  - Implement data validation and migration scripts
+  - Use JSON schema validation for data integrity
+  - Provide manual data recovery tools
+- **Cache and State Issues**:
+  - Clear browser cache and local storage
+  - Reset application state to defaults
+  - Implement proper state synchronization patterns
+  - Use debugging tools to inspect state changes
+
 ## TROUBLESHOOTING GUIDE
 
 ### Common Issues
@@ -829,6 +1122,80 @@ MyPal's architecture is intentionally complex because it simulates real cognitiv
 3. **Progressive Disclosure**: UI complexity should match Pal's cognitive complexity
 4. **Meaningful Interaction**: Every user action should have clear impact on Pal's growth
 5. **Authentic Constraints**: Limitations are features, not bugs - they create the experience
+
+### AI User Experience Guidelines
+
+#### Conversation Flow Patterns
+- **Message Threading**:
+  - Maintain clear conversation context in chat log
+  - Show developmental progression over time
+  - Implement conversation history with timestamps
+  - Group related learning interactions visually
+- **AI Response Indicators**:
+  - "Thinking" indicators during response generation
+  - Developmental stage indicators in UI
+  - XP/CP gain animations and feedback
+  - Neural firing visual effects during interactions
+
+#### Loading States & Feedback
+- **AI Processing States**:
+  - Animated thinking indicators with stage-appropriate delays
+  - Progress feedback for complex operations
+  - Clear indication when Pal is "learning" vs "responding"
+  - Visual feedback for reinforcement actions (star button)
+- **Real-time Updates**:
+  - Live neural network visualization updates
+  - Streaming XP/CP counter animations
+  - Real-time stats tab updates during conversations
+  - WebSocket-driven brain activity visualization
+
+#### Error Handling & Recovery
+- **AI Error States**:
+  - Developmental stage constraint violation handling
+  - Graceful degradation when features are unavailable
+  - Clear error messages for profile loading failures
+  - Recovery options for corrupted data states
+- **Offline Experience**:
+  - Local-first architecture with no external dependencies
+  - Clear indicators of local data storage
+  - Backup and export functionality
+  - Profile isolation and switching capabilities
+
+#### Personalization & Context
+- **AI Personality Development**:
+  - Consistent personality growth across sessions
+  - Context-aware responses based on learned vocabulary
+  - User preference adaptation over time
+  - Developmental milestone celebration and recognition
+- **Context Visualization**:
+  - Neural network brain visualization with activity
+  - Vocabulary growth tracking and display
+  - Learning progression charts and statistics
+  - Memory integration and fact correlation displays
+
+#### Accessibility for AI Features
+- **Cognitive Development Clarity**:
+  - Clear developmental stage explanations
+  - Visual indicators for current capabilities
+  - Educational tooltips about developmental psychology
+  - Progress tracking with meaningful milestones
+- **User Understanding**:
+  - Transparent AI constraint explanations
+  - Educational content about developmental stages
+  - Clear cause-and-effect relationships for user actions
+  - Guided tutorials for new users
+
+#### Performance Optimization UX
+- **Real-time Responsiveness**:
+  - Optimized neural network rendering
+  - Efficient WebSocket message handling
+  - Smooth chart animations and transitions
+  - Minimal latency for chat interactions
+- **Resource Management**:
+  - Clear memory usage indicators
+  - Profile data management tools
+  - Export/import functionality for data portability
+  - Performance monitoring and optimization alerts
 
 ---
 
