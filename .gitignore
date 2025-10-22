@@ -41,3 +41,6 @@ Developer Files/
 
 # Generated hardware specs
 docs/detect_user_specs/user_hardware.json
+
+# Performance logs (can be very large)
+docs/performance_logs/*.json
