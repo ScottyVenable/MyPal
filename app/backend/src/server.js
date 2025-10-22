@@ -4975,6 +4975,7 @@ app.post('/api/plugins/:name/toggle', (req, res) => {
 // Brain graph: derive simple co-occurrence network from chat log
 app.get('/api/brain', (req, res) => {
   const { chatLog, concepts = [] } = getCollections();
+  console.log(`[BRAIN] Processing knowledge graph - chatLog length: ${chatLog.length}, concepts: ${concepts.length}`);
   const maxMsgs = 300; // cap for performance
   const logs = chatLog.slice(-maxMsgs);
   const freq = new Map();
@@ -5007,6 +5008,7 @@ app.get('/api/brain', (req, res) => {
     .slice(0, 50)
     .map(([w]) => w);
   const wordSet = new Set(topWords);
+  console.log(`[BRAIN] Found ${freq.size} unique words, selected top ${topWords.length} for graph`);
 
   const nodes = topWords.map((w) => ({ id: w, label: w, value: freq.get(w) || 1, group: 'language' }));
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
@@ -5017,8 +5019,10 @@ app.get('/api/brain', (req, res) => {
       links.push({ from: a, to: b, value: weight });
     }
   }
+  console.log(`[BRAIN] Generated ${nodes.length} nodes and ${links.length} links for knowledge graph`);
 
   const conceptSummaries = [];
+  let conceptNodesAdded = 0;
   for (const concept of concepts) {
     if (!concept || !concept.totalMentions) continue;
     const sentimentAvg = concept.sentiment?.average ?? 0;
@@ -5033,6 +5037,7 @@ app.get('/api/brain', (req, res) => {
       sentiment: sentimentLabel,
     };
     nodeMap.set(conceptNode.id, conceptNode);
+    conceptNodesAdded++;
 
     const keywordEntries = Object.entries(concept.keywords || {})
       .sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0))
@@ -5058,8 +5063,12 @@ app.get('/api/brain', (req, res) => {
       lastSeen: concept.lastSeen,
     });
   }
+  console.log(`[BRAIN] Added ${conceptNodesAdded} concept nodes to graph`);
 
-  res.json({ nodes: Array.from(nodeMap.values()), links, concepts: conceptSummaries });
+  const finalNodes = Array.from(nodeMap.values());
+  const finalLinks = links;
+  console.log(`[BRAIN] Returning ${finalNodes.length} total nodes and ${finalLinks.length} total links`);
+  res.json({ nodes: finalNodes, links: finalLinks, concepts: conceptSummaries });
 });
 
 app.get('/api/memories', (req, res) => {

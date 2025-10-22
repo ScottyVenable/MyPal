@@ -1,0 +1,1 @@
+- Remove the first phase of development, instead have it be one words. Mimicking behavior at first. Adding ! for excitement, ? for questioning (or wanting to learn more/curious)
