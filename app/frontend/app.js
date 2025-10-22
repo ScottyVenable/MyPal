@@ -925,10 +925,11 @@ function forceEnableAllInputs() {
     if (input) {
       const wasDisabled = input.disabled;
       input.disabled = false;
+      input.value = ''; // Clear any residual value
       input.placeholder = 'Type a message...';
       if (wasDisabled) {
         enabledCount++;
-        logInfo('UI', `Force enabled input: ${selector}`);
+        logInfo('UI', `Force enabled and cleared input: ${selector}`);
       }
     } else {
       logWarn('UI', `Input not found: ${selector}`);
@@ -1936,16 +1937,18 @@ function wireChat() {
       // Re-enable both inputs with extra safety checks
       if (input) {
         input.disabled = false;
+        input.value = ''; // Ensure input is cleared
         input.placeholder = 'Type a message...';
-        logInfo('UI', `Main input re-enabled`, { chatId });
+        logInfo('UI', `Main input re-enabled and cleared`, { chatId });
       } else {
         logWarn('UI', `Main input not found during re-enable`, { chatId });
       }
       
       if (floatingInput) {
         floatingInput.disabled = false;
+        floatingInput.value = ''; // Ensure floating input is cleared
         floatingInput.placeholder = 'Type a message...';
-        logDebug('UI', `Floating input re-enabled`, { chatId });
+        logDebug('UI', `Floating input re-enabled and cleared`, { chatId });
       }
       
       // Additional safety: Force re-enable in case of any issues
@@ -1956,12 +1959,14 @@ function wireChat() {
         
         if (chatInput && chatInput.disabled) {
           chatInput.disabled = false;
+          chatInput.value = ''; // Clear any residual value
           chatInput.placeholder = 'Type a message...';
           needsForceEnable = true;
           logWarn('UI', `Main input force re-enabled via timeout`, { chatId });
         }
         if (floatInput && floatInput.disabled) {
           floatInput.disabled = false;
+          floatInput.value = ''; // Clear any residual value
           floatInput.placeholder = 'Type a message...';
           needsForceEnable = true;
           logWarn('UI', `Floating input force re-enabled via timeout`, { chatId });
@@ -3415,9 +3420,11 @@ function setupFloatingChat() {
         hideTyping(indicator);
         hideFloatingTyping(floatingIndicator);
         
-        // Re-enable both inputs
+        // Re-enable both inputs and ensure they're cleared
         floatingInput.disabled = false;
         $('#chat-input').disabled = false;
+        floatingInput.value = ''; // Ensure floating input is cleared
+        $('#chat-input').value = ''; // Ensure main input is cleared
         $('#chat-input').placeholder = 'Type a message...';
         floatingInput.placeholder = 'Type a message...';
         floatingInput.focus();
