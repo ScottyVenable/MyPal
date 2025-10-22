@@ -1528,9 +1528,22 @@ function renderBrain(data) {
     
     const network = new vis.Network(canvas, { nodes, edges }, options);
     
-    // Freeze physics after stabilization for better performance
+    // Keep physics enabled but reduce activity after stabilization for interactive dragging
     network.once('stabilizationIterationsDone', () => {
-      network.setOptions({ physics: { enabled: false } });
+      network.setOptions({ 
+        physics: { 
+          enabled: true,
+          solver: 'forceAtlas2Based',
+          forceAtlas2Based: {
+            gravitationalConstant: -26,
+            centralGravity: 0.005,
+            springLength: 230,
+            springConstant: 0.18,
+            damping: 0.95
+          },
+          stabilization: false
+        } 
+      });
       if (window.perf) window.perf.mark('brain_network_stabilized');
     });
 
