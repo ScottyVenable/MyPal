@@ -1425,6 +1425,12 @@ function renderBrain(data) {
     defaultBrainDescription = desc.textContent || '';
   }
   
+  console.log('[BRAIN] renderBrain called with:', { 
+    nodesCount: data.nodes?.length || 0, 
+    linksCount: data.links?.length || 0,
+    conceptsCount: data.concepts?.length || 0 
+  });
+  
   // Show loading placeholder
   container.innerHTML = '<div class="graph-loading"><div class="loading-spinner"></div><p>Loading knowledge graph...</p></div>';
   
@@ -1440,6 +1446,8 @@ function renderBrain(data) {
     value: e.value || 1,
   })));
   const conceptCount = Array.isArray(data.concepts) ? data.concepts.length : 0;
+  
+  console.log('[BRAIN] Created vis datasets:', { nodes: nodes.length, edges: edges.length, concepts: conceptCount });
   updateBrainSummary({ nodeCount: nodes.length, edgeCount: edges.length, conceptCount });
 
   if (!nodes.length) {
@@ -1760,10 +1768,13 @@ async function loadJournal(force = false) {
 async function loadBrainInsights() {
   try {
     const [graph, memories] = await Promise.all([fetchBrain(), fetchMemories()]);
+    console.log('[BRAIN] Loaded graph data:', { nodes: graph.nodes?.length || 0, links: graph.links?.length || 0, concepts: graph.concepts?.length || 0 });
     renderBrain(graph);
     renderMemories(memories);
   } catch (err) {
     console.error('Failed to load brain insights', err);
+    // On error, reset to empty state
+    updateBrainSummary({ nodeCount: 0, edgeCount: 0, conceptCount: 0, memoriesTotal: 0 });
   }
 }
 
