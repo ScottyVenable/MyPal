@@ -924,6 +924,9 @@ function getNeuralNetwork(collections) {
     const network = initializeNeuralNetwork(collections.state?.level || 0);
     neuralNetwork = network.toJSON();
     collections.neuralNetwork = neuralNetwork;
+    
+    // Immediately save the newly initialized neural network to ensure profile isolation
+    saveCollections(collections);
   }
 
   // Return as NeuralNetwork instance
