@@ -4,13 +4,13 @@
 **Saved as:** `[bug]--new-pal-name-textbox-uneditable.md`
 
 ## Issue Information
-**Title:** New Pal name textbox becomes uneditable after returning to main menu  
-**Type:** Bug Report  
-**Priority:** High  
+**Title:** New Pal name textbox becomes uneditable after returning to main menu
+**Type:** Bug Report
+**Priority:** High
 **Labels:** bug, frontend, ui
 
 ## Description
-When users exit to the main menu and immediately reopen the New Pal dialog, the name textbox refuses focus and keyboard input. The lack of focus handling effectively blocks new Pal creation through this flow.
+After exiting to the main menu and relaunching the New Pal dialog, the name textbox no longer accepts focus or keyboard input. The missing focus prevents users from creating new Pals via this flow.
 
 ## Context
 **Related Files/Components:**
@@ -20,30 +20,32 @@ When users exit to the main menu and immediately reopen the New Pal dialog, the 
 - [ ] AI/LLM Integration
 - [ ] Database/Storage
 - [ ] Documentation
+- [ ] Testing
+- [ ] Security
 - [ ] Other: ___________
 
-**Current Behavior:**
-After returning to the main menu, opening the New Pal dialog shows the name textbox visually, but it never accepts focus, no caret appears, and typing has no effect.
+**Current Behavior:** (for bugs)
+Name input never gains focus; typing is ignored after returning to the main menu.
 
-**Expected Behavior:**
-The name textbox should autofocus and allow typing every time the New Pal dialog opens, regardless of navigation path.
+**Expected Behavior:** (for bugs/enhancements)
+The name textbox should autofocus and allow typing every time the dialog opens.
 
-## Reproduction Steps
+## Reproduction Steps (for bugs)
 1. Launch MyPal.
 2. Click `Exit` to return to the main menu.
 3. Click `New Pal`.
-4. Attempt to type in the name textbox and observe the missing focus.
+4. Attempt to type in the name textbox.
 
-## Acceptance Criteria
-- [x] New Pal dialog autofocuses the name input after returning from the main menu.
-- [x] Manual clicking on the name input always enables typing.
-- [ ] Automated UI/E2E test verifies the regression path.
+## Acceptance Criteria (for features/enhancements)
+- [ ] New Pal dialog autofocuses the name field after returning from the main menu.
+- [ ] Manual focus on the name input always enables typing.
+- [ ] Automated UI/E2E test covers this regression path.
 
 ## Technical Details
 **Environment:**
 - OS: Windows 10/11
 - App Version: v0.2.0-alpha (current)
-- Node.js Version: N/A (frontend issue)
+- Node.js Version: 18.x
 - React Native Version: N/A
 
 **Error Messages/Logs:**
@@ -52,57 +54,36 @@ No console errors observed during reproduction.
 ```
 
 **Code References:**
-- Files: `app/frontend/app.js`, `app/frontend/index.html`
-- Functions/Components: `wireProfileManagement()` function
-- Line Numbers: ~413-500
-- Commit: 1422256
-
-## Resolution
-**Status:** ✅ RESOLVED  
-**Fixed in Commit:** 1422256  
-**Date Fixed:** October 22, 2025
-
-**Solution Implemented:**
-Modified the `wireProfileManagement()` function in `app/frontend/app.js` to:
-
-1. **Re-query DOM element** on each modal open to avoid stale references
-2. **Comprehensive attribute cleanup**: Remove readonly, disabled, aria-disabled, and tabindex attributes
-3. **Increased focus delay**: Changed from 50ms to 100ms for better DOM settling
-4. **Added fallback handlers**: Click and focus event listeners directly on the input element
-5. **Double-check attributes**: Removed blocking attributes both before delay and in requestAnimationFrame
-
-**Testing:**
-- ✅ Input auto-focuses when modal opens
-- ✅ Typing works after profile deletion
-- ✅ Clicking input always enables typing (fallback protection)
-- ✅ Works consistently across multiple modal opens
-
-**Test Document:** `TESTING_NEW_PAL_INPUT_FIX.md`
+- Files: app/frontend/app.js, app/frontend/index.html
+- Functions/Components: New Pal dialog open handlers, focus management utilities
+- Line Numbers: Identify during fix
 
 ## Implementation Notes
 **Suggested Approach:**
-Ensure the dialog open lifecycle triggers `focus()` on the name input, even after navigation events. Verify that no overlays or disabled attributes persist between menu transitions. Consider adding a `setTimeout` focus fallback if necessary.
+Ensure the dialog lifecycle focuses the name input, confirm no overlays capture focus, and add UI/E2E coverage for the flow.
 
 **Potential Challenges:**
-Handling focus when dialogs animate or when other elements capture focus on open.
+Handling focus timing when dialogs animate or when other elements retain focus.
 
 **Dependencies:**
-None known.
+None.
 
 ## GitHub CLI Command
 ```bash
 gh issue create \
   --title "New Pal name textbox becomes uneditable after returning to main menu" \
-  --body-file "issues/[bug]--new-pal-name-textbox-uneditable.md" \
-  --label "bug,frontend,ui" \
+  --body-file "issues/bugs/[bug]--new-pal-name-textbox-uneditable.md" \
+  --label "bug" \
+  --label "frontend" \
+  --label "ui" \
   --assignee "ScottyVenable"
 ```
 
 ## Additional Information
 **References:**
-- Related Issues: TODO – link after creation
-- Documentation: `docs/ui/UI_DESIGN_IDEAS.md`
+- Related Issues: TODO – add link post creation
+- Documentation: docs/ui/UI_DESIGN_IDEAS.md
 - External Resources: N/A
 
 **Screenshots/Mockups:**
-Not yet captured.
+Capture dialog showing missing caret after reproduction.

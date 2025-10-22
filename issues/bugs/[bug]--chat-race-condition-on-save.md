@@ -4,13 +4,13 @@
 **Saved as:** `[bug]--chat-race-condition-on-save.md`
 
 ## Issue Information
-**Title:** Race condition when multiple chats arrive before data save completes  
-**Type:** Bug Report  
-**Priority:** High  
+**Title:** Race condition when multiple chats arrive before data save completes
+**Type:** Bug Report
+**Priority:** High
 **Labels:** bug, backend, data-integrity
 
 ## Description
-Rapid or concurrent chat submissions can overlap while profile data persists to disk. Because JSON writes are not serialized, state snapshots interleave, leading to inconsistent files or lost updates.
+Rapid, overlapping chat requests can interleave while profile JSON writes are still in progress. The lack of serialization causes stale updates or corrupted JSON data.
 
 ## Context
 **Related Files/Components:**
@@ -20,24 +20,26 @@ Rapid or concurrent chat submissions can overlap while profile data persists to 
 - [ ] AI/LLM Integration
 - [x] Database/Storage
 - [ ] Documentation
+- [ ] Testing
+- [ ] Security
 - [ ] Other: ___________
 
-**Current Behavior:**
-When multiple chats are processed before the previous `saveCollections` call finishes, file writes collide. The resulting profile data can be partially written, out of order, or missing updates.
+**Current Behavior:** (for bugs)
+Concurrent chats write profile JSON without coordination, producing inconsistent or truncated files.
 
-**Expected Behavior:**
-All chat messages should persist deterministically; concurrent requests must be serialized or otherwise prevented from corrupting profile files.
+**Expected Behavior:** (for bugs/enhancements)
+Profile persistence should serialize or synchronize writes so each chat saves deterministically.
 
-## Reproduction Steps
+## Reproduction Steps (for bugs)
 1. Start the MyPal backend server.
-2. Connect via the UI or API and send multiple chat messages in rapid succession (or from parallel clients).
-3. Inspect the resulting profile JSON files and server logs after the burst of messages.
-4. Observe inconsistent or stale data caused by overlapping saves.
+2. Send several chat messages rapidly (or from parallel clients).
+3. Inspect profile JSON files and logs.
+4. Observe stale data or malformed JSON due to overlapping writes.
 
-## Acceptance Criteria
-- [ ] Backend serializes or queues writes to profile JSON files.
-- [ ] Stress test covering concurrent chat submissions passes without data corruption.
-- [ ] Logging confirms when write collisions are prevented.
+## Acceptance Criteria (for features/enhancements)
+- [ ] Introduce per-profile write queue or mutex.
+- [ ] Stress test verifies concurrent chats persist correctly.
+- [ ] Logging captures queue usage for diagnostics.
 
 ## Technical Details
 **Environment:**
@@ -48,38 +50,40 @@ All chat messages should persist deterministically; concurrent requests must be 
 
 **Error Messages/Logs:**
 ```
-Occasional JSON parse errors or truncated files when race condition occurs.
+Occasional truncated JSON files or parse errors when the race condition triggers.
 ```
 
 **Code References:**
-- Files: `app/backend/src/server.js`, `app/backend/src/profileManager.js`
-- Functions/Components: `saveCollections`, chat handling endpoints
-- Line Numbers: To be determined during fix
+- Files: app/backend/src/server.js, app/backend/src/profileManager.js
+- Functions/Components: saveCollections, chat request handlers
+- Line Numbers: Identify while implementing fix
 
 ## Implementation Notes
 **Suggested Approach:**
-Introduce a per-profile write queue or mutex around `saveCollections`. Alternatively, adopt atomic write patterns (write to temp file then rename) or migrate to a transactional storage layer. Add integration tests simulating concurrent requests.
+Add write serialization (queue/mutex) or atomic file writes, and migrate toward a transactional storage layer.
 
 **Potential Challenges:**
-Ensuring performance remains acceptable with serialized writes, especially on large profiles.
+Keeping latency acceptable when multiple chats queue simultaneously.
 
 **Dependencies:**
-None identified.
+None known.
 
 ## GitHub CLI Command
 ```bash
 gh issue create \
   --title "Race condition when multiple chats arrive before data save completes" \
-  --body-file "issues/[bug]--chat-race-condition-on-save.md" \
-  --label "bug,backend,data-integrity" \
+  --body-file "issues/bugs/[bug]--chat-race-condition-on-save.md" \
+  --label "bug" \
+  --label "backend" \
+  --label "data-integrity" \
   --assignee "ScottyVenable"
 ```
 
 ## Additional Information
 **References:**
 - Related Issues: TODO – add link post creation
-- Documentation: `LOGGING_GUIDE.md`
+- Documentation: LOGGING_GUIDE.md
 - External Resources: N/A
 
 **Screenshots/Mockups:**
-Not applicable.
+N/A.
