@@ -659,6 +659,10 @@ function onNeuronClickFront(neuronId) {
   }
 }
 
+// Batch neural events for performance
+let neuralEventBatch = [];
+let neuralEventRafId = null;
+
 function connectNeuralSocket() {
   if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) return;
   try {
@@ -686,7 +690,15 @@ function connectNeuralSocket() {
         const summary = document.getElementById('neural-summary');
         if (summary) summary.textContent = `Neurons: ${data.payload.metrics.totalNeurons} · Regions: ${data.payload.regions.length} · Firings: ${data.payload.metrics.totalFirings}`;
       } else if (data.type === 'neural-event') {
-        handleNeuralEvent(data.payload);
+        // Batch neural events using requestAnimationFrame
+        neuralEventBatch.push(data.payload);
+        if (!neuralEventRafId) {
+          neuralEventRafId = requestAnimationFrame(() => {
+            const events = neuralEventBatch.splice(0);
+            neuralEventRafId = null;
+            events.forEach(handleNeuralEvent);
+          });
+        }
       }
     } catch (e) { console.error('Neural message error', e); }
   });
@@ -925,56 +937,63 @@ function renderStats(s) {
     s.personality.agreeable,
     s.personality.cautious,
   ];
-  const ctx = document.getElementById('personalityChart').getContext('2d');
-  if (radarChart) radarChart.destroy();
-  radarChart = new Chart(ctx, {
-    type: 'radar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Personality',
-        data,
-        borderColor: '#9ab4ff',
-        backgroundColor: 'rgba(154, 180, 255, 0.2)',
-        borderWidth: 2,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        pointBackgroundColor: '#9ab4ff'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      aspectRatio: 1.5,
-      scales: {
-        r: { 
-          suggestedMin: 0, 
-          suggestedMax: 100, 
-          grid: { color: 'rgba(42, 48, 107, 0.4)' }, 
-          angleLines: { color: 'rgba(42, 48, 107, 0.4)' }, 
-          pointLabels: { 
-            color: '#dfe3ff',
-            font: { size: 12, weight: '500' },
-            padding: 8
-          },
-          ticks: {
-            color: '#7a8ab8',
-            backdropColor: 'transparent',
-            font: { size: 9 }
-          }
-        }
+  
+  // Reuse chart instance for better performance
+  if (radarChart) {
+    radarChart.data.datasets[0].data = data;
+    radarChart.update('none'); // Skip animations for performance
+  } else {
+    const ctx = document.getElementById('personalityChart').getContext('2d');
+    radarChart = new Chart(ctx, {
+      type: 'radar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Personality',
+          data,
+          borderColor: '#9ab4ff',
+          backgroundColor: 'rgba(154, 180, 255, 0.2)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#9ab4ff'
+        }]
       },
-      plugins: { 
-        legend: { 
-          labels: { 
-            color: '#dfe3ff',
-            font: { size: 11 },
-            padding: 10
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: 1.5,
+        animation: false, // Disable animations for performance
+        scales: {
+          r: { 
+            suggestedMin: 0, 
+            suggestedMax: 100, 
+            grid: { color: 'rgba(42, 48, 107, 0.4)' }, 
+            angleLines: { color: 'rgba(42, 48, 107, 0.4)' }, 
+            pointLabels: { 
+              color: '#dfe3ff',
+              font: { size: 12, weight: '500' },
+              padding: 8
+            },
+            ticks: {
+              color: '#7a8ab8',
+              backdropColor: 'transparent',
+              font: { size: 9 }
+            }
+          }
+        },
+        plugins: { 
+          legend: { 
+            labels: { 
+              color: '#dfe3ff',
+              font: { size: 11 },
+              padding: 10
+            } 
           } 
-        } 
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 async function refreshStats() {
@@ -1117,9 +1136,10 @@ function renderBrain(data) {
     
     const network = new vis.Network(canvas, { nodes, edges }, options);
     
-    // Network is ready after stabilization
+    // Freeze physics after stabilization for better performance
     network.once('stabilizationIterationsDone', () => {
-      // Network is now stable and visible
+      network.setOptions({ physics: { enabled: false } });
+      if (window.perf) window.perf.mark('brain_network_stabilized');
     });
 
     if (desc) {
@@ -1345,13 +1365,24 @@ async function loadBrainInsights() {
 function wireTabs() {
   $$('nav button').forEach(btn => btn.addEventListener('click', async () => {
     const tab = btn.dataset.tab;
+    if (window.perf) window.perf.mark(`${tab}_tab_enter`);
+    
     switchTab(tab);
+    
     if (tab === 'journal') {
       await loadJournal(true);
     } else if (tab === 'brain') {
       await loadBrainInsights();
+      if (window.perf) {
+        window.perf.mark('brain_tab_ready');
+        window.perf.measure('Brain Tab Load', 'brain_tab_enter', 'brain_tab_ready');
+      }
     } else if (tab === 'stats') {
       await renderProgressDashboard();
+      if (window.perf) {
+        window.perf.mark('stats_tab_ready');
+        window.perf.measure('Stats Tab Load', 'stats_tab_enter', 'stats_tab_ready');
+      }
     }
   }));
 }
@@ -1360,6 +1391,8 @@ function wireChat() {
   const form = $('#chat-form');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (window.perf) window.perf.mark('chat_msg_submit');
+    
     const input = $('#chat-input');
     const floatingInput = $('#floating-chat-input');
     const msg = input.value.trim();
@@ -1367,6 +1400,11 @@ function wireChat() {
     
     lastUserMessage = msg;
     addMessage('user', msg);
+    
+    if (window.perf) {
+      window.perf.mark('chat_msg_dom_ready');
+      window.perf.measure('Chat Message Render', 'chat_msg_submit', 'chat_msg_dom_ready');
+    }
     
     // If floating chat is open, sync the message there too
     if (floatingChatOpen) {
@@ -1614,8 +1652,8 @@ function wireSettings() {
     }
 
     multiplierDirty = false;
-    await refreshStats();
-    await loadBrainInsights();
+    // Parallelize independent API calls for better performance
+    await Promise.all([refreshStats(), loadBrainInsights()]);
     updateDevPanel();
   });
   $('#export-memory').addEventListener('click', doExport);
@@ -1631,6 +1669,9 @@ function wireSettings() {
 }
 
 async function init() {
+  // Performance monitoring
+  if (window.perf) window.perf.mark('init_start');
+  
   // Wire up profile management first
   wireProfileManagement();
   
@@ -1640,6 +1681,11 @@ async function init() {
     // Always show profile menu on startup - let user choose their profile
     showProfileMenu();
     await initProfileMenu();
+    
+    if (window.perf) {
+      window.perf.mark('init_profile_menu_ready');
+      window.perf.measure('Init to Profile Menu', 'init_start', 'init_profile_menu_ready');
+    }
   } else {
     showStatusModal();
     showProfileMenu();
@@ -1863,91 +1909,105 @@ async function renderProgressDashboard() {
 
   const xpCtx = document.getElementById('xpChart')?.getContext('2d');
   if (xpCtx) {
-    if (xpChartEl) xpChartEl.destroy();
-    xpChartEl = new Chart(xpCtx, {
-      type: 'line',
-      data: { 
-        labels: xpLabels, 
-        datasets: [{ 
-          label: 'XP Over Time', 
-          data: xpData, 
-          borderColor: '#9ab4ff', 
-          backgroundColor: 'rgba(154,180,255,0.2)', 
-          tension: 0.25,
-          pointRadius: 2,
-          pointHoverRadius: 4
-        }] 
-      },
-      options: { 
-        responsive: true,
-        maintainAspectRatio: true,
-        aspectRatio: 2,
-        plugins: { 
-          legend: { 
-            labels: { color: '#dfe3ff', font: { size: 11 } } 
-          } 
-        }, 
-        scales: { 
-          x: { 
-            ticks: { 
-              color: '#dfe3ff',
-              maxRotation: 45,
-              minRotation: 45,
-              font: { size: 9 },
-              maxTicksLimit: 12
-            },
-            grid: { color: 'rgba(42, 48, 107, 0.3)' }
+    // Reuse chart instance for better performance
+    if (xpChartEl) {
+      xpChartEl.data.labels = xpLabels;
+      xpChartEl.data.datasets[0].data = xpData;
+      xpChartEl.update('none'); // Skip animations
+    } else {
+      xpChartEl = new Chart(xpCtx, {
+        type: 'line',
+        data: { 
+          labels: xpLabels, 
+          datasets: [{ 
+            label: 'XP Over Time', 
+            data: xpData, 
+            borderColor: '#9ab4ff', 
+            backgroundColor: 'rgba(154,180,255,0.2)', 
+            tension: 0.25,
+            pointRadius: 2,
+            pointHoverRadius: 4
+          }] 
+        },
+        options: { 
+          responsive: true,
+          maintainAspectRatio: true,
+          aspectRatio: 2,
+          animation: false, // Disable animations for performance
+          plugins: { 
+            legend: { 
+              labels: { color: '#dfe3ff', font: { size: 11 } } 
+            } 
           }, 
-          y: { 
-            ticks: { color: '#dfe3ff', font: { size: 10 } },
-            grid: { color: 'rgba(42, 48, 107, 0.3)' }
+          scales: { 
+            x: { 
+              ticks: { 
+                color: '#dfe3ff',
+                maxRotation: 45,
+                minRotation: 45,
+                font: { size: 9 },
+                maxTicksLimit: 12
+              },
+              grid: { color: 'rgba(42, 48, 107, 0.3)' }
+            }, 
+            y: { 
+              ticks: { color: '#dfe3ff', font: { size: 10 } },
+              grid: { color: 'rgba(42, 48, 107, 0.3)' }
+            } 
           } 
-        } 
-      }
-    });
+        }
+      });
+    }
   }
   const convoCtx = document.getElementById('convoChart')?.getContext('2d');
   if (convoCtx) {
-    if (convoChartEl) convoChartEl.destroy();
-    convoChartEl = new Chart(convoCtx, {
-      type: 'bar',
-      data: { 
-        labels: convoLabels, 
-        datasets: [{ 
-          label: 'Conversations per day', 
-          data: convoData, 
-          backgroundColor: 'rgba(50,64,168,0.5)', 
-          borderColor: '#9ab4ff',
-          borderWidth: 1
-        }] 
-      },
-      options: { 
-        responsive: true,
-        maintainAspectRatio: true,
-        aspectRatio: 2,
-        plugins: { 
-          legend: { 
-            labels: { color: '#dfe3ff', font: { size: 11 } } 
-          } 
-        }, 
-        scales: { 
-          x: { 
-            ticks: { 
-              color: '#dfe3ff',
-              font: { size: 10 },
-              maxRotation: 0,
-              minRotation: 0
-            },
-            grid: { color: 'rgba(42, 48, 107, 0.3)' }
+    // Reuse chart instance for better performance
+    if (convoChartEl) {
+      convoChartEl.data.labels = convoLabels;
+      convoChartEl.data.datasets[0].data = convoData;
+      convoChartEl.update('none'); // Skip animations
+    } else {
+      convoChartEl = new Chart(convoCtx, {
+        type: 'bar',
+        data: { 
+          labels: convoLabels, 
+          datasets: [{ 
+            label: 'Conversations per day', 
+            data: convoData, 
+            backgroundColor: 'rgba(50,64,168,0.5)', 
+            borderColor: '#9ab4ff',
+            borderWidth: 1
+          }] 
+        },
+        options: { 
+          responsive: true,
+          maintainAspectRatio: true,
+          aspectRatio: 2,
+          animation: false, // Disable animations for performance
+          plugins: { 
+            legend: { 
+              labels: { color: '#dfe3ff', font: { size: 11 } } 
+            } 
           }, 
-          y: { 
-            ticks: { color: '#dfe3ff', font: { size: 10 } },
-            grid: { color: 'rgba(42, 48, 107, 0.3)' },
-            beginAtZero: true
+          scales: { 
+            x: { 
+              ticks: { 
+                color: '#dfe3ff',
+                font: { size: 10 },
+                maxRotation: 0,
+                minRotation: 0
+              },
+              grid: { color: 'rgba(42, 48, 107, 0.3)' }
+            }, 
+            y: { 
+              ticks: { color: '#dfe3ff', font: { size: 10 } },
+              grid: { color: 'rgba(42, 48, 107, 0.3)' },
+              beginAtZero: true
+            } 
           } 
-        } 
-      }
-    });
+        }
+      });
+    }
   }
 }
 

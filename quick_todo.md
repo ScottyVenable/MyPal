@@ -29,8 +29,61 @@ Add these to the main todo list when available.
     - **Priority**: Medium — affects usability but has a clear reproduction and targeted fixes.
 
 
+## Feature Request: README & Project Branding
 
-- 
+- **Title**: README updates — license selection, branding (logo), and README best practices
+
+- **Description**: Improve project onboarding and discoverability by standardizing the repository README, adding a project logo, and choosing a clear open-source license.
+
+- **Problem**:
+    - README is missing key sections (installation, usage, contribution guidelines, licence).
+    - No project logo/branding files in repository to use in README and app assets.
+    - Lack of an explicit licence causes legal ambiguity for contributors and users.
+
+- **Proposed solution**:
+    1. Create a comprehensive README.md that follows open-source best practices:
+         - Project title, short description, and logo.
+         - Quick start / installation steps for mobile and backend (dev mode and production build).
+         - Usage examples (running app locally, running embedded backend).
+         - Contribution guidelines (branching, commits, PR template link).
+         - Testing instructions (unit, integration, E2E).
+         - Code of conduct and security reporting instructions.
+         - Links to architecture docs, design decisions, and where to find models.
+    2. Add a high-resolution logo file (svg and png) in a /assets or /docs/media directory and reference it in README and app stores/scripts where appropriate.
+    3. Evaluate and add a licence file (LICENSE) — recommend MIT for permissive open-source or Apache 2.0 if patent protection is desired. Document the chosen licence in README and add a licence badge.
+    4. Add a contributors/maintainers section and a short roadmap summary.
+
+- **Subtasks**:
+    - [ ] Draft README.md skeleton with recommended sections.
+    - [ ] Populate installation and usage commands for mobile (/mobile) and backend (/app/backend or embedded Node).
+    - [ ] Produce or add logo files: docs/media/logo.svg and docs/media/logo.png (appropriate sizes).
+    - [ ] Choose licence and add LICENSE file; add licence badge to README.
+    - [ ] Add CONTRIBUTING.md and CODE_OF_CONDUCT.md (links from README).
+    - [ ] Add small checklist for reviewers: update README when adding breaking changes or new tooling.
+
+- **Files / areas to modify**:
+    - README.md (root)
+    - docs/ or docs/media/ (add logo files)
+    - CONTRIBUTING.md, CODE_OF_CONDUCT.md (root)
+    - package.json scripts (optional: add README generation or badges)
+    - CI configs (optional: add badge links)
+
+- **Acceptance criteria**:
+    - README contains all required sections and runs developer through a successful local build for both mobile and backend.
+    - LICENSE present and clearly named; licence badge displayed in README.
+    - Logo files present in repository and render correctly in README on GitHub.
+    - CONTRIBUTING.md and CODE_OF_CONDUCT.md linked from README.
+    - New contributors can follow README to set up dev environment without additional guidance.
+
+- **Priority**: Low-Medium — improves developer experience and legal clarity; not blocking core functionality.
+
+- **Estimated effort**: 2–4 hours (draft README + add assets + licence selection).
+
+- **Notes**:
+    - If choosing a licence is unclear, propose MIT by default and call out the option to switch to Apache 2.0 if patent language is required.
+    - Keep README excerpted for mobile-specific commands and link to more detailed docs in /docs when needed.
+
+
 ## Completed
 ### ✅ COMPLETED - Console Output Issues (PATCH-v0.1.3)
 - **Remove emojis from console.log messages** to prevent garbled characters on Windows terminals
