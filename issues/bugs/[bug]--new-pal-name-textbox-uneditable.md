@@ -35,8 +35,8 @@ The name textbox should autofocus and allow typing every time the New Pal dialog
 4. Attempt to type in the name textbox and observe the missing focus.
 
 ## Acceptance Criteria
-- [ ] New Pal dialog autofocuses the name input after returning from the main menu.
-- [ ] Manual clicking on the name input always enables typing.
+- [x] New Pal dialog autofocuses the name input after returning from the main menu.
+- [x] Manual clicking on the name input always enables typing.
 - [ ] Automated UI/E2E test verifies the regression path.
 
 ## Technical Details
@@ -53,8 +53,31 @@ No console errors observed during reproduction.
 
 **Code References:**
 - Files: `app/frontend/app.js`, `app/frontend/index.html`
-- Functions/Components: New Pal dialog open handler, focus management utilities
-- Line Numbers: To be identified during fix
+- Functions/Components: `wireProfileManagement()` function
+- Line Numbers: ~413-500
+- Commit: 1422256
+
+## Resolution
+**Status:** ✅ RESOLVED  
+**Fixed in Commit:** 1422256  
+**Date Fixed:** October 22, 2025
+
+**Solution Implemented:**
+Modified the `wireProfileManagement()` function in `app/frontend/app.js` to:
+
+1. **Re-query DOM element** on each modal open to avoid stale references
+2. **Comprehensive attribute cleanup**: Remove readonly, disabled, aria-disabled, and tabindex attributes
+3. **Increased focus delay**: Changed from 50ms to 100ms for better DOM settling
+4. **Added fallback handlers**: Click and focus event listeners directly on the input element
+5. **Double-check attributes**: Removed blocking attributes both before delay and in requestAnimationFrame
+
+**Testing:**
+- ✅ Input auto-focuses when modal opens
+- ✅ Typing works after profile deletion
+- ✅ Clicking input always enables typing (fallback protection)
+- ✅ Works consistently across multiple modal opens
+
+**Test Document:** `TESTING_NEW_PAL_INPUT_FIX.md`
 
 ## Implementation Notes
 **Suggested Approach:**
