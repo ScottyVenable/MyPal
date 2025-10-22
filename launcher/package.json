@@ -44,7 +44,7 @@
           ]
         }
       ],
-      "icon": "../media/images/icon.ico",
+      "icon": "../app/media/images/icon.ico",
       "artifactName": "MyPal-Launcher-Setup-${version}.${ext}"
     },
     "nsis": {

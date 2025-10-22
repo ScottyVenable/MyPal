@@ -158,27 +158,56 @@ mobile/
 
 ## Backend Setup
 
-**IMPORTANT**: The embedded Node.js backend (`nodejs-assets/nodejs-project/main.js`) currently contains a minimal placeholder server. You need to:
+**IMPORTANT**: The embedded Node.js backend needs to be populated with your server code.
 
-1. **Copy Your Backend Code**:
+### Automatic Setup (Recommended)
+
+Use the provided PowerShell script:
+
+```bash
+# From the MOBILE/ directory
+./setup-backend.ps1
+```
+
+This will:
+- Copy `server.js`, `profileManager.js`, and `NeuralNetwork.js` from `app/backend/src/`
+- Install backend dependencies
+- Verify the setup
+
+### Manual Setup
+
+1. **Copy Backend Files**:
    ```bash
-   # From the mobile/ directory
-   cp -r ../app/backend/src/* nodejs-assets/nodejs-project/
+   # From the MOBILE/ directory
+   cp ../app/backend/src/server.js nodejs-assets/nodejs-project/
+   cp ../app/backend/src/profileManager.js nodejs-assets/nodejs-project/
+   cp ../app/backend/src/NeuralNetwork.js nodejs-assets/nodejs-project/
    ```
 
-2. **Adapt for Mobile**:
-   - Update file paths to use React Native's document directory
-   - Ensure `profileManager.js` and other modules are copied
-   - Update `main.js` to import and start your full server
-   - Test that all routes work in the mobile environment
+2. **Update File Paths**:
+   The mobile backend uses React Native's document directory. The `main.js` file
+   automatically sets up `DATA_DIR` and `LOGS_DIR` environment variables.
 
-3. **Update Dependencies**:
+3. **Install Backend Dependencies**:
    ```bash
    cd nodejs-assets/nodejs-project
    npm install --save express body-parser cors ws
-   # Add any other dependencies your backend needs
    cd ../..
    ```
+
+4. **Media Files** (Optional):
+   If your app uses images/icons from `app/media/`, you'll need to:
+   - Copy them to `MOBILE/assets/` directory, OR
+   - Use React Native's asset system to bundle them, OR
+   - Serve them from the embedded backend
+
+### Verification
+
+After setup, check that these files exist:
+- `nodejs-assets/nodejs-project/server.js`
+- `nodejs-assets/nodejs-project/profileManager.js`
+- `nodejs-assets/nodejs-project/NeuralNetwork.js`
+- `nodejs-assets/nodejs-project/main.js` (should already exist)
 
 ## Configuration
 
