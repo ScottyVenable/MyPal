@@ -5101,9 +5101,19 @@ app.post('/api/neural/regenerate', async (req, res) => {
   };
 
   try {
+    // Ensure a profile is loaded - don't regenerate neural network without one
+    const currentProfileId = profileManager.getCurrentProfileId();
+    if (!currentProfileId) {
+      throw new Error('No profile loaded. Please load or create a profile first.');
+    }
+    
     const collections = getCollections();
     const { memories, chatLog, vocabulary, state } = collections;
     const level = state.level || 0;
+
+    // Validate that we're working with profile-specific data
+    console.log(`[NEURAL REGENERATE] Starting regeneration for profile: ${currentProfileId}`);
+    console.log(`[NEURAL REGENERATE] Using ${memories.length} memories, ${chatLog.length} messages, ${vocabulary.length} words`);
 
     sendProgress(0, 'Starting neural network regeneration...', 'init');
     
@@ -5246,6 +5256,10 @@ app.post('/api/neural/regenerate', async (req, res) => {
     collections.neuralNetwork = neural.toJSON();
     saveCollections(collections);
     currentStep++;
+    
+    // Verify save to correct profile
+    console.log(`[NEURAL REGENERATE] Neural network saved to profile: ${currentProfileId}`);
+    console.log(`[NEURAL REGENERATE] Total neurons: ${neural.metrics.totalNeurons}, Regions: ${neural.regions.length}`);
 
     // Complete
     const totalTime = Math.ceil((Date.now() - startTime) / 1000);
