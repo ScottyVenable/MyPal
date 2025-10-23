@@ -1,0 +1,110 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:MyPal.Desktop.Converters"
+             x:Class="MyPal.Desktop.App"
+             xmlns:local="using:MyPal.Desktop"
+             RequestedThemeVariant="Default">
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <!-- Core palette -->
+        <Color x:Key="Color.Background.Deep">#0a0e27</Color>
+        <Color x:Key="Color.Background.Primary">#12162e</Color>
+        <Color x:Key="Color.Background.Secondary">#1a1f3a</Color>
+        <Color x:Key="Color.Background.Card">#661e2139</Color>
+        <Color x:Key="Color.Border.Card">#CC2e3451</Color>
+        <Color x:Key="Color.Accent.Purple">#7b68ee</Color>
+        <Color x:Key="Color.Accent.Cyan">#00d4ff</Color>
+        <Color x:Key="Color.Text.Primary">#ffffffff</Color>
+        <Color x:Key="Color.Text.Secondary">#d4d7f0</Color>
+        <Color x:Key="Color.Text.Tertiary">#8b92c1</Color>
+
+        <!-- Brushes -->
+        <SolidColorBrush x:Key="Brush.Background.Deep" Color="{StaticResource Color.Background.Deep}"/>
+        <SolidColorBrush x:Key="Brush.Background.Primary" Color="{StaticResource Color.Background.Primary}"/>
+        <SolidColorBrush x:Key="Brush.Background.Secondary" Color="{StaticResource Color.Background.Secondary}"/>
+        <SolidColorBrush x:Key="Brush.Background.Card" Color="{StaticResource Color.Background.Card}"/>
+        <SolidColorBrush x:Key="Brush.Border.Card" Color="{StaticResource Color.Border.Card}"/>
+        <SolidColorBrush x:Key="Brush.Accent.Purple" Color="{StaticResource Color.Accent.Purple}"/>
+        <SolidColorBrush x:Key="Brush.Accent.Cyan" Color="{StaticResource Color.Accent.Cyan}"/>
+        <SolidColorBrush x:Key="Brush.Text.Primary" Color="{StaticResource Color.Text.Primary}"/>
+        <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{StaticResource Color.Text.Secondary}"/>
+        <SolidColorBrush x:Key="Brush.Text.Tertiary" Color="{StaticResource Color.Text.Tertiary}"/>
+
+        <!-- Gradients -->
+        <RadialGradientBrush x:Key="Brush.Glass.Glow"
+                             Center="0.5,0.1"
+                             RadiusX="0.9"
+                             RadiusY="0.9">
+            <GradientStop Color="#33a78bfa" Offset="0"/>
+            <GradientStop Color="Transparent" Offset="1"/>
+        </RadialGradientBrush>
+
+        <LinearGradientBrush x:Key="Brush.Button.Purple"
+                             StartPoint="0,0"
+                             EndPoint="1,1">
+            <GradientStop Color="#a78bfa" Offset="0"/>
+            <GradientStop Color="#7b68ee" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Converters -->
+        <converters:BooleanToHorizontalAlignmentConverter x:Key="BooleanToHorizontalAlignmentConverter"/>
+        <converters:BooleanToGridColumnConverter x:Key="BooleanToGridColumnConverter"/>
+        <converters:BooleanToCornerRadiusConverter x:Key="BooleanToCornerRadiusConverter"
+                                                   TrueValue="20,20,8,20"
+                                                   FalseValue="20,20,20,8"/>
+        <converters:BooleanNegationConverter x:Key="BooleanNegationConverter"/>
+        <converters:NullToBooleanConverter x:Key="NullToBooleanConverter"/>
+        <converters:BooleanToBrushConverter x:Key="ChatMessageForegroundConverter"
+                                            TrueBrush="White"
+                                            FalseBrush="{StaticResource Brush.Text.Secondary}"/>
+
+        <!-- Spacing -->
+        <Thickness x:Key="Spacing.PagePadding">32</Thickness>
+        <Thickness x:Key="Spacing.CardPadding">24</Thickness>
+        <CornerRadius x:Key="CornerRadius.Card">24</CornerRadius>
+
+        <!-- Typography -->
+        </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+    <Style Selector="TextBlock">
+        <Setter Property="FontFamily" Value="Inter"/>
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
+    </Style>
+    <Style Selector="TextBlock.heading">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
+        <Setter Property="FontWeight" Value="300"/>
+    </Style>
+    <Style Selector="Button">
+        <Setter Property="FontFamily" Value="Inter"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="500"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Card}"/>
+        <Setter Property="BorderThickness" Value="1.5"/>
+        <Setter Property="Background" Value="#331e2139"/>
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Padding" Value="16,12"/>
+    </Style>
+    <Style Selector="Button.accent">
+        <Setter Property="Background" Value="{StaticResource Brush.Button.Purple}"/>
+        <Setter Property="BorderBrush" Value="#667b68ee"/>
+        <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="Button.outline">
+        <Setter Property="Background" Value="#191e2e"/>
+        <Setter Property="BorderBrush" Value="#7b68ee"/>
+        <Setter Property="Foreground" Value="#d4d7f0"/>
+    </Style>
+    <Style Selector="Button.ghost">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="#445069"/>
+        <Setter Property="Foreground" Value="#8b92c1"/>
+    </Style>
+    </Application.Styles>
+</Application>

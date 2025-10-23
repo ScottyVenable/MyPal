@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:MyPal.Desktop.ViewModels"
+             mc:Ignorable="d"
+             x:Class="MyPal.Desktop.Views.BrainView"
+             x:DataType="vm:AppShellViewModel+PlaceholderViewModel">
+    <Border Background="#191f35"
+            CornerRadius="20"
+            Padding="32"
+            BorderBrush="#2e3451"
+            BorderThickness="1.5">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+            <TextBlock Text="??"
+                       FontSize="42"
+                       HorizontalAlignment="Center"/>
+            <TextBlock Text="Coming soon"
+                       FontSize="22"
+                       FontWeight="400"
+                       HorizontalAlignment="Center"
+                       Foreground="{StaticResource Brush.Text.Primary}"/>
+            <TextBlock Text="{Binding Message}"
+                       FontSize="14"
+                       TextAlignment="Center"
+                       Foreground="{StaticResource Brush.Text.Tertiary}"/>
+        </StackPanel>
+    </Border>
+</UserControl>

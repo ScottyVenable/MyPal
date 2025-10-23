@@ -1,0 +1,32 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "app", "app", "{F95F473B-E98A-ACD6-1986-755F447BE36F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "desktop", "desktop", "{52630FA1-36E0-C328-1528-BFAED8A9199C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyPal.Desktop", "app\desktop\MyPal.Desktop\MyPal.Desktop.csproj", "{EAA666E9-9640-6A64-2918-FC15A64871A8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EAA666E9-9640-6A64-2918-FC15A64871A8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EAA666E9-9640-6A64-2918-FC15A64871A8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EAA666E9-9640-6A64-2918-FC15A64871A8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EAA666E9-9640-6A64-2918-FC15A64871A8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{52630FA1-36E0-C328-1528-BFAED8A9199C} = {F95F473B-E98A-ACD6-1986-755F447BE36F}
+		{EAA666E9-9640-6A64-2918-FC15A64871A8} = {52630FA1-36E0-C328-1528-BFAED8A9199C}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {12D0B43E-9A10-4602-95DA-46906E0D2014}
+	EndGlobalSection
+EndGlobal

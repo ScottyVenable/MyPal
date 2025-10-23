@@ -39,6 +39,36 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Start-LogConsole {
+    param(
+        [string]$LogFile,
+        [string]$WorkingDirectory
+    )
+
+    if (-not (Test-Path $LogFile)) {
+        New-Item -ItemType File -Path $LogFile -Force | Out-Null
+    }
+
+    $commandScript = @'
+& {
+    param($logPath, $rootDir)
+    try { Set-Location $rootDir } catch {}
+    Clear-Host
+    if ($Host.Name -eq 'ConsoleHost') {
+        try { $host.UI.RawUI.WindowTitle = "MyPal Live Log" } catch {}
+    }
+    Write-Host '=== MyPal Live Log ===' -ForegroundColor Cyan
+    Write-Host ("Watching: {0}" -f $logPath) -ForegroundColor DarkGray
+    Write-Host 'Press Ctrl+C to close this window.' -ForegroundColor DarkGray
+    Write-Host ''
+    Get-Content -Path $logPath -Wait -Tail 200
+}
+'@
+
+    Start-Process -FilePath "powershell.exe" `
+        -ArgumentList "-NoExit", "-Command", $commandScript, $LogFile, $WorkingDirectory | Out-Null
+}
+
 function Ensure-NpmDependencies {
     param(
         [string]$Directory
@@ -176,6 +206,14 @@ switch ($modeChoice) {
     }
 }
 
+# Re-ensure directories in case paths changed above
+@($env:MYPAL_DATA_DIR, $env:MYPAL_LOGS_DIR, $env:MYPAL_MODELS_DIR) | ForEach-Object {
+    if (-not (Test-Path $_)) {
+        Write-Host "Creating directory: $_"
+        New-Item -ItemType Directory -Path $_ -Force | Out-Null
+    }
+}
+
 # Ask about running pre-launch commands
 Write-Host ""
 Write-Host "Run pre-launch commands? [y/N]" -ForegroundColor Cyan
@@ -246,11 +284,51 @@ Write-Host "  Logs: $env:MYPAL_LOGS_DIR" -ForegroundColor White
 if ($env:PORT) {
     Write-Host "  Port: $env:PORT" -ForegroundColor White
 }
-Write-Host ""
 
-Push-Location $launcherDir
-try {
-    npm run dev
-} finally {
-    Pop-Location
+if (-not $NoServerConsole) {
+    $consoleLogFile = Join-Path $env:MYPAL_LOGS_DIR "console.log"
+    Write-Host ""
+    Write-Host "Opening live log console window..." -ForegroundColor Cyan
+    Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
+} else {
+    Write-Host ""
+    Write-Host "Live log console suppressed (-NoServerConsole flag supplied)." -ForegroundColor DarkGray
+}
+
+Write-Host ""
+Write-Host "Select frontend experience:" -ForegroundColor Cyan
+Write-Host "  [1] Legacy HTML (Electron launcher)" -ForegroundColor White
+Write-Host "  [2] Avalonia Desktop (new preview)" -ForegroundColor White
+Write-Host ""
+$frontendChoice = Read-Host "Enter choice [1-2] (press Enter for default)"
+if ([string]::IsNullOrWhiteSpace($frontendChoice)) {
+    $frontendChoice = "1"
+}
+
+Write-Host ""
+switch ($frontendChoice) {
+    "2" {
+        Write-Host "Launching MyPal Avalonia desktop client..." -ForegroundColor Green
+        $desktopProject = Join-Path $scriptRoot "app\desktop\MyPal.Desktop\MyPal.Desktop.csproj"
+        if (-not (Test-Path $desktopProject)) {
+            Write-Error "Avalonia project not found at $desktopProject"
+            exit 1
+        }
+
+        Push-Location (Split-Path $desktopProject -Parent)
+        try {
+            dotnet run
+        } finally {
+            Pop-Location
+        }
+    }
+    default {
+        Write-Host "Launching MyPal Electron (legacy HTML frontend)..." -ForegroundColor Green
+        Push-Location $launcherDir
+        try {
+            npm run dev
+        } finally {
+            Pop-Location
+        }
+    }
 }

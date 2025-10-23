@@ -1,0 +1,123 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:MyPal.Desktop.ViewModels"
+             mc:Ignorable="d"
+             x:Class="MyPal.Desktop.Views.AppShellView"
+             x:DataType="vm:AppShellViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="ListBox#NavList">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="ListBox#NavList > ListBoxItem">
+            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+        <Style Selector="ListBox#NavList > ListBoxItem:pointerover Border.nav-item">
+            <Setter Property="Background" Value="#1f2340"/>
+        </Style>
+        <Style Selector="ListBox#NavList > ListBoxItem:selected Border.nav-item">
+            <Setter Property="Background" Value="#337b68ee"/>
+            <Setter Property="BorderBrush" Value="#7b68ee"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid ColumnDefinitions="240,*">
+        <Border Grid.Column="0"
+                Padding="28"
+                Background="#14182e"
+                BorderBrush="#1f2c46"
+                BorderThickness="0,0,1,0">
+            <StackPanel Spacing="24">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="MyPal"
+                               FontSize="28"
+                               FontWeight="300"
+                               Foreground="{StaticResource Brush.Text.Primary}"/>
+                    <TextBlock Text="Cyber Companion"
+                               FontSize="14"
+                               Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                </StackPanel>
+
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Navigation"
+                               FontSize="12"
+                               FontWeight="500"
+                               Foreground="#8b92c1"
+                               LetterSpacing="0.8"/>
+                    <ListBox x:Name="NavList"
+                             ItemsSource="{Binding Tabs}"
+                             SelectedItem="{Binding SelectedTab}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:AppShellViewModel+AppShellTabViewModel">
+                                <Border Classes="nav-item"
+                                        CornerRadius="18"
+                                        Padding="16"
+                                        BorderBrush="Transparent"
+                                        BorderThickness="1.5">
+                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Glyph}"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="18"
+                                                   Foreground="{StaticResource Brush.Accent.Cyan}"/>
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontSize="15"
+                                                   FontWeight="400"
+                                                   Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+
+                <StackPanel Spacing="8">
+                    <Button Content="Refresh"
+                            Command="{Binding RefreshCommand}"
+                            Classes="accent"
+                            Padding="20,12"/>
+                    <Button Content="Exit to menu"
+                            Command="{Binding ExitCommand}"
+                            Classes="ghost"
+                            Padding="20,12"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Column="1"
+                Background="#1a1f38">
+            <Grid RowDefinitions="Auto,*">
+                <Border Background="#202745"
+                        Padding="32,24"
+                        BorderBrush="#1f2c46"
+                        BorderThickness="0,0,0,1">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Left" Spacing="4">
+                            <TextBlock Text="{Binding ProfileName}"
+                                       FontSize="22"
+                                       FontWeight="400"
+                                       Foreground="{StaticResource Brush.Text.Primary}"/>
+                            <TextBlock Text="Profile online"
+                                       FontSize="13"
+                                       Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Margin="32"
+                        Padding="32"
+                        CornerRadius="28"
+                        Background="#331e2139"
+                        BorderBrush="#442e3451"
+                        BorderThickness="1.5"
+                        BoxShadow="0 24 72 0 #0a0e2740">
+                    <ContentControl Content="{Binding CurrentContent}"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
