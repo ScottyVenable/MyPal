@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MyPal.Desktop")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7a79e26fa64527439fbaf2ec09efc4b30636c11e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+486b1a319fc1a06e73db45bcadd6b8a0de22fc19")]
 [assembly: System.Reflection.AssemblyProductAttribute("MyPal.Desktop")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MyPal.Desktop")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

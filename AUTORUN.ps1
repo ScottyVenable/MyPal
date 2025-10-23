@@ -58,7 +58,7 @@ function Start-LogConsole {
         try { $host.UI.RawUI.WindowTitle = "MyPal Live Log" } catch {}
     }
     Write-Host '=== MyPal Live Log ===' -ForegroundColor Cyan
-    Write-Host -ForegroundColor DarkGray ("Watching: {0}" -f $logPath)
+    Write-Host -ForegroundColor DarkGray "Watching: $logPath"
     Write-Host -ForegroundColor DarkGray 'Press Ctrl+C to close this window.'
     Write-Host ''
     Get-Content -Path $logPath -Wait -Tail 200
@@ -66,7 +66,7 @@ function Start-LogConsole {
 '@
 
     Start-Process -FilePath "powershell.exe" `
-        -ArgumentList "-NoExit", "-Command", $commandScript, "`"$LogFile`"", "`"$WorkingDirectory`"" | Out-Null
+        -ArgumentList "-NoExit", "-Command", $commandScript, "-Args", "`"$LogFile`"", "`"$WorkingDirectory`"" | Out-Null
 }
 
 function Ensure-NpmDependencies {

@@ -1,9 +1,12 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="clr-namespace:MyPal.Desktop.Converters"
+             xmlns:semi="https://irihi.tech/semi"
+             xmlns:ursa="https://irihi.tech/ursa"
+             xmlns:usemi="https://irihi.tech/ursa/themes/semi"
              x:Class="MyPal.Desktop.App"
              xmlns:local="using:MyPal.Desktop"
-             RequestedThemeVariant="Default">
+             RequestedThemeVariant="Dark">
 
     <Application.DataTemplates>
         <local:ViewLocator/>
@@ -99,7 +102,9 @@
     </Application.Resources>
 
     <Application.Styles>
-        <FluentTheme/>
+        <semi:SemiTheme Locale="en-US" ThemeVariant="Dark"/>
+        <usemi:SemiTheme Locale="en-US" ThemeVariant="Dark"/>
+        <FluentTheme Mode="Dark"/>
 
         <Style Selector="TextBlock">
             <Setter Property="FontFamily" Value="Inter"/>
@@ -164,6 +169,37 @@
         <Style Selector="Button.ghost">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="#445069"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Tertiary}"/>
+        </Style>
+
+        <Style Selector="ToggleButton">
+            <Setter Property="FontFamily" Value="Inter"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="CornerRadius" Value="14"/>
+            <Setter Property="Background" Value="#221f36"/>
+            <Setter Property="BorderBrush" Value="#384464"/>
+            <Setter Property="BorderThickness" Value="1.2"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
+        </Style>
+        <Style Selector="ToggleButton:checked">
+            <Setter Property="Background" Value="#331e2139"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Highlight}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
+        </Style>
+        <Style Selector="ToggleButton.accent">
+            <Setter Property="Background" Value="{StaticResource Brush.Button.Purple}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Highlight}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ToggleButton.outline">
+            <Setter Property="Background" Value="#191e2e"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent.Cyan}"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
+        </Style>
+        <Style Selector="ToggleButton.ghost">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#34405e"/>
             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Tertiary}"/>
         </Style>
 
