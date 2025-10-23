@@ -6,24 +6,108 @@
              mc:Ignorable="d"
              x:Class="MyPal.Desktop.Views.StatsView"
              x:DataType="vm:AppShellViewModel+PlaceholderViewModel">
-    <Border Background="#191f35"
-            CornerRadius="20"
-            Padding="32"
-            BorderBrush="#2e3451"
-            BorderThickness="1.5">
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
-            <TextBlock Text="??"
-                       FontSize="42"
-                       HorizontalAlignment="Center"/>
-            <TextBlock Text="Coming soon"
-                       FontSize="22"
-                       FontWeight="400"
-                       HorizontalAlignment="Center"
-                       Foreground="{StaticResource Brush.Text.Primary}"/>
-            <TextBlock Text="{Binding Message}"
-                       FontSize="14"
-                       TextAlignment="Center"
-                       Foreground="{StaticResource Brush.Text.Tertiary}"/>
+    <Grid RowDefinitions="Auto,*" RowSpacing="24">
+        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+            <Border Width="40" Height="40" CornerRadius="14" Background="#27314f" BorderBrush="#3c4a70" BorderThickness="1">
+                <TextBlock Text="&#xF1D3;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="20"
+                           Foreground="{StaticResource Brush.Accent.Cyan}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Spacing="4">
+                <TextBlock Text="Stats" FontSize="22" FontWeight="400" Foreground="{StaticResource Brush.Text.Primary}"/>
+                <TextBlock Text="{Binding Message}" FontSize="13" Foreground="{StaticResource Brush.Text.Tertiary}"/>
+            </StackPanel>
         </StackPanel>
-    </Border>
+
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto" RowSpacing="24">
+            <Border CornerRadius="28"
+                    Background="#202742aa"
+                    BorderBrush="#31395a"
+                    BorderThickness="1.5"
+                    Padding="32"
+                    BoxShadow="0 22 72 0 #090c2045">
+                <StackPanel Spacing="18">
+                    <TextBlock Text="Next up: immersive analytics dashboard"
+                               FontSize="18"
+                               FontWeight="400"
+                               Foreground="{StaticResource Brush.Text.Primary}"/>
+                    <TextBlock Text="Track level growth, cognition points, vocabulary expansion, and neural metrics with glowing cards and real-time charts."
+                               FontSize="13"
+                               Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <Border Background="#2a3154" CornerRadius="16" Padding="18" BorderBrush="#3a4368" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="Level" FontSize="11" Foreground="#8b92c1"/>
+                                <TextBlock Text="--" FontSize="32" FontWeight="300" Foreground="#a78bfa"/>
+                                <TextBlock Text="XP progress" FontSize="11" Foreground="#8b92c1"/>
+                                <ProgressBar Margin="0,8,0,0" Minimum="0" Maximum="100" Value="34" IsIndeterminate="True" Height="6" Foreground="#7b68ee"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#232a46" CornerRadius="16" Padding="18" BorderBrush="#30405f" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="Vocabulary" FontSize="11" Foreground="#8b92c1"/>
+                                <TextBlock Text="--" FontSize="32" FontWeight="300" Foreground="#66e3ff"/>
+                                <TextBlock Text="words known" FontSize="12" Foreground="#8b92c1"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#232544" CornerRadius="16" Padding="18" BorderBrush="#33405d" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="Memories" FontSize="11" Foreground="#8b92c1"/>
+                                <TextBlock Text="--" FontSize="32" FontWeight="300" Foreground="#66e3ff"/>
+                                <TextBlock Text="stored moments" FontSize="12" Foreground="#8b92c1"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <UniformGrid Grid.Row="1" Rows="1" Columns="3" Margin="0,0,0,8" HorizontalAlignment="Stretch" ColumnSpacing="24">
+                <Border Background="#1f253f"
+                        CornerRadius="18"
+                        Padding="20"
+                        BorderBrush="#343c60"
+                        BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="XP trend charts"
+                                   FontSize="15"
+                                   Foreground="{StaticResource Brush.Text.Primary}"/>
+                        <TextBlock Text="Smooth gradient lines with neon glows and hover insights."
+                                   FontSize="12"
+                                   Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                    </StackPanel>
+                </Border>
+                <Border Background="#1f253f"
+                        CornerRadius="18"
+                        Padding="20"
+                        BorderBrush="#343c60"
+                        BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Memory insights"
+                                   FontSize="15"
+                                   Foreground="{StaticResource Brush.Text.Primary}"/>
+                        <TextBlock Text="Discover emotional spikes, retention streaks, and highlights."
+                                   FontSize="12"
+                                   Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                    </StackPanel>
+                </Border>
+                <Border Background="#1f253f"
+                        CornerRadius="18"
+                        Padding="20"
+                        BorderBrush="#343c60"
+                        BorderThickness="1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Cognition points"
+                                   FontSize="15"
+                                   Foreground="{StaticResource Brush.Text.Primary}"/>
+                        <TextBlock Text="Plan spending with animated progress rings and milestones."
+                                   FontSize="12"
+                                   Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+        </Grid>
+    </Grid>
 </UserControl>

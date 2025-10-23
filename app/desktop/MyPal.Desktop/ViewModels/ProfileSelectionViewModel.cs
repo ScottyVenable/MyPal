@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MyPal.Desktop.Models;
@@ -111,31 +112,42 @@ public partial class ProfileSelectionViewModel : ViewModelBase
             ErrorMessage = null;
 
             var response = await _backendClient.GetProfilesAsync(cancellationToken).ConfigureAwait(false);
-            Profiles.Clear();
-
-            if (response is null)
+            
+            // Switch to UI thread to update observable collections and properties
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ErrorMessage = "Unable to reach backend. Please ensure the server is running.";
-                return;
-            }
+                Profiles.Clear();
 
-            foreach (var profile in response.Profiles.OrderByDescending(p => p.LastPlayedAt ?? 0))
-            {
-                Profiles.Add(new ProfileCardViewModel(profile));
-            }
+                if (response is null)
+                {
+                    ErrorMessage = "Unable to reach backend. Please ensure the server is running.";
+                    return;
+                }
 
-            LastUsedProfile = Profiles.FirstOrDefault(p => p.Id == response.LastUsedId);
-            SelectedProfile = LastUsedProfile ?? Profiles.FirstOrDefault();
+                foreach (var profile in response.Profiles.OrderByDescending(p => p.LastPlayedAt ?? 0))
+                {
+                    Profiles.Add(new ProfileCardViewModel(profile));
+                }
 
-            OnPropertyChanged(nameof(HeaderSubtitle));
+                LastUsedProfile = Profiles.FirstOrDefault(p => p.Id == response.LastUsedId);
+                SelectedProfile = LastUsedProfile ?? Profiles.FirstOrDefault();
+
+                OnPropertyChanged(nameof(HeaderSubtitle));
+            });
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to load profiles: {ex.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ErrorMessage = $"Failed to load profiles: {ex.Message}";
+            });
         }
         finally
         {
-            IsLoading = false;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsLoading = false;
+            });
         }
     }
 
@@ -153,24 +165,39 @@ public partial class ProfileSelectionViewModel : ViewModelBase
 
         try
         {
-            IsBusy = true;
-            ErrorMessage = null;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsBusy = true;
+                ErrorMessage = null;
+            });
+            
             _statusUpdater("Creating profile...");
 
             var response = await _backendClient.CreateProfileAsync(NewProfileName.Trim(), cancellationToken).ConfigureAwait(false);
+            
             if (response is null)
             {
-                ErrorMessage = "Profile creation failed. Please try again.";
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ErrorMessage = "Profile creation failed. Please try again.";
+                });
                 return;
             }
 
             if (!response.Success || response.Profile is null)
             {
-                ErrorMessage = response.Error ?? "Unable to create profile.";
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ErrorMessage = response.Error ?? "Unable to create profile.";
+                });
                 return;
             }
 
-            NewProfileName = string.Empty;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                NewProfileName = string.Empty;
+            });
+            
             await LoadProfilesAsync(cancellationToken).ConfigureAwait(false);
 
             // Automatically load newly created profile
@@ -182,11 +209,17 @@ public partial class ProfileSelectionViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Error creating profile: {ex.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ErrorMessage = $"Error creating profile: {ex.Message}";
+            });
         }
         finally
         {
-            IsBusy = false;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsBusy = false;
+            });
             _statusUpdater(null);
         }
     }
@@ -200,20 +233,31 @@ public partial class ProfileSelectionViewModel : ViewModelBase
 
         try
         {
-            IsBusy = true;
-            ErrorMessage = null;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsBusy = true;
+                ErrorMessage = null;
+            });
+            
             _statusUpdater($"Loading {SelectedProfile.Name}...");
 
             var result = await _backendClient.LoadProfileAsync(SelectedProfile.Id, cancellationToken).ConfigureAwait(false);
+            
             if (result is null)
             {
-                ErrorMessage = "Failed to reach backend while loading profile.";
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ErrorMessage = "Failed to reach backend while loading profile.";
+                });
                 return;
             }
 
             if (!result.Success || result.Profile is null)
             {
-                ErrorMessage = result.Error ?? "Profile could not be loaded.";
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ErrorMessage = result.Error ?? "Profile could not be loaded.";
+                });
                 return;
             }
 
@@ -224,11 +268,17 @@ public partial class ProfileSelectionViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Error loading profile: {ex.Message}";
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                ErrorMessage = $"Error loading profile: {ex.Message}";
+            });
         }
         finally
         {
-            IsBusy = false;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsBusy = false;
+            });
             _statusUpdater(null);
         }
     }

@@ -13,111 +13,196 @@
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
         <Style Selector="ListBox#NavList > ListBoxItem">
-            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="Margin" Value="0,6"/>
             <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="ListBox#NavList > ListBoxItem Border.nav-item">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Subtle}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="CornerRadius" Value="18"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Transitions">
+                <Setter.Value>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.15"/>
+                    </Transitions>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style Selector="ListBox#NavList > ListBoxItem:pointerover Border.nav-item">
-            <Setter Property="Background" Value="#1f2340"/>
+            <Setter Property="Background" Value="#1f2542"/>
+            <Setter Property="BorderBrush" Value="#3f4d7a"/>
         </Style>
         <Style Selector="ListBox#NavList > ListBoxItem:selected Border.nav-item">
-            <Setter Property="Background" Value="#337b68ee"/>
-            <Setter Property="BorderBrush" Value="#7b68ee"/>
+            <Setter Property="Background" Value="#2f2b4f"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Highlight}"/>
+            <Setter Property="BoxShadow" Value="0 16 48 0 #7b68ee55"/>
+        </Style>
+        <Style Selector="ListBox#NavList > ListBoxItem:selected TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
         </Style>
     </UserControl.Styles>
 
-    <Grid ColumnDefinitions="240,*">
+    <Grid ColumnDefinitions="264,*">
         <Border Grid.Column="0"
-                Padding="28"
-                Background="#14182e"
-                BorderBrush="#1f2c46"
+                Padding="32"
+                Background="{StaticResource Brush.Navigation.Background}"
+                BorderBrush="#1b223a"
                 BorderThickness="0,0,1,0">
-            <StackPanel Spacing="24">
+            <Grid RowDefinitions="Auto,*,Auto">
                 <StackPanel Spacing="4">
                     <TextBlock Text="MyPal"
-                               FontSize="28"
-                               FontWeight="300"
+                               FontSize="32"
+                               FontWeight="200"
                                Foreground="{StaticResource Brush.Text.Primary}"/>
                     <TextBlock Text="Cyber Companion"
                                FontSize="14"
                                Foreground="{StaticResource Brush.Text.Tertiary}"/>
                 </StackPanel>
 
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Navigation"
-                               FontSize="12"
-                               FontWeight="500"
-                               Foreground="#8b92c1"
-                               LetterSpacing="0.8"/>
-                    <ListBox x:Name="NavList"
-                             ItemsSource="{Binding Tabs}"
-                             SelectedItem="{Binding SelectedTab}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate DataType="vm:AppShellViewModel+AppShellTabViewModel">
-                                <Border Classes="nav-item"
-                                        CornerRadius="18"
-                                        Padding="16"
-                                        BorderBrush="Transparent"
-                                        BorderThickness="1.5">
-                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Glyph}"
-                                                   FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="18"
-                                                   Foreground="{StaticResource Brush.Accent.Cyan}"/>
-                                        <TextBlock Text="{Binding Title}"
-                                                   FontSize="15"
-                                                   FontWeight="400"
-                                                   Foreground="{StaticResource Brush.Text.Secondary}"/>
+                <StackPanel Grid.Row="1" Margin="0,32,0,24" Spacing="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Navigation"
+                                   FontSize="12"
+                                   FontWeight="500"
+                                   Foreground="#8b92c1"
+                                   LetterSpacing="0.8"/>
+                        <ListBox x:Name="NavList"
+                                 ItemsSource="{Binding Tabs}"
+                                 SelectedItem="{Binding SelectedTab}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="vm:AppShellViewModel+AppShellTabViewModel">
+                                    <Border Classes="nav-item">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" VerticalAlignment="Center">
+                                            <Border Width="34"
+                                                    Height="34"
+                                                    CornerRadius="12"
+                                                    Background="#231f3f"
+                                                    BorderBrush="#373f68"
+                                                    BorderThickness="1">
+                                                <TextBlock Text="{Binding Glyph}"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="17"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{StaticResource Brush.Accent.Cyan}"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="15"
+                                                           FontWeight="400"
+                                                           Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                                <TextBlock Text="View details"
+                                                           FontSize="11"
+                                                           Foreground="#6f7699"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Row="2" Spacing="10">
+                    <Border Background="#241c36"
+                            BorderBrush="#372f55"
+                            BorderThickness="1.5"
+                            CornerRadius="18"
+                            Padding="16"
+                            BoxShadow="0 16 42 0 #090c2040">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding ProfileName}" FontSize="16" FontWeight="500" Foreground="{StaticResource Brush.Text.Primary}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Background="#2f2550"
+                                        BorderBrush="#524a7a"
+                                        BorderThickness="1"
+                                        CornerRadius="12"
+                                        Padding="12,6">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="Lvl" FontSize="12" Foreground="#a78bfa"/>
+                                        <TextBlock Text="{Binding Profile.Level}" FontSize="14" Foreground="{StaticResource Brush.Text.Primary}"/>
                                     </StackPanel>
                                 </Border>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </StackPanel>
+                                <Border Background="#1e293b"
+                                        BorderBrush="#2f4c69"
+                                        BorderThickness="1"
+                                        CornerRadius="12"
+                                        Padding="12,6">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="XP" FontSize="12" Foreground="#66e3ff"/>
+                                        <TextBlock Text="{Binding Profile.Xp}" FontSize="14" Foreground="{StaticResource Brush.Text.Primary}"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
 
-                <StackPanel Spacing="8">
-                    <Button Content="Refresh"
-                            Command="{Binding RefreshCommand}"
-                            Classes="accent"
-                            Padding="20,12"/>
-                    <Button Content="Exit to menu"
-                            Command="{Binding ExitCommand}"
-                            Classes="ghost"
-                            Padding="20,12"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Refresh"
+                                Command="{Binding RefreshCommand}"
+                                Classes="accent"
+                                Padding="20,12"/>
+                        <Button Content="Exit to menu"
+                                Command="{Binding ExitCommand}"
+                                Classes="ghost"
+                                Padding="20,12"/>
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
         </Border>
 
-        <Border Grid.Column="1"
-                Background="#1a1f38">
+        <Grid Grid.Column="1">
+            <Grid.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#111530" Offset="0"/>
+                    <GradientStop Color="#131832" Offset="0.5"/>
+                    <GradientStop Color="#161c36" Offset="1"/>
+                </LinearGradientBrush>
+            </Grid.Background>
+
             <Grid RowDefinitions="Auto,*">
-                <Border Background="#202745"
-                        Padding="32,24"
-                        BorderBrush="#1f2c46"
-                        BorderThickness="0,0,0,1">
-                    <DockPanel>
-                        <StackPanel DockPanel.Dock="Left" Spacing="4">
-                            <TextBlock Text="{Binding ProfileName}"
-                                       FontSize="22"
-                                       FontWeight="400"
-                                       Foreground="{StaticResource Brush.Text.Primary}"/>
-                            <TextBlock Text="Profile online"
-                                       FontSize="13"
-                                       Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                <Border Background="#1d2340cc"
+                        BorderBrush="#282f4f"
+                        BorderThickness="0,0,0,1"
+                        Padding="36,28"
+                        BoxShadow="0 18 48 0 #090c2030">
+                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="{Binding ProfileName}" FontSize="24" FontWeight="400" Foreground="{StaticResource Brush.Text.Primary}"/>
+                            <TextBlock Text="Profile online" FontSize="13" Foreground="{StaticResource Brush.Text.Tertiary}"/>
                         </StackPanel>
-                    </DockPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                            <Border Background="#1f2f46" CornerRadius="14" Padding="14,8" BorderBrush="#2f4c69" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Memories" FontSize="12" Foreground="#8b92c1"/>
+                                    <TextBlock Text="{Binding Profile.MemoryCount}" FontSize="14" Foreground="{StaticResource Brush.Text.Primary}"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Background="#1f2f46" CornerRadius="14" Padding="14,8" BorderBrush="#2f4c69" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Messages" FontSize="12" Foreground="#8b92c1"/>
+                                    <TextBlock Text="{Binding Profile.MessageCount}" FontSize="14" Foreground="{StaticResource Brush.Text.Primary}"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
                 </Border>
 
                 <Border Grid.Row="1"
-                        Margin="32"
+                        Margin="36"
                         Padding="32"
-                        CornerRadius="28"
-                        Background="#331e2139"
-                        BorderBrush="#442e3451"
+                        CornerRadius="30"
+                        Background="#2a2f4f50"
+                        BorderBrush="#3a4064"
                         BorderThickness="1.5"
-                        BoxShadow="0 24 72 0 #0a0e2740">
+                        BoxShadow="0 28 90 0 #090c2040">
                     <ContentControl Content="{Binding CurrentContent}"/>
                 </Border>
             </Grid>
-        </Border>
+        </Grid>
     </Grid>
 </UserControl>

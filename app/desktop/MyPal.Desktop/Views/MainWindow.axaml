@@ -16,19 +16,50 @@
         Title="MyPal">
 
     <Grid RowDefinitions="*,Auto">
-        <Border Background="{StaticResource Brush.Background.Deep}">
-            <Border Background="{StaticResource Brush.Background.Primary}">
-                <Border Background="{StaticResource Brush.Background.Secondary}"
-                        CornerRadius="36"
-                        Margin="24"
+        <Grid>
+            <Grid.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#0b1027" Offset="0"/>
+                    <GradientStop Color="#111533" Offset="0.45"/>
+                    <GradientStop Color="#0d142e" Offset="1"/>
+                </LinearGradientBrush>
+            </Grid.Background>
+
+            <Panel>
+                <Border Width="420"
+                        Height="420"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Margin="-120,-140,0,0"
+                        Background="{StaticResource Brush.Glass.Glow}"
+                        IsHitTestVisible="False"/>
+                <Border Width="480"
+                        Height="480"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,-140,-160"
+                        Background="{StaticResource Brush.Glass.CyanGlow}"
+                        IsHitTestVisible="False"/>
+            </Panel>
+
+            <Border Margin="32"
+                    CornerRadius="36"
+                    Background="{StaticResource Brush.Background.Overlay}"
+                    BorderBrush="{StaticResource Brush.Border.Subtle}"
+                    BorderThickness="1.5"
+                    BoxShadow="0 36 96 0 #090c2070">
+                <Border CornerRadius="32"
+                        Margin="12"
+                        Background="#1c2139d0"
                         BorderBrush="#332e3451"
-                        BorderThickness="1.5">
+                        BorderThickness="1"
+                        Padding="12">
                     <ContentControl Content="{Binding CurrentViewModel}"
                                     HorizontalContentAlignment="Stretch"
                                     VerticalContentAlignment="Stretch"/>
                 </Border>
             </Border>
-        </Border>
+        </Grid>
 
         <Border Grid.Row="1"
                 Background="#141a2c"

@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using MyPal.Desktop.Models;
 using MyPal.Desktop.Services;
@@ -61,9 +62,14 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
         UpdateStatusMessage("Starting backend...");
         await _processManager.EnsureRunningAsync(_lifetimeCts.Token).ConfigureAwait(false);
+        
         UpdateStatusMessage("Loading profiles...");
         await ProfileSelection.InitializeAsync(_lifetimeCts.Token).ConfigureAwait(false);
-        UpdateStatusMessage(null);
+        
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            UpdateStatusMessage(null);
+        });
     }
 
     private async Task OnProfileLoadedAsync(ProfileMetadata metadata, CancellationToken cancellationToken)
@@ -88,7 +94,14 @@ public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 
     private void UpdateStatusMessage(string? text)
     {
-        StatusMessage = text;
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            StatusMessage = text;
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() => StatusMessage = text);
+        }
     }
 
     public async ValueTask DisposeAsync()

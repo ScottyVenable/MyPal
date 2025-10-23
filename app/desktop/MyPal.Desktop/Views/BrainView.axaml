@@ -6,24 +6,95 @@
              mc:Ignorable="d"
              x:Class="MyPal.Desktop.Views.BrainView"
              x:DataType="vm:AppShellViewModel+PlaceholderViewModel">
-    <Border Background="#191f35"
-            CornerRadius="20"
-            Padding="32"
-            BorderBrush="#2e3451"
-            BorderThickness="1.5">
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
-            <TextBlock Text="??"
-                       FontSize="42"
-                       HorizontalAlignment="Center"/>
-            <TextBlock Text="Coming soon"
-                       FontSize="22"
-                       FontWeight="400"
-                       HorizontalAlignment="Center"
-                       Foreground="{StaticResource Brush.Text.Primary}"/>
-            <TextBlock Text="{Binding Message}"
-                       FontSize="14"
-                       TextAlignment="Center"
-                       Foreground="{StaticResource Brush.Text.Tertiary}"/>
+    <Grid RowDefinitions="Auto,*" RowSpacing="24">
+        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+            <Border Width="40" Height="40" CornerRadius="14" Background="#262f4f" BorderBrush="#38466d" BorderThickness="1">
+                <TextBlock Text="&#xE175;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="20"
+                           Foreground="{StaticResource Brush.Accent.Purple}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel Spacing="4">
+                <TextBlock Text="Brain"
+                           FontSize="22"
+                           FontWeight="400"
+                           Foreground="{StaticResource Brush.Text.Primary}"/>
+                <TextBlock Text="{Binding Message}"
+                           FontSize="13"
+                           Foreground="{StaticResource Brush.Text.Tertiary}"/>
+            </StackPanel>
         </StackPanel>
-    </Border>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="24">
+            <Border CornerRadius="26"
+                    Background="#1f2541"
+                    BorderBrush="#30385c"
+                    BorderThickness="1.5"
+                    Padding="28"
+                    BoxShadow="0 20 68 0 #090c2040">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Knowledge graph evolution"
+                               FontSize="18"
+                               FontWeight="400"
+                               Foreground="{StaticResource Brush.Text.Primary}"/>
+                    <TextBlock Text="Experience a holographic knowledge graph with animated edges, sentiment glows, and depth-aware orbit controls."
+                               FontSize="13"
+                               Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                    <Border CornerRadius="18"
+                            Background="#262f4f"
+                            BorderBrush="#36446a"
+                            BorderThickness="1"
+                            Padding="18">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Concept highlights" FontSize="14" Foreground="{StaticResource Brush.Text.Primary}"/>
+                            <ItemsControl>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="10"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <TextBlock Text="#creativity" FontSize="12" Foreground="#66e3ff"/>
+                                <TextBlock Text="#learning" FontSize="12" Foreground="#66e3ff"/>
+                                <TextBlock Text="#relationships" FontSize="12" Foreground="#66e3ff"/>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <StackPanel Grid.Column="1" Spacing="24">
+                <Border CornerRadius="22" Background="#212844" BorderBrush="#313a5c" BorderThickness="1.5" Padding="24">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="Neural activity timeline" FontSize="17" Foreground="{StaticResource Brush.Text.Primary}"/>
+                        <TextBlock Text="Live firing streaks, cascading synapses, and region activations in vibrant neon pulses."
+                                   FontSize="13"
+                                   Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                        <ProgressBar Height="6" Minimum="0" Maximum="100" Value="60" IsIndeterminate="True" Foreground="#ff6b35"/>
+                    </StackPanel>
+                </Border>
+                <Border CornerRadius="22" Background="#1e243d" BorderBrush="#2f3656" BorderThickness="1.5" Padding="24">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="Region encyclopedia" FontSize="17" Foreground="{StaticResource Brush.Text.Primary}"/>
+                        <StackPanel Spacing="10">
+                            <Border Background="#252f4d" CornerRadius="14" Padding="14" BorderBrush="#3a4666" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <TextBlock Text="Frontal Cortex" Foreground="{StaticResource Brush.Text.Primary}"/>
+                                    <TextBlock Text="Stage 3" Foreground="#a78bfa"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Background="#252f4d" CornerRadius="14" Padding="14" BorderBrush="#3a4666" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <TextBlock Text="Temporal Lobe" Foreground="{StaticResource Brush.Text.Primary}"/>
+                                    <TextBlock Text="Stage 2" Foreground="#66e3ff"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="Each region will pulse in sync with live neural signals, revealing activity percentages and cognitive milestones." FontSize="12" Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </Grid>
 </UserControl>
