@@ -1563,7 +1563,16 @@ function renderBrain(data) {
       .linkDirectionalParticles((link) => link.particleCount || 0)
       .linkDirectionalParticleSpeed((link) => link.particleSpeed || 0.002)
       .linkDirectionalParticleWidth(2)
-      .onNodeClick(handleBrainNodeClick);
+      .onNodeClick((node, event) => {
+        handleBrainNodeClick(node, event);
+        // If shift-click, focus camera on this node
+        if (event?.shiftKey) {
+          focusOnBrainNode(node);
+        }
+      })
+      .onNodeRightClick((node) => {
+        focusOnBrainNode(node);
+      });
 
     const controls = brainGraph3D.controls();
     controls.autoRotate = false;
@@ -1635,6 +1644,75 @@ function handleBrainNodeClick(node) {
   } else {
     desc.textContent = `High-frequency word: "${node.label}" • Frequency score: ${node.value}`;
   }
+}
+
+function focusOnBrainNode(node) {
+  if (!brainGraph3D || !brainGraphData) return;
+  
+  // Get node object
+  const nodeObj = brainGraphData.nodes.find(n => n.id === node.id);
+  if (!nodeObj) return;
+  
+  // Reset all node and link styling
+  brainGraphData.nodes.forEach(n => {
+    const originalColor = n.group === 'concept'
+      ? (n.concept?.sentiment?.label === 'positive' ? '#66bb6a'
+        : n.concept?.sentiment?.label === 'negative' ? '#ef5350'
+        : '#ffb74d')
+      : '#6f86ff';
+    n.color = originalColor;
+    n.displaySize = Math.max(3.5, Math.log((n.value || 1) + 1) * 4.5);
+  });
+  
+  brainGraphData.links.forEach(link => {
+    link.color = link.weight >= 4 ? 'rgba(142, 166, 255, 0.3)' : 'rgba(57, 69, 128, 0.25)';
+    link.width = Math.max(0.4, Math.log((link.weight || 1) + 1));
+  });
+  
+  // Highlight the focused node
+  nodeObj.color = '#ffe082';
+  nodeObj.displaySize = (nodeObj.displaySize || 5) * 2.5;
+  
+  // Highlight connected nodes and links
+  const connectedNodeIds = new Set();
+  brainGraphData.links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    
+    if (sourceId === node.id || targetId === node.id) {
+      link.color = 'rgba(255, 224, 130, 0.8)';
+      link.width = (link.width || 1) * 3;
+      
+      // Track connected nodes
+      if (sourceId === node.id) connectedNodeIds.add(targetId);
+      if (targetId === node.id) connectedNodeIds.add(sourceId);
+    }
+  });
+  
+  // Highlight connected nodes
+  brainGraphData.nodes.forEach(n => {
+    if (connectedNodeIds.has(n.id)) {
+      n.color = '#a0c4ff'; // Light blue for connected
+      n.displaySize = (n.displaySize || 5) * 1.4;
+    }
+  });
+  
+  // Update graph
+  brainGraph3D.graphData(brainGraphData);
+  
+  // Camera animation to focus on node
+  const distance = 350;
+  const distRatio = 1 + distance / Math.hypot(nodeObj.x || 0, nodeObj.y || 0, nodeObj.z || 0);
+  
+  brainGraph3D.cameraPosition(
+    {
+      x: (nodeObj.x || 0) * distRatio,
+      y: (nodeObj.y || 0) * distRatio,
+      z: (nodeObj.z || 0) * distRatio
+    },
+    nodeObj, // lookAt
+    1000 // ms transition duration
+  );
 }
 
 function renderMemories(payload) {
@@ -2373,6 +2451,7 @@ async function init() {
   setupJournalSubTabs();
   setupNeuralRefresh();
   setupNeuralSearchAndFilters();
+  setupBrainSearchAndFilters();
   setupNeuralRegeneration();
   setupCollapsibleInfo();
   setupMemorySearch();
@@ -3668,6 +3747,167 @@ function applyNeuralFilters() {
     const totalFirings = neuralState?.regions?.reduce((sum, r) => 
       sum + (r.neurons?.reduce((s, n) => s + (n.firingCount || 0), 0) || 0), 0) || 0;
     summary.textContent = `Neurons: ${filteredNodes.length} · Regions: ${neuralState?.regions?.length || 0} · Firings: ${totalFirings}`;
+  }
+}
+
+// Wire up brain graph search and filter controls
+function setupBrainSearchAndFilters() {
+  const searchInput = $('#brain-search-input');
+  const clearBtn = $('#brain-search-clear');
+  const minFreqSlider = $('#filter-min-freq');
+  const freqValueDisplay = $('#filter-freq-value');
+  const showIsolatedCheckbox = $('#filter-show-isolated');
+  const categoryFilter = $('#concept-category-filter');
+  
+  // Update frequency value display
+  if (minFreqSlider && freqValueDisplay) {
+    minFreqSlider.addEventListener('input', (e) => {
+      freqValueDisplay.textContent = e.target.value;
+      applyBrainFilters();
+    });
+  }
+  
+  // Search input
+  if (searchInput) {
+    searchInput.addEventListener('input', applyBrainFilters);
+  }
+  
+  // Clear search
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (searchInput) {
+        searchInput.value = '';
+        applyBrainFilters();
+        searchInput.focus();
+      }
+    });
+  }
+  
+  // Show isolated nodes checkbox
+  if (showIsolatedCheckbox) {
+    showIsolatedCheckbox.addEventListener('change', applyBrainFilters);
+  }
+  
+  // Category filter
+  if (categoryFilter) {
+    categoryFilter.addEventListener('change', applyBrainFilters);
+  }
+}
+
+function applyBrainFilters() {
+  if (!brainGraph3D || !brainGraphData) return;
+  
+  const searchInput = $('#brain-search-input');
+  const minFreqSlider = $('#filter-min-freq');
+  const showIsolatedCheckbox = $('#filter-show-isolated');
+  const categoryFilter = $('#concept-category-filter');
+  
+  const query = searchInput?.value.toLowerCase().trim() || '';
+  const minFreq = parseInt(minFreqSlider?.value || '1', 10);
+  const showIsolated = showIsolatedCheckbox?.checked ?? true;
+  const category = categoryFilter?.value || 'all';
+  
+  // Calculate node connection counts
+  const connectionCounts = new Map();
+  brainGraphData.links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    connectionCounts.set(sourceId, (connectionCounts.get(sourceId) || 0) + 1);
+    connectionCounts.set(targetId, (connectionCounts.get(targetId) || 0) + 1);
+  });
+  
+  // Filter nodes
+  const filteredNodes = brainGraphData.nodes.filter(node => {
+    // Frequency filter
+    if (node.value < minFreq) return false;
+    
+    // Isolated nodes filter
+    const connectionCount = connectionCounts.get(node.id) || 0;
+    if (!showIsolated && connectionCount === 0) return false;
+    
+    // Category filter
+    if (category === 'high-freq' && node.value < 10) return false;
+    if (category === 'recent' && node.concept && !node.concept.lastMentionedAt) return false;
+    if (category === 'connected' && connectionCount < 5) return false;
+    
+    return true;
+  });
+  
+  // Create Set of visible node IDs
+  const visibleNodeIds = new Set(filteredNodes.map(n => n.id));
+  
+  // Filter links to only show connections between visible nodes
+  const filteredLinks = brainGraphData.links.filter(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId);
+  });
+  
+  // Apply search highlighting
+  if (query) {
+    filteredNodes.forEach(node => {
+      const label = node.label?.toLowerCase() || '';
+      const category = node.concept?.category?.toLowerCase() || '';
+      const matches = label.includes(query) || category.includes(query);
+      
+      if (matches) {
+        // Highlight matching nodes
+        node.color = '#ffe082';
+        node.displaySize = (node.displaySize || 5) * 1.8;
+        
+        // Highlight connections from matching nodes
+        filteredLinks.forEach(link => {
+          const sourceId = link.source.id || link.source;
+          const targetId = link.target.id || link.target;
+          if (sourceId === node.id || targetId === node.id) {
+            link.color = 'rgba(255, 224, 130, 0.7)';
+            link.width = (link.width || 1) * 2;
+          }
+        });
+      } else {
+        // Dim non-matching nodes
+        const originalColor = node.group === 'concept' 
+          ? (node.concept?.sentiment?.label === 'positive' ? '#66bb6a' 
+            : node.concept?.sentiment?.label === 'negative' ? '#ef5350' 
+            : '#ffb74d')
+          : '#6f86ff';
+        node.color = originalColor;
+        node.displaySize = (node.displaySize || 5) * 0.6;
+      }
+    });
+    
+    // Reset non-highlighted links
+    filteredLinks.forEach(link => {
+      if (link.color !== 'rgba(255, 224, 130, 0.7)') {
+        link.color = link.weight >= 4 ? 'rgba(142, 166, 255, 0.3)' : 'rgba(57, 69, 128, 0.25)';
+      }
+    });
+  } else {
+    // Reset all styling when no search
+    filteredNodes.forEach(node => {
+      const originalColor = node.group === 'concept'
+        ? (node.concept?.sentiment?.label === 'positive' ? '#66bb6a'
+          : node.concept?.sentiment?.label === 'negative' ? '#ef5350'
+          : '#ffb74d')
+        : '#6f86ff';
+      node.color = originalColor;
+      node.displaySize = Math.max(3.5, Math.log((node.value || 1) + 1) * 4.5);
+    });
+    
+    filteredLinks.forEach(link => {
+      link.color = link.weight >= 4 ? '#8ea6ff' : '#394580';
+      link.width = Math.max(0.4, Math.log((link.weight || 1) + 1));
+    });
+  }
+  
+  // Update graph with filtered data
+  brainGraph3D.graphData({ nodes: filteredNodes, links: filteredLinks });
+  
+  // Update summary
+  const summary = $('#brain-summary');
+  if (summary) {
+    const totalMemories = brainGraphData.nodes.filter(n => n.concept).length;
+    summary.textContent = `Nodes: ${filteredNodes.length} · Links: ${filteredLinks.length} · Memories: ${totalMemories}`;
   }
 }
 

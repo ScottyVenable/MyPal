@@ -241,6 +241,27 @@
       <div id="brain-tab-concepts" class="brain-tab-content active">
         <div class="brain-toolbar">
           <button id="refresh-brain" type="button">Refresh Graph</button>
+          <div class="brain-search">
+            <input id="brain-search-input" type="text" placeholder="Search concepts..." />
+            <button id="brain-search-clear" type="button" title="Clear search">✕</button>
+          </div>
+          <div class="brain-filter-controls">
+            <label class="filter-label">
+              <span>Min Frequency:</span>
+              <input id="filter-min-freq" type="range" min="1" max="20" value="1" />
+              <span id="filter-freq-value">1</span>
+            </label>
+            <label class="filter-label">
+              <input id="filter-show-isolated" type="checkbox" checked />
+              <span>Show Isolated</span>
+            </label>
+            <select id="concept-category-filter">
+              <option value="all">All Concepts</option>
+              <option value="high-freq">High Frequency (10+)</option>
+              <option value="recent">Recently Used</option>
+              <option value="connected">Well Connected (5+)</option>
+            </select>
+          </div>
           <span id="brain-summary">Nodes: 0 · Links: 0 · Memories: 0</span>
         </div>
         <div class="brain-layout">

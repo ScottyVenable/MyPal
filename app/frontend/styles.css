@@ -316,9 +316,23 @@ nav { display: flex; gap: 8px; }
 nav button { padding: 8px 12px; background: #1f2452; color: #dfe3ff; border: 1px solid #2a306b; border-radius: 6px; cursor: pointer; }
 nav button.active { background: #3240a8; }
 
-main { padding: 16px; }
-.tab { display: none; }
-.tab.active { display: block; }
+main { 
+  padding: 20px 24px; 
+  max-width: 1920px;
+  margin: 0 auto;
+  height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.tab { 
+  display: none;
+  height: 100%;
+}
+
+.tab.active { 
+  display: flex;
+  flex-direction: column;
+}
 
 .emotion-display {
   display: flex;
@@ -406,17 +420,21 @@ main { padding: 16px; }
 
 #chat-window {
   flex: 1;
-  min-height: 320px;
+  min-height: 400px;
+  max-height: calc(100vh - 380px);
   overflow-y: auto;
-  padding: 12px;
-  background: #121634;
+  padding: 16px;
+  background: #0a0f26;
   border: 1px solid #2a306b;
   border-radius: 8px;
 }
+
 .chat-layout {
   display: flex;
   gap: 24px;
   align-items: stretch;
+  height: calc(100vh - 200px);
+  max-height: 900px;
 }
 
 .chat-column {
@@ -424,14 +442,20 @@ main { padding: 16px; }
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  height: 100%;
 }
 
 .chat-conversation {
-  flex: 1 1 58%;
+  flex: 1 1 60%;
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-insights {
-  flex: 1 1 42%;
+  flex: 1 1 40%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
 }
 
 .chat-insight-card {
@@ -902,19 +926,19 @@ main { padding: 16px; }
 }
 
 .chart-card { 
-  background: #121634; 
+  background: #0a0f26; 
   border: 1px solid #2a306b; 
   border-radius: 12px; 
-  padding: 14px; 
-  min-height: 280px;
-  max-height: 350px;
+  padding: 16px; 
+  min-height: 320px;
+  max-height: 450px;
   display: flex;
   flex-direction: column;
 }
 
 .chart-card h3 { 
-  margin: 0 0 10px 0; 
-  font-size: 14px; 
+  margin: 0 0 12px 0; 
+  font-size: 15px; 
   color: #9ab4ff; 
   font-weight: 600;
 }
@@ -922,6 +946,7 @@ main { padding: 16px; }
 .chart-card canvas {
   flex: 1;
   min-height: 0;
+  max-height: 400px;
 }
 
 .brain-placeholder { height: 400px; background: #121634; border: 1px dashed #2a306b; border-radius: 8px; display: flex; align-items: center; justify-content: center; opacity: 0.8; }
@@ -955,15 +980,144 @@ main { padding: 16px; }
   font-weight: 500;
 }
 
-#brain-graph { height: 500px; background: #121634; border: 1px solid #2a306b; border-radius: 8px; }
-.brain-toolbar { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
-.brain-toolbar button { padding: 8px 12px; border-radius: 6px; background: #20316b; color: #dfe3ff; border: 1px solid #2a306b; cursor: pointer; transition: all 0.2s; }
-.brain-toolbar button:hover { background: #2a3a85; border-color: #3a4a9f; }
-.brain-toolbar span { margin-left: auto; font-size: 13px; color: #9ab4ff; align-self: center; font-weight: 500; }
+#brain-graph { height: 600px; background: #121634; border: 1px solid #2a306b; border-radius: 8px; }
 
-.brain-layout { display: grid; grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr); gap: 16px; }
-.brain-graph-card { background: #121634; border: 1px solid #2a306b; border-radius: 10px; padding: 12px; }
-.brain-sidebar { display: flex; flex-direction: column; gap: 12px; }
+.brain-toolbar { 
+  display: flex; 
+  gap: 12px; 
+  margin-bottom: 12px; 
+  align-items: center;
+  padding: 12px;
+  background: #151935;
+  border: 1px solid #2a306b;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.brain-toolbar button { 
+  padding: 8px 12px; 
+  border-radius: 6px; 
+  background: #3240a8; 
+  color: white; 
+  border: none; 
+  cursor: pointer; 
+  transition: all 0.2s;
+}
+
+.brain-toolbar button:hover { 
+  background: #4858d8; 
+}
+
+.brain-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #0d0f1a;
+  border: 1px solid #2a306b;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.brain-search input {
+  background: transparent;
+  border: none;
+  color: #dfe3ff;
+  font-size: 13px;
+  padding: 4px;
+  outline: none;
+  width: 180px;
+}
+
+.brain-search input::placeholder {
+  color: #5a6b8f;
+}
+
+#brain-search-clear {
+  padding: 2px 6px;
+  font-size: 12px;
+  background: transparent;
+  color: #7a8cb8;
+  min-width: auto;
+}
+
+#brain-search-clear:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #dfe3ff;
+}
+
+.brain-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brain-filter-controls .filter-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #a8b2d1;
+}
+
+.brain-filter-controls input[type="range"] {
+  width: 80px;
+  cursor: pointer;
+}
+
+.brain-filter-controls select {
+  background: #0d0f1a;
+  border: 1px solid #2a306b;
+  border-radius: 6px;
+  color: #dfe3ff;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+.brain-filter-controls select:hover {
+  border-color: #3240a8;
+}
+
+#filter-freq-value {
+  min-width: 20px;
+  text-align: center;
+  color: #dfe3ff;
+  font-weight: 600;
+}
+
+.brain-toolbar span { 
+  margin-left: auto; 
+  font-size: 13px; 
+  color: #9ab4ff; 
+  align-self: center; 
+  font-weight: 500; 
+}
+
+.brain-layout { 
+  display: grid; 
+  grid-template-columns: minmax(0, 7fr) minmax(320px, 3fr); 
+  gap: 16px;
+  height: calc(100vh - 280px);
+  max-height: 700px;
+}
+
+.brain-graph-card { 
+  background: #0a0f26; 
+  border: 1px solid #2a306b; 
+  border-radius: 10px; 
+  padding: 16px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.brain-sidebar { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 12px;
+  height: 100%;
+  overflow-y: auto;
+}
 .brain-info, .brain-memories { background: #121634; border: 1px solid #2a306b; border-radius: 10px; padding: 14px; }
 .brain-info h3, .brain-memories h3 { margin: 0 0 10px 0; font-size: 15px; color: #dfe3ff; font-weight: 600; }
 .brain-info .collapsible-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
@@ -1039,7 +1193,8 @@ footer { padding: 12px 16px; border-top: 1px solid #252a52; color: #98a0d3; }
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(320px, 3fr);
   gap: 16px;
-  height: 600px;
+  height: calc(100vh - 280px);
+  max-height: 700px;
 }
 
 .neural-visualization {
@@ -1047,6 +1202,7 @@ footer { padding: 12px 16px; border-top: 1px solid #252a52; color: #98a0d3; }
   border: 1px solid #2a306b;
   border-radius: 12px;
   padding: 16px;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -2237,4 +2393,91 @@ body.reduced-motion *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
+}
+
+/* ====================================
+   16:9 Display Optimizations
+   ==================================== */
+
+/* Optimize for common 16:9 resolutions */
+@media (min-width: 1920px) and (min-height: 1080px) {
+  main {
+    padding: 24px 32px;
+  }
+  
+  .chat-layout {
+    max-height: 1000px;
+  }
+  
+  #chat-window {
+    max-height: calc(100vh - 320px);
+  }
+  
+  .brain-layout,
+  .neural-container {
+    max-height: 850px;
+  }
+  
+  .chart-card {
+    max-height: 520px;
+  }
+}
+
+@media (min-width: 1600px) and (min-height: 900px) {
+  .brain-layout,
+  .neural-container {
+    max-height: 750px;
+  }
+  
+  #chat-window {
+    max-height: calc(100vh - 350px);
+  }
+}
+
+@media (min-width: 1366px) and (min-height: 768px) {
+  .brain-layout,
+  .neural-container {
+    max-height: 650px;
+  }
+  
+  .chart-card {
+    max-height: 380px;
+  }
+}
+
+/* Ultrawide support (21:9, 32:9) */
+@media (min-aspect-ratio: 21/9) {
+  .chat-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  }
+  
+  .brain-layout,
+  .neural-container {
+    grid-template-columns: minmax(0, 8fr) minmax(320px, 2fr);
+  }
+}
+
+/* Compact vertical displays */
+@media (max-height: 800px) {
+  header {
+    padding: 12px 16px;
+  }
+  
+  main {
+    padding: 12px 16px;
+    height: calc(100vh - 100px);
+  }
+  
+  .brain-layout,
+  .neural-container {
+    max-height: 550px;
+  }
+  
+  #chat-window {
+    max-height: calc(100vh - 300px);
+  }
+  
+  .chart-card {
+    max-height: 320px;
+  }
 }
