@@ -1615,11 +1615,13 @@ button:disabled::after {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 16px;
   padding: 12px;
   background: #151935;
   border: 1px solid #2a306b;
   border-radius: 8px;
+  flex-wrap: wrap;
 }
 
 .neural-toolbar button {
@@ -1629,10 +1631,83 @@ button:disabled::after {
   border: none;
   border-radius: 6px;
   cursor: pointer;
+  transition: background 0.2s ease;
 }
 
 .neural-toolbar button:hover {
   background: #4858d8;
+}
+
+.neural-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #0d0f1a;
+  border: 1px solid #2a306b;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.neural-search input {
+  background: transparent;
+  border: none;
+  color: #dfe3ff;
+  font-size: 13px;
+  padding: 4px;
+  outline: none;
+  width: 180px;
+}
+
+.neural-search input::placeholder {
+  color: #5a6b8f;
+}
+
+#neural-search-clear {
+  padding: 2px 6px;
+  font-size: 12px;
+  background: transparent;
+  color: #7a8cb8;
+  min-width: auto;
+}
+
+#neural-search-clear:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #dfe3ff;
+}
+
+.neural-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #a8b2d1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.neural-filter-controls select {
+  background: #0d0f1a;
+  border: 1px solid #2a306b;
+  border-radius: 6px;
+  color: #dfe3ff;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+.neural-filter-controls select:hover {
+  border-color: #3240a8;
 }
 
 .neural-container {

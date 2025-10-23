@@ -279,6 +279,30 @@
       <div id="brain-tab-neural" class="brain-tab-content">
         <div class="neural-toolbar">
           <button id="refresh-neural" type="button">Refresh</button>
+          <div class="neural-search">
+            <input id="neural-search-input" type="text" placeholder="Search neurons..." />
+            <button id="neural-search-clear" type="button" title="Clear search">✕</button>
+          </div>
+          <div class="neural-filter-controls">
+            <label class="filter-label">
+              <input id="filter-excitatory" type="checkbox" checked />
+              <span>Excitatory</span>
+            </label>
+            <label class="filter-label">
+              <input id="filter-inhibitory" type="checkbox" checked />
+              <span>Inhibitory</span>
+            </label>
+            <select id="region-filter">
+              <option value="all">All Regions</option>
+              <option value="sensory">Sensory Input</option>
+              <option value="language">Language Center</option>
+              <option value="association">Association Cortex</option>
+              <option value="frontal">Frontal Lobe</option>
+              <option value="amygdala">Amygdala</option>
+              <option value="memory">Memory Systems</option>
+              <option value="motor">Motor Output</option>
+            </select>
+          </div>
           <span id="neural-summary">Neurons: 0 · Regions: 7 · Firings: 0</span>
         </div>
         <div class="neural-container">

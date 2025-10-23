@@ -2372,6 +2372,7 @@ async function init() {
   setupBrainSubTabs();
   setupJournalSubTabs();
   setupNeuralRefresh();
+  setupNeuralSearchAndFilters();
   setupNeuralRegeneration();
   setupCollapsibleInfo();
   setupMemorySearch();
@@ -2966,9 +2967,20 @@ function renderNeuralNetwork(networkData) {
       .linkDirectionalParticles((link) => link.particleCount || 0)
       .linkDirectionalParticleSpeed((link) => link.particleSpeed || 0.008)
       .linkDirectionalParticleWidth(3)
-      .onNodeClick((node) => {
+      .onNodeClick((node, event) => {
         if (node.kind === 'neuron' && node.sourceNeuron) {
+          // Show details modal
           showNeuronDetails(node.sourceNeuron);
+          
+          // If shift-click, focus camera on this neuron and highlight connections
+          if (event?.shiftKey) {
+            focusOnNeuron(node);
+          }
+        }
+      })
+      .onNodeRightClick((node) => {
+        if (node.kind === 'neuron') {
+          focusOnNeuron(node);
         }
       });
 
@@ -3010,8 +3022,78 @@ function formatNeuronTooltip(node) {
     `Region: ${node.regionName}`,
     `Type: ${node.neuronType}`,
     `Connections: ${node.connectionCount}`,
-    `Activation: ${activation.toFixed(2)} / ${threshold}`
+    `Activation: ${activation.toFixed(2)} / ${threshold}`,
+    '',
+    'Click to view details',
+    'Right-click or Shift+Click to focus'
   ].join('\n');
+}
+
+function focusOnNeuron(node) {
+  if (!neuralGraph3D || !neuralGraphData) return;
+  
+  // Get node position
+  const nodeObj = neuralGraphData.nodes.find(n => n.id === node.id);
+  if (!nodeObj) return;
+  
+  // Reset all node and link highlighting
+  neuralGraphData.nodes.forEach(n => {
+    const region = neuralState?.regions?.find(r => r.regionId === n.regionId);
+    n.color = region?.color || '#888888';
+    n.displaySize = n.baseSize || 10;
+  });
+  
+  neuralGraphData.links.forEach(link => {
+    link.highlight = false;
+    link.color = 'rgba(140, 162, 255, 0.15)';
+    link.width = Math.max(0.35, (link.weight || 0.5) * 0.5);
+  });
+  
+  // Highlight the focused neuron
+  nodeObj.color = '#ffe082';
+  nodeObj.displaySize = (nodeObj.baseSize || 10) * 2;
+  
+  // Highlight connected neurons and links
+  const connectedNodeIds = new Set();
+  neuralGraphData.links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    
+    if (sourceId === node.id || targetId === node.id) {
+      link.highlight = true;
+      link.color = 'rgba(255, 224, 130, 0.8)';
+      link.width = (link.weight || 0.5) * 3;
+      
+      // Track connected nodes
+      if (sourceId === node.id) connectedNodeIds.add(targetId);
+      if (targetId === node.id) connectedNodeIds.add(sourceId);
+    }
+  });
+  
+  // Highlight connected neurons
+  neuralGraphData.nodes.forEach(n => {
+    if (connectedNodeIds.has(n.id)) {
+      n.color = '#a0c4ff'; // Light blue for connected
+      n.displaySize = (n.baseSize || 10) * 1.3;
+    }
+  });
+  
+  // Update graph
+  neuralGraph3D.graphData(neuralGraphData);
+  
+  // Camera animation to focus on node
+  const distance = 300;
+  const distRatio = 1 + distance / Math.hypot(nodeObj.x || 0, nodeObj.y || 0, nodeObj.z || 0);
+  
+  neuralGraph3D.cameraPosition(
+    { 
+      x: (nodeObj.x || 0) * distRatio, 
+      y: (nodeObj.y || 0) * distRatio, 
+      z: (nodeObj.z || 0) * distRatio 
+    },
+    nodeObj, // lookAt
+    1000 // ms transition duration
+  );
 }
 
 function scheduleNeuralGraphRefresh() {
@@ -3430,6 +3512,162 @@ function setupNeuralRefresh() {
   const btn = $('#refresh-neural');
   if (btn) {
     btn.addEventListener('click', refreshNeuralNetwork);
+  }
+}
+
+// Wire up neural search and filter controls
+function setupNeuralSearchAndFilters() {
+  const searchInput = $('#neural-search-input');
+  const clearBtn = $('#neural-search-clear');
+  const filterExcitatory = $('#filter-excitatory');
+  const filterInhibitory = $('#filter-inhibitory');
+  const regionFilter = $('#region-filter');
+  
+  // Store original graph data for filtering
+  let originalNodes = [];
+  let originalLinks = [];
+  
+  // Highlight matching neurons on search
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      applyNeuralFilters();
+    });
+  }
+  
+  // Clear search
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (searchInput) {
+        searchInput.value = '';
+        applyNeuralFilters();
+        searchInput.focus();
+      }
+    });
+  }
+  
+  // Filter by neuron type
+  if (filterExcitatory) {
+    filterExcitatory.addEventListener('change', applyNeuralFilters);
+  }
+  if (filterInhibitory) {
+    filterInhibitory.addEventListener('change', applyNeuralFilters);
+  }
+  
+  // Filter by region
+  if (regionFilter) {
+    regionFilter.addEventListener('change', applyNeuralFilters);
+  }
+}
+
+function applyNeuralFilters() {
+  if (!neuralGraph3D || !neuralGraphData) return;
+  
+  const searchInput = $('#neural-search-input');
+  const filterExcitatory = $('#filter-excitatory');
+  const filterInhibitory = $('#filter-inhibitory');
+  const regionFilter = $('#region-filter');
+  
+  const query = searchInput?.value.toLowerCase().trim() || '';
+  const showExcitatory = filterExcitatory?.checked ?? true;
+  const showInhibitory = filterInhibitory?.checked ?? true;
+  const selectedRegion = regionFilter?.value || 'all';
+  
+  // Filter nodes
+  const filteredNodes = neuralGraphData.nodes.filter(node => {
+    // Type filter
+    if (node.neuronType === 'excitatory' && !showExcitatory) return false;
+    if (node.neuronType === 'inhibitory' && !showInhibitory) return false;
+    
+    // Region filter
+    if (selectedRegion !== 'all') {
+      const regionMap = {
+        'sensory': 'Sensory Input',
+        'language': 'Language Center',
+        'association': 'Association Cortex',
+        'frontal': 'Frontal Lobe',
+        'amygdala': 'Amygdala',
+        'memory': 'Memory Systems',
+        'motor': 'Motor Output'
+      };
+      if (node.regionName !== regionMap[selectedRegion]) return false;
+    }
+    
+    return true;
+  });
+  
+  // Create Set of visible node IDs
+  const visibleNodeIds = new Set(filteredNodes.map(n => n.id));
+  
+  // Filter links to only show connections between visible nodes
+  const filteredLinks = neuralGraphData.links.filter(link => {
+    return visibleNodeIds.has(link.source.id || link.source) && 
+           visibleNodeIds.has(link.target.id || link.target);
+  });
+  
+  // Apply search highlighting
+  if (query) {
+    filteredNodes.forEach(node => {
+      const label = node.label?.toLowerCase() || '';
+      const regionName = node.regionName?.toLowerCase() || '';
+      const pattern = node.sourceNeuron?.pattern?.toLowerCase() || '';
+      
+      const matches = label.includes(query) || 
+                     regionName.includes(query) || 
+                     pattern.includes(query);
+      
+      if (matches) {
+        // Highlight matching nodes
+        node.color = '#ffe082'; // Bright yellow
+        node.displaySize = (node.baseSize || 10) * 1.5;
+        
+        // Highlight connections from matching nodes
+        filteredLinks.forEach(link => {
+          if ((link.source.id || link.source) === node.id || 
+              (link.target.id || link.target) === node.id) {
+            link.highlight = true;
+            link.color = 'rgba(255, 224, 130, 0.6)';
+            link.width = (link.weight || 0.5) * 2;
+          }
+        });
+      } else {
+        // Dim non-matching nodes
+        node.color = node.sourceNeuron?.region?.color || node.regionColor || '#888888';
+        node.displaySize = (node.baseSize || 10) * 0.7;
+      }
+    });
+    
+    // Reset non-highlighted links
+    filteredLinks.forEach(link => {
+      if (!link.highlight) {
+        link.color = 'rgba(140, 162, 255, 0.15)';
+        link.width = (link.weight || 0.5) * 0.5;
+      }
+    });
+  } else {
+    // Reset all styling when no search
+    filteredNodes.forEach(node => {
+      const region = neuralState?.regions?.find(r => r.regionId === node.regionId);
+      node.color = region?.color || '#888888';
+      node.displaySize = node.baseSize || 10;
+    });
+    
+    filteredLinks.forEach(link => {
+      link.highlight = false;
+      link.color = 'rgba(140, 162, 255, 0.32)';
+      link.width = Math.max(0.35, (link.weight || 0.5) * 0.9);
+    });
+  }
+  
+  // Update graph with filtered data
+  neuralGraph3D.graphData({ nodes: filteredNodes, links: filteredLinks });
+  
+  // Update summary
+  const summary = $('#neural-summary');
+  if (summary) {
+    const totalFirings = neuralState?.regions?.reduce((sum, r) => 
+      sum + (r.neurons?.reduce((s, n) => s + (n.firingCount || 0), 0) || 0), 0) || 0;
+    summary.textContent = `Neurons: ${filteredNodes.length} · Regions: ${neuralState?.regions?.length || 0} · Firings: ${totalFirings}`;
   }
 }
 
