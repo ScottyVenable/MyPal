@@ -121,8 +121,7 @@ function Ensure-NpmDependencies {
         Write-Host "Installing npm dependencies in $Directory..."
         Push-Location $Directory
         try {
-            $npmPath = Get-NpmExecutable
-            & $npmPath install | Write-Output
+            npm install | Write-Output
         } finally {
             Pop-Location
         }
@@ -142,9 +141,8 @@ function Start-BackendServer {
         [string]$Directory
     )
 
-    $npmPath = Get-NpmExecutable
     Write-Host "Starting MyPal backend..." -ForegroundColor Yellow
-    $backendProcess = Start-Process -FilePath $npmPath -ArgumentList @("run", "dev") -WorkingDirectory $Directory -WindowStyle Hidden -PassThru
+    $backendProcess = Start-Process -FilePath "npm" -ArgumentList @("run", "dev") -WorkingDirectory $Directory -WindowStyle Hidden -PassThru
     Start-Sleep -Seconds 1
     return $backendProcess
 }
@@ -319,16 +317,14 @@ if ($runCommands -eq "y" -or $runCommands -eq "Y") {
             Push-Location $backendDir
             try {
                 Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-                $npmPath = Get-NpmExecutable
-                & $npmPath install
+                npm install
             } finally {
                 Pop-Location
             }
             Push-Location $tauriDir
             try {
                 Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-                $npmPath = Get-NpmExecutable
-                & $npmPath install
+                npm install
             } finally {
                 Pop-Location
             }
@@ -338,8 +334,7 @@ if ($runCommands -eq "y" -or $runCommands -eq "Y") {
             Write-Host "Running tests..." -ForegroundColor Yellow
             Push-Location $backendDir
             try {
-                $npmPath = Get-NpmExecutable
-                & $npmPath test
+                npm test
             } finally {
                 Pop-Location
             }
@@ -385,10 +380,9 @@ Write-Host ""
 Write-Host "Launching MyPal Tauri desktop (Press Ctrl+C to stop)..." -ForegroundColor Yellow
 Write-Host ""
 
-$npmPath = Get-NpmExecutable
 Push-Location $tauriDir
 try {
-    & $npmPath run dev
+    npm run dev
 } finally {
     Pop-Location
     if ($backendProcess -and -not $backendProcess.HasExited) {
