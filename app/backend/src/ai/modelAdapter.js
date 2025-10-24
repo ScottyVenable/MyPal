@@ -250,4 +250,3 @@ class ModelAdapter {
 }
 
 export default ModelAdapter;
-
