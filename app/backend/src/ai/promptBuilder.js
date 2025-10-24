@@ -276,4 +276,4 @@ CRITICAL RULES:
   }
 }
 
-module.exports = PromptBuilder;
+export default PromptBuilder;
