@@ -70,6 +70,20 @@ For detailed architecture and implementation specs, see:
 
 ## 🚀 Quick Start
 
+### Launcher Scripts (Windows)
+
+The easiest way to launch MyPal on Windows:
+
+**1. Double-click launcher:**
+- `MyPal.bat` (Recommended) - Opens PowerShell and runs AUTORUN.ps1
+- `MyPal.vbs` - Alternative VBScript launcher
+
+**2. Follow on-screen prompts** to select development/production mode
+
+**3. Create desktop shortcut:**
+- Right-click `MyPal.bat` → Send to → Desktop (create shortcut)
+- See [`LAUNCHER_README.md`](LAUNCHER_README.md) for advanced launcher options
+
 ### Option A: Desktop Application (Recommended)
 
 **Development Mode (PowerShell):**
@@ -84,8 +98,11 @@ npm install
 
 # 3. Launch everything (backend + Tauri shell)
 cd <pal-root>
-./AUTORUN.ps1
+.\AUTORUN.ps1
+# OR simply double-click MyPal.bat
 ```
+
+**Note:** Tauri requires Rust toolchain. See [`docs/development/TAURI_SETUP.md`](docs/development/TAURI_SETUP.md) for complete setup instructions including Rust installation.
 
 **Manual Launch (if you prefer separate terminals):**
 ```powershell
