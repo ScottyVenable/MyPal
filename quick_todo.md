@@ -11,6 +11,7 @@ Just a few notes to keep track of tasks and ideas, quick todo notes.
 - ✅ **Rust/Tauri setup documentation** - Created comprehensive TAURI_SETUP.md guide
 - ✅ **Launcher scripts** - Created MyPal.bat and MyPal.vbs for easy Windows execution
 - ✅ **Launcher documentation** - Comprehensive LAUNCHER_README.md with shortcuts and EXE conversion
+- ✅ **Requirements system** - Created requirements.json and check-requirements.ps1 with auto-validation
 
 ## 📋 Pending Tasks
 

@@ -1,0 +1,249 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "MyPal Requirements",
+  "version": "0.3.0",
+  "description": "Complete dependency requirements for MyPal desktop application development",
+  "lastUpdated": "2025-10-24",
+  "requirements": {
+    "system": {
+      "os": {
+        "windows": {
+          "minVersion": "10.0.19041",
+          "description": "Windows 10 version 2004 (build 19041) or higher"
+        },
+        "macOS": {
+          "minVersion": "10.15",
+          "description": "macOS Catalina (10.15) or higher"
+        },
+        "linux": {
+          "minVersion": "Ubuntu 20.04",
+          "description": "Ubuntu 20.04 LTS or equivalent"
+        }
+      },
+      "memory": {
+        "minimum": "4GB",
+        "recommended": "8GB"
+      },
+      "storage": {
+        "minimum": "2GB",
+        "recommended": "5GB"
+      }
+    },
+    "runtime": {
+      "node": {
+        "required": true,
+        "minVersion": "18.0.0",
+        "recommendedVersion": "20.x.x",
+        "checkCommand": "node --version",
+        "downloadUrl": "https://nodejs.org/",
+        "description": "Node.js JavaScript runtime"
+      },
+      "npm": {
+        "required": true,
+        "minVersion": "9.0.0",
+        "recommendedVersion": "10.x.x",
+        "checkCommand": "npm --version",
+        "downloadUrl": "https://nodejs.org/",
+        "description": "Node Package Manager (included with Node.js)"
+      },
+      "rust": {
+        "required": true,
+        "minVersion": "1.70.0",
+        "recommendedVersion": "1.75.0",
+        "checkCommand": "rustc --version",
+        "downloadUrl": "https://rustup.rs/",
+        "description": "Rust programming language and compiler"
+      },
+      "cargo": {
+        "required": true,
+        "minVersion": "1.70.0",
+        "checkCommand": "cargo --version",
+        "downloadUrl": "https://rustup.rs/",
+        "description": "Rust package manager (included with Rust)"
+      }
+    },
+    "buildTools": {
+      "windows": {
+        "msvc": {
+          "required": true,
+          "description": "Microsoft Visual C++ Build Tools",
+          "checkCommand": "cl.exe",
+          "alternatives": [
+            {
+              "name": "Visual Studio 2022 Build Tools",
+              "downloadUrl": "https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022",
+              "components": [
+                "Desktop development with C++",
+                "MSVC v143 - VS 2022 C++ x64/x86 build tools",
+                "Windows 10 SDK (10.0.19041.0 or later)"
+              ]
+            },
+            {
+              "name": "Visual Studio 2022 Community",
+              "downloadUrl": "https://visualstudio.microsoft.com/downloads/",
+              "components": [
+                "Desktop development with C++"
+              ]
+            }
+          ]
+        },
+        "webview2": {
+          "required": true,
+          "description": "Microsoft Edge WebView2 Runtime",
+          "checkCommand": "reg query \"HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}\" /v pv",
+          "downloadUrl": "https://developer.microsoft.com/en-us/microsoft-edge/webview2/",
+          "note": "Usually pre-installed on Windows 10/11"
+        }
+      },
+      "macOS": {
+        "xcode": {
+          "required": true,
+          "minVersion": "12.0",
+          "description": "Xcode Command Line Tools",
+          "checkCommand": "xcode-select -p",
+          "installCommand": "xcode-select --install"
+        }
+      },
+      "linux": {
+        "buildEssential": {
+          "required": true,
+          "description": "Build essential tools (gcc, g++, make)",
+          "checkCommand": "gcc --version",
+          "installCommand": "sudo apt-get install build-essential"
+        },
+        "webkitgtk": {
+          "required": true,
+          "description": "WebKitGTK for Tauri",
+          "checkCommand": "pkg-config --exists webkit2gtk-4.0",
+          "installCommand": "sudo apt-get install libwebkit2gtk-4.0-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev"
+        }
+      }
+    },
+    "npmPackages": {
+      "backend": {
+        "directory": "app/backend",
+        "packageJson": "app/backend/package.json",
+        "dependencies": {
+          "cors": "^2.8.5",
+          "dotenv": "^16.4.5",
+          "express": "^4.19.2",
+          "nanoid": "^5.0.7",
+          "bcryptjs": "^2.4.3",
+          "ws": "^8.13.0"
+        }
+      },
+      "tauri": {
+        "directory": "app/desktop/tauri-app",
+        "packageJson": "app/desktop/tauri-app/package.json",
+        "devDependencies": {
+          "@tauri-apps/cli": "^2.0.0"
+        }
+      }
+    },
+    "cargoPackages": {
+      "tauri": {
+        "directory": "app/desktop/tauri-app/src-tauri",
+        "cargoToml": "app/desktop/tauri-app/src-tauri/Cargo.toml",
+        "dependencies": {
+          "serde": "1",
+          "serde_json": "1",
+          "tauri": "2",
+          "tauri-plugin-shell": "2"
+        },
+        "buildDependencies": {
+          "tauri-build": "2"
+        }
+      }
+    }
+  },
+  "installationOrder": [
+    "runtime.node",
+    "runtime.npm",
+    "runtime.rust",
+    "runtime.cargo",
+    "buildTools",
+    "npmPackages.backend",
+    "npmPackages.tauri",
+    "cargoPackages.tauri"
+  ],
+  "verificationSteps": [
+    {
+      "name": "Node.js Installation",
+      "command": "node --version",
+      "expectedPattern": "^v(1[8-9]|[2-9]\\d)",
+      "errorMessage": "Node.js 18+ required. Download from https://nodejs.org/"
+    },
+    {
+      "name": "npm Installation",
+      "command": "npm --version",
+      "expectedPattern": "^([9-9]|\\d{2,})",
+      "errorMessage": "npm 9+ required. Update with: npm install -g npm@latest"
+    },
+    {
+      "name": "Rust Installation",
+      "command": "rustc --version",
+      "expectedPattern": "rustc 1\\.(7[0-9]|[8-9]\\d)",
+      "errorMessage": "Rust 1.70+ required. Install from https://rustup.rs/"
+    },
+    {
+      "name": "Cargo Installation",
+      "command": "cargo --version",
+      "expectedPattern": "cargo 1\\.(7[0-9]|[8-9]\\d)",
+      "errorMessage": "Cargo 1.70+ required. Install from https://rustup.rs/"
+    },
+    {
+      "name": "Backend Dependencies",
+      "command": "npm list --depth=0",
+      "workingDirectory": "app/backend",
+      "errorMessage": "Backend npm dependencies missing. Run: cd app/backend && npm install"
+    },
+    {
+      "name": "Tauri Dependencies",
+      "command": "npm list --depth=0",
+      "workingDirectory": "app/desktop/tauri-app",
+      "errorMessage": "Tauri npm dependencies missing. Run: cd app/desktop/tauri-app && npm install"
+    }
+  ],
+  "troubleshooting": {
+    "nodeNotFound": {
+      "problem": "Node.js not found in PATH",
+      "solutions": [
+        "Download and install Node.js from https://nodejs.org/",
+        "Restart terminal after installation",
+        "Verify installation: node --version"
+      ]
+    },
+    "rustNotFound": {
+      "problem": "Rust not found in PATH",
+      "solutions": [
+        "Install Rust from https://rustup.rs/",
+        "Restart terminal after installation",
+        "Verify installation: rustc --version && cargo --version",
+        "Add to PATH manually: $env:PATH += \";$env:USERPROFILE\\.cargo\\bin\""
+      ]
+    },
+    "msvcNotFound": {
+      "problem": "MSVC Build Tools not found",
+      "solutions": [
+        "Install Visual Studio Build Tools: https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022",
+        "Select 'Desktop development with C++' workload",
+        "Restart terminal after installation",
+        "Ensure rustup uses MSVC toolchain: rustup default stable-msvc"
+      ]
+    },
+    "webview2NotFound": {
+      "problem": "WebView2 Runtime not found",
+      "solutions": [
+        "Update Microsoft Edge browser",
+        "Or install WebView2 Runtime: https://developer.microsoft.com/microsoft-edge/webview2/",
+        "Restart system after installation"
+      ]
+    }
+  },
+  "documentation": {
+    "setupGuide": "docs/development/TAURI_SETUP.md",
+    "launcherGuide": "LAUNCHER_README.md",
+    "apiReference": "app/backend/README.md",
+    "projectStructure": "PROJECT_STRUCTURE.md"
+  }
+}

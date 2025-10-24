@@ -174,6 +174,134 @@ function Get-NpmExecutable {
     return $npm.Source
 }
 
+function Test-Requirement {
+    param(
+        [string]$Command,
+        [string]$Name,
+        [string]$MinVersion = $null,
+        [string]$DownloadUrl = $null
+    )
+    
+    $result = @{
+        Name = $Name
+        Installed = $false
+        Version = $null
+        Message = ""
+        DownloadUrl = $DownloadUrl
+    }
+    
+    try {
+        $output = & $Command 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -or $output) {
+            $result.Installed = $true
+            
+            # Extract version number
+            if ($output -match 'v?(\d+\.\d+\.\d+)') {
+                $result.Version = $matches[1]
+            }
+            
+            # Check minimum version if specified
+            if ($MinVersion -and $result.Version) {
+                $currentVer = [version]$result.Version
+                $minVer = [version]$MinVersion
+                
+                if ($currentVer -lt $minVer) {
+                    $result.Message = "Version $($result.Version) found, but $MinVersion+ required"
+                    $result.Installed = $false
+                } else {
+                    $result.Message = "Version $($result.Version) ✓"
+                }
+            } else {
+                $result.Message = "Installed ✓"
+            }
+        }
+    } catch {
+        $result.Installed = $false
+        $result.Message = "Not found"
+    }
+    
+    return $result
+}
+
+function Test-AllRequirements {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "  Checking System Requirements" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    $requirements = @(
+        @{ Command = "node --version"; Name = "Node.js"; MinVersion = "18.0.0"; Url = "https://nodejs.org/" }
+        @{ Command = "npm --version"; Name = "npm"; MinVersion = "9.0.0"; Url = "https://nodejs.org/" }
+        @{ Command = "rustc --version"; Name = "Rust"; MinVersion = "1.70.0"; Url = "https://rustup.rs/" }
+        @{ Command = "cargo --version"; Name = "Cargo"; MinVersion = "1.70.0"; Url = "https://rustup.rs/" }
+    )
+    
+    $allPassed = $true
+    $results = @()
+    
+    foreach ($req in $requirements) {
+        $result = Test-Requirement -Command $req.Command -Name $req.Name -MinVersion $req.MinVersion -DownloadUrl $req.Url
+        $results += $result
+        
+        $statusIcon = if ($result.Installed) { "✓" } else { "✗" }
+        $statusColor = if ($result.Installed) { "Green" } else { "Red" }
+        
+        Write-Host "  [$statusIcon] " -NoNewline -ForegroundColor $statusColor
+        Write-Host "$($result.Name): " -NoNewline -ForegroundColor White
+        Write-Host "$($result.Message)" -ForegroundColor Gray
+        
+        if (-not $result.Installed) {
+            $allPassed = $false
+            if ($result.DownloadUrl) {
+                Write-Host "      Download: $($result.DownloadUrl)" -ForegroundColor DarkYellow
+            }
+        }
+    }
+    
+    Write-Host ""
+    
+    if (-not $allPassed) {
+        Write-Host "⚠ Missing Requirements Detected" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Some required tools are not installed or need updating." -ForegroundColor Yellow
+        Write-Host "Please install the missing components before running MyPal." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Quick Setup Guide:" -ForegroundColor Cyan
+        
+        $rustMissing = $results | Where-Object { $_.Name -in @("Rust", "Cargo") -and -not $_.Installed }
+        if ($rustMissing) {
+            Write-Host "  1. Install Rust: https://rustup.rs/" -ForegroundColor White
+            Write-Host "     - Run the installer and follow prompts" -ForegroundColor DarkGray
+            Write-Host "     - Restart terminal after installation" -ForegroundColor DarkGray
+        }
+        
+        $nodeMissing = $results | Where-Object { $_.Name -in @("Node.js", "npm") -and -not $_.Installed }
+        if ($nodeMissing) {
+            Write-Host "  2. Install Node.js: https://nodejs.org/" -ForegroundColor White
+            Write-Host "     - Download LTS version (20.x recommended)" -ForegroundColor DarkGray
+            Write-Host "     - Restart terminal after installation" -ForegroundColor DarkGray
+        }
+        
+        Write-Host ""
+        Write-Host "For detailed setup instructions, see:" -ForegroundColor Cyan
+        Write-Host "  docs/development/TAURI_SETUP.md" -ForegroundColor White
+        Write-Host ""
+        
+        $continueAnyway = Read-Host "Continue anyway? [y/N]"
+        if ($continueAnyway -ne "y" -and $continueAnyway -ne "Y") {
+            Write-Host "Exiting. Please install missing requirements and try again." -ForegroundColor Yellow
+            exit 1
+        }
+        Write-Host ""
+    } else {
+        Write-Host "✓ All requirements satisfied!" -ForegroundColor Green
+        Write-Host ""
+    }
+    
+    return $allPassed
+}
+
 function Start-BackendServer {
     param(
         [string]$Directory
@@ -188,6 +316,9 @@ function Start-BackendServer {
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendDir = Join-Path $scriptRoot "app\backend"
 $tauriDir = Join-Path $scriptRoot "app\desktop\tauri-app"
+
+# Check system requirements
+Test-AllRequirements | Out-Null
 
 Ensure-NpmDependencies -Directory $backendDir
 Ensure-NpmDependencies -Directory $tauriDir
