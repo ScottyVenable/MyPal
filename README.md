@@ -53,15 +53,14 @@ MyPal is built as a **local-first, privacy-respecting** application with three m
   - [`package.json`](app/backend/package.json) — Dependencies and scripts
   - [`data/`](app/backend/data/) — Persistent storage (JSON files)
 
-### 3. **Desktop Launcher (Electron)**
-- Cross-platform desktop wrapper that bundles everything
-- Automatically starts backend and opens frontend in a native window
-- Stores user data in OS-appropriate locations (`%APPDATA%/MyPal` on Windows)
-- Windows installer generation via electron-builder
-- Location: [`launcher/`](launcher/)
-  - [`main.js`](launcher/main.js) — Electron main process
-  - [`preload.js`](launcher/preload.js) — Security boundary
-  - [`package.json`](launcher/package.json) — Build configuration
+### 3. **Desktop Shell (Tauri 2.0)**
+- Lightweight Rust + WebView shell that wraps the existing SPA
+- Reuses native backend and frontend without a heavy Chromium runtime
+- Provides system tray, window management, and packaging support
+- Location: [`app/desktop/tauri-app/`](app/desktop/tauri-app/)
+  - [`package.json`](app/desktop/tauri-app/package.json) — Tauri CLI scripts
+  - [`src-tauri/`](app/desktop/tauri-app/src-tauri/) — Rust entrypoint and config
+  - `tauri.conf.json` — Desktop build configuration
 
 For detailed architecture and implementation specs, see:
 - **[`docs/design/APP_DESIGN.md`](docs/design/APP_DESIGN.md)** — Complete system design (Sections 2-3)
@@ -73,28 +72,39 @@ For detailed architecture and implementation specs, see:
 
 ### Option A: Desktop Application (Recommended)
 
-**Development Mode:**
+**Development Mode (PowerShell):**
 ```powershell
 # 1. Install backend dependencies (one-time)
 cd <pal-root>\app\backend
 npm install
 
-# 2. Run the launcher
-cd <pal-root>\launcher
+# 2. Install Tauri CLI dependencies (one-time)
+cd <pal-root>\app\desktop\tauri-app
 npm install
+
+# 3. Launch everything (backend + Tauri shell)
+cd <pal-root>
+./AUTORUN.ps1
+```
+
+**Manual Launch (if you prefer separate terminals):**
+```powershell
+# Terminal 1: backend
+cd <pal-root>\app\backend
+npm run dev
+
+# Terminal 2: Tauri shell
+cd <pal-root>\app\desktop\tauri-app
 npm run dev
 ```
 
-**Production Installer:**
+**Production Build:**
 ```powershell
-# Build Windows installer (.exe)
-cd <pal-root>\launcher
-npm run dist
+cd <pal-root>\app\desktop\tauri-app
+npm run build
 ```
 
-Output: `launcher/dist/MyPal-Launcher-Setup-<version>.exe`
-
-See **[`launcher/README.md`](launcher/README.md)** for detailed launcher documentation.
+Output installers and bundles are emitted by Tauri under `app/desktop/tauri-app/src-tauri/target/`.
 
 ### Option B: Web Mode (Browser-Based)
 
@@ -150,7 +160,7 @@ Detailed mechanics in **[`docs/design/APP_DESIGN.md`](docs/design/APP_DESIGN.md)
 - ✅ **Brain Visualization**: Interactive network graph showing concept associations and knowledge structure
 - ✅ **Reinforcement Learning**: Click ⭐ to positively reinforce desired behaviors
 - ✅ **Data Ownership**: Export your Pal's complete memory as JSON; reset and restart anytime
-- ✅ **Desktop Launcher**: Native Windows installer; automatic backend management
+- ✅ **Desktop Shell**: Lightweight Tauri wrapper with automatic backend management
 - ✅ **Privacy-First**: All data stored locally; no telemetry unless explicitly enabled
 - ✅ **Developer Tools**: Built-in dev panel (Ctrl+D) for debugging and status checks
 
@@ -189,7 +199,7 @@ Repository root/
 ├── app/                         # Application runtime (backend + frontend)
 │   ├── backend/
 │   └── frontend/
-├── launcher/                    # Electron desktop launcher
+├── app/desktop/tauri-app/       # Tauri desktop shell
 ├── docs/                        # Design docs, plans, roadmaps
 ├── README.md                    # Project overview (this file)
 ├── REORGANIZATION_SUMMARY.md
@@ -206,7 +216,7 @@ Repository root/
 **For Users:**
 - **[`README.md`](README.md)** (this file) — Project overview and quick start
 - **[`app/README.md`](app/README.md)** — Application usage and API reference
-- **[`launcher/README.md`](launcher/README.md)** — Desktop launcher documentation
+- **[`app/desktop/README.md`](app/desktop/README.md)** — Tauri desktop shell documentation
 
 **For Developers:**
 - **[`docs/design/APP_DESIGN.md`](docs/design/APP_DESIGN.md)** — Complete 40-page technical specification with psychological theory, architecture, data models, and UI specs (REQUIRED READING)
@@ -229,8 +239,8 @@ Repository root/
 cd <pal-root>\app\backend
 npm install
 
-# Launcher
-cd <pal-root>\launcher
+# Tauri desktop shell
+cd <pal-root>\app\desktop\tauri-app
 npm install
 ```
 
@@ -285,8 +295,9 @@ See planned legal documents:
 - Verify Node.js version: `node --version` (must be 18+)
 - Check logs under `Developer Files\logs\` or `%APPDATA%/MyPal/logs/`
 
-**Launcher crashes on startup:**
-- Ensure backend dependencies are installed: `cd <pal-root>\app\backend && npm install`
+**Tauri shell fails to start:**
+- Confirm backend dependencies: `cd <pal-root>\app\backend && npm install`
+- Confirm desktop shell dependencies: `cd <pal-root>\app\desktop\tauri-app && npm install`
 - Review `Developer Files\server_err.txt` and `Developer Files\server_out.txt` for backend error logs
 
 **Pal's responses seem incorrect:**
@@ -335,7 +346,7 @@ Check back for updates or contact the maintainers for licensing questions.
 - Node.js & Express — Backend framework
 - Chart.js — Personality visualization
 - vis-network — Knowledge graph visualization
-- Electron — Desktop application wrapper
+- Tauri 2.0 — Desktop application wrapper
 - Google Gemini API — AI provider (optional)
 
 **Inspiration:**
@@ -359,7 +370,7 @@ Check back for updates or contact the maintainers for licensing questions.
 1. **[`docs/design/APP_DESIGN.md`](docs/design/APP_DESIGN.md)** — Complete system design (40+ pages)
 2. **[`docs/updates/MILESTONES.md`](docs/updates/MILESTONES.md)** — Development roadmap with technical details
 3. **[`app/README.md`](app/README.md)** — Application setup and API reference
-4. **[`launcher/README.md`](launcher/README.md)** — Desktop launcher documentation
+4. **[`app/desktop/README.md`](app/desktop/README.md)** — Tauri desktop shell documentation
 
 **Deep Dives:**
 - **AI & Models**: [`docs/ai/AI_PLAN.md`](docs/ai/AI_PLAN.md), [`docs/design/ON_DEVICE_LLM_PLAN.md`](docs/design/ON_DEVICE_LLM_PLAN.md)

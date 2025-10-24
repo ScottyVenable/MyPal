@@ -1,11 +1,12 @@
 <#
 .SYNOPSIS
-    Launches MyPal with the Electron launcher in development mode.
+    Launches MyPal with the Tauri desktop shell in development mode.
 
 .DESCRIPTION
     This script ensures all npm dependencies are installed and starts MyPal
-    using the Electron launcher. It automatically sets up data directories
-    and environment variables for development.
+    using the Tauri desktop shell. It automatically sets up data directories
+    and environment variables for development. Logs are organized into
+    date-based subdirectories for easier navigation and debugging.
 
 .PARAMETER SkipInstall
     Skip checking and installing npm dependencies. Useful for faster restarts
@@ -14,6 +15,17 @@
 .PARAMETER NoServerConsole
     Prevent the server console window from auto-opening. The console can still
     be opened manually via the system tray menu.
+
+.PARAMETER LogTimeFormat
+    Set the time format for log directory naming. Options:
+    - '12hour' (default): hh-mm-ss_AM/PM format (e.g., 02-30-45_PM)
+    - '24hour': HH-mm-ss format (e.g., 14-30-45)
+    - 'timestamp': HHmmss format (e.g., 143045)
+    - 'custom': Use CustomLogFormat parameter for custom format
+
+.PARAMETER CustomLogFormat
+    Custom PowerShell date/time format string when LogTimeFormat is 'custom'.
+    Example: 'HHmmss-fff' for millisecond precision
 
 .EXAMPLE
     .\autorun.ps1
@@ -28,16 +40,35 @@
     Launch without auto-opening the server console window.
 
 .EXAMPLE
+    .\autorun.ps1 -LogTimeFormat 24hour
+    Launch with 24-hour time format for log directories.
+
+.EXAMPLE
+    .\autorun.ps1 -LogTimeFormat custom -CustomLogFormat 'HHmmss-fff'
+    Launch with custom millisecond-precision time format.
+
+.EXAMPLE
     .\autorun.ps1 -SkipInstall -NoServerConsole
     Quick launch with no console window.
 #>
 
 param(
     [switch]$SkipInstall,
-    [switch]$NoServerConsole
+    [switch]$NoServerConsole,
+    [ValidateSet('12hour', '24hour', 'timestamp', 'custom')]
+    [string]$LogTimeFormat = '12hour',
+    [string]$CustomLogFormat = ''
 )
 
 $ErrorActionPreference = "Stop"
+
+# Log directory time format configurations
+$LogTimeFormats = @{
+    '12hour'    = 'hh-mm-ss_tt'           # 02-30-45_PM
+    '24hour'    = 'HH-mm-ss'              # 14-30-45
+    'timestamp' = 'HHmmss'                # 143045
+    'custom'    = $CustomLogFormat        # User-defined
+}
 
 function Start-LogConsole {
     param(
@@ -97,18 +128,48 @@ function Ensure-NpmDependencies {
     }
 }
 
+function Get-NpmExecutable {
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+    if ($null -eq $npm) {
+        throw "npm executable not found in PATH. Please install Node.js and ensure npm is available."
+    }
+    return $npm.Source
+}
+
+function Start-BackendServer {
+    param(
+        [string]$Directory
+    )
+
+    Write-Host "Starting MyPal backend..." -ForegroundColor Yellow
+    $backendProcess = Start-Process -FilePath "npm" -ArgumentList @("run", "dev") -WorkingDirectory $Directory -WindowStyle Hidden -PassThru
+    Start-Sleep -Seconds 1
+    return $backendProcess
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendDir = Join-Path $scriptRoot "app\backend"
-$launcherDir = Join-Path $scriptRoot "launcher"
+$tauriDir = Join-Path $scriptRoot "app\desktop\tauri-app"
 
 Ensure-NpmDependencies -Directory $backendDir
-Ensure-NpmDependencies -Directory $launcherDir
+Ensure-NpmDependencies -Directory $tauriDir
 
 # Set up data directories
 $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "dev-data"
-$env:MYPAL_LOGS_DIR = Join-Path $scriptRoot "dev-logs"
+$baseLogsDir = Join-Path $scriptRoot "dev-logs"
 $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
 $env:MYPAL_FORCE_TELEMETRY = '1'
+
+# Create timestamped log directory: dev-logs/YYYY-MM-DD/HH-MM-SS_AM-PM/
+$dateFolder = Get-Date -Format "yyyy-MM-dd"
+$timeFormat = $LogTimeFormats[$LogTimeFormat]
+if ([string]::IsNullOrWhiteSpace($timeFormat) -and $LogTimeFormat -eq 'custom') {
+    Write-Warning "Custom log format not provided. Falling back to 12hour format."
+    $timeFormat = $LogTimeFormats['12hour']
+}
+$timeFolder = Get-Date -Format $timeFormat
+$sessionLogsDir = Join-Path $baseLogsDir (Join-Path $dateFolder $timeFolder)
+$env:MYPAL_LOGS_DIR = $sessionLogsDir
 
 # Optional: Skip auto-opening server console
 if ($NoServerConsole) {
@@ -126,19 +187,21 @@ if ($NoServerConsole) {
 Clear-Host
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Starting MyPal with Electron Launcher" -ForegroundColor Cyan
+Write-Host "    Starting MyPal with Tauri Desktop    " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Features:" -ForegroundColor Yellow
 Write-Host "  - Server Console: Auto-opens to show real-time logs" -ForegroundColor White
-Write-Host "  - System Tray: Right-click tray icon for menu" -ForegroundColor White
+Write-Host "  - Tauri Shell: Lightweight WebView with native menus" -ForegroundColor White
 Write-Host "  - Background Mode: Keep server running when window closes" -ForegroundColor White
 Write-Host ""
 Write-Host "Data Directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
 Write-Host "Logs Directory: $env:MYPAL_LOGS_DIR" -ForegroundColor Gray
+Write-Host "Log Format: $LogTimeFormat" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Tip: Run '.\autorun.ps1 -NoServerConsole' to skip the console window" -ForegroundColor DarkGray
 Write-Host "Tip: Run '.\autorun.ps1 -SkipInstall' for faster restarts" -ForegroundColor DarkGray
+Write-Host "Tip: Run '.\autorun.ps1 -LogTimeFormat 24hour' for 24-hour log naming" -ForegroundColor DarkGray
 Write-Host ""
 
 # Interactive mode selection
@@ -158,7 +221,12 @@ switch ($modeChoice) {
         # Production mode
         Write-Host "`nProduction Mode Selected" -ForegroundColor Green
         $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "data"
-        $env:MYPAL_LOGS_DIR = Join-Path $scriptRoot "logs"
+        $baseLogsDir = Join-Path $scriptRoot "logs"
+        $dateFolder = Get-Date -Format "yyyy-MM-dd"
+        $timeFormat = $LogTimeFormats[$LogTimeFormat]
+        $timeFolder = Get-Date -Format $timeFormat
+        $sessionLogsDir = Join-Path $baseLogsDir (Join-Path $dateFolder $timeFolder)
+        $env:MYPAL_LOGS_DIR = $sessionLogsDir
         $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
         $env:MYPAL_FORCE_TELEMETRY = '0'
         $env:NODE_ENV = 'production'
@@ -253,7 +321,7 @@ if ($runCommands -eq "y" -or $runCommands -eq "Y") {
             } finally {
                 Pop-Location
             }
-            Push-Location $launcherDir
+            Push-Location $tauriDir
             try {
                 Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
                 npm install
@@ -293,62 +361,36 @@ if ($shouldOpenLogConsole) {
 }
 
 Write-Host ""
-Write-Host "Select frontend experience:" -ForegroundColor Cyan
-Write-Host "  [1] Legacy HTML (Electron launcher)" -ForegroundColor White
-Write-Host "  [2] Avalonia Desktop (new preview)" -ForegroundColor White
-Write-Host ""
-$frontendChoice = Read-Host "Enter choice [1-2] (press Enter for default)"
-if ([string]::IsNullOrWhiteSpace($frontendChoice)) {
-    $frontendChoice = "1"
+Write-Host "Starting services..." -ForegroundColor Cyan
+$backendProcess = $null
+try {
+    $backendProcess = Start-BackendServer -Directory $backendDir
+} catch {
+    Write-Error "Failed to start backend: $_"
+    exit 1
+}
+
+if ($shouldOpenLogConsole) {
+    Start-Sleep -Milliseconds 500
+    Write-Host "Opening live log console window..." -ForegroundColor Cyan
+    Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
 }
 
 Write-Host ""
-switch ($frontendChoice) {
-    "2" {
-        Write-Host "Launching MyPal Avalonia desktop client..." -ForegroundColor Green
-        $desktopProject = Join-Path $scriptRoot "app\desktop\MyPal.Desktop\MyPal.Desktop.csproj"
-        if (-not (Test-Path $desktopProject)) {
-            Write-Error "Avalonia project not found at $desktopProject"
-            exit 1
-        }
+Write-Host "Launching MyPal Tauri desktop (Press Ctrl+C to stop)..." -ForegroundColor Yellow
+Write-Host ""
 
-        $desktopDir = Split-Path $desktopProject -Parent
-        
-        Push-Location $desktopDir
+Push-Location $tauriDir
+try {
+    npm run dev
+} finally {
+    Pop-Location
+    if ($backendProcess -and -not $backendProcess.HasExited) {
+        Write-Host "Stopping backend..." -ForegroundColor DarkGray
         try {
-            if ($shouldOpenLogConsole) {
-                Start-Sleep -Milliseconds 500
-                Write-Host "Opening live log console window..." -ForegroundColor Cyan
-                Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
-                Start-Sleep -Milliseconds 500
-            }
-            
-            Write-Host ""
-            Write-Host "Starting Avalonia... (Press Ctrl+C to stop)" -ForegroundColor Yellow
-            Write-Host ""
-            
-            # Run dotnet in foreground so the script doesn't exit
-            dotnet run
-        } finally {
-            Pop-Location
-        }
-    }
-    default {
-        Write-Host "Launching MyPal Electron (legacy HTML frontend)..." -ForegroundColor Green
-        Write-Host "Note: Use DevTools (F12) in the Electron window for debugging" -ForegroundColor Gray
-        
-        # Start npm in current console so it stays alive
-        Push-Location $launcherDir
-        try {
-            Write-Host ""
-            Write-Host "Starting Electron... (Press Ctrl+C to stop)" -ForegroundColor Yellow
-            Write-Host ""
-            
-            # Run npm in foreground so the script doesn't exit
-            # No log console needed - Electron has built-in DevTools
-            npm run dev
-        } finally {
-            Pop-Location
+            Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
+        } catch {
+            Write-Verbose "Backend process already stopped."
         }
     }
 }

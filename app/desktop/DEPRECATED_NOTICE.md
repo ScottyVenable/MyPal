@@ -2,7 +2,7 @@
 
 **Status:** This Avalonia UI implementation has been officially deprecated as of October 23, 2025.
 
-**Reason:** After comprehensive analysis (see `AVALONIA_DEPRECATION_ANALYSIS.md`), the team has decided to migrate to Tauri 2.0 with React for superior 3D rendering capabilities, smaller bundle size, and faster development velocity.
+**Reason:** After comprehensive analysis (see [`AVALONIA_DEPRECATION_ANALYSIS.md`](../../docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md)), the team has decided to migrate to Tauri 2.0 with React/HTML for superior 3D rendering capabilities, smaller bundle size, and faster development velocity. The active Tauri desktop project now lives at `app/desktop/tauri-app` and consumes the existing `app/frontend` codebase.
 
 ---
 
@@ -78,7 +78,7 @@
 ### Full Analysis
 
 See comprehensive analysis documents:
-- **`AVALONIA_DEPRECATION_ANALYSIS.md`** - 38 KB detailed analysis
+- [`AVALONIA_DEPRECATION_ANALYSIS.md`](../../docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md) - 38 KB detailed analysis
 - **`FRAMEWORK_COMPARISON_MATRIX.md`** - Quick reference comparison
 - **`TAURI_MIGRATION_GUIDE.md`** - Implementation guide
 
@@ -108,8 +108,8 @@ See comprehensive analysis documents:
 - BrainView → BrainView.tsx
 
 **Files to Reference:**
-- `AVALONIA_DESIGN_SYSTEM.md` - Colors, typography, components
-- `AVALONIA_UI_MOCKUPS.md` - Layout specifications
+- [`AVALONIA_DESIGN_SYSTEM.md`](../../docs/archive/avalonia/AVALONIA_DESIGN_SYSTEM.md) - Colors, typography, components
+- [`AVALONIA_UI_MOCKUPS.md`](../../docs/archive/avalonia/AVALONIA_UI_MOCKUPS.md) - Layout specifications
 - `Models/BackendDtos.cs` - Convert to TypeScript interfaces
 - `Services/BackendClient.cs` - Reference for API client
 
@@ -314,16 +314,16 @@ A: Yes, it's fully functional. Tauri is the evolution path.
 ## References
 
 ### Analysis Documents (NEW)
-- [`AVALONIA_DEPRECATION_ANALYSIS.md`](../AVALONIA_DEPRECATION_ANALYSIS.md) - 38 KB comprehensive analysis
+- [`AVALONIA_DEPRECATION_ANALYSIS.md`](../../docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md) - 38 KB comprehensive analysis
 - [`FRAMEWORK_COMPARISON_MATRIX.md`](../FRAMEWORK_COMPARISON_MATRIX.md) - Quick reference tables
 - [`TAURI_MIGRATION_GUIDE.md`](../TAURI_MIGRATION_GUIDE.md) - Week-by-week implementation guide
 
 ### Original Avalonia Documentation (ARCHIVED)
-- [`AVALONIA_MIGRATION_GUIDE.md`](../AVALONIA_MIGRATION_GUIDE.md) - Original migration plan
-- [`AVALONIA_DESIGN_SYSTEM.md`](../AVALONIA_DESIGN_SYSTEM.md) - Design specs (reusable)
-- [`AVALONIA_UI_MOCKUPS.md`](../AVALONIA_UI_MOCKUPS.md) - Layout diagrams (reusable)
-- [`GPT5_CODEX_PROMPT.md`](../GPT5_CODEX_PROMPT.md) - Implementation prompt
-- [`QUICK_START_FOR_GPT5.md`](../QUICK_START_FOR_GPT5.md) - Quick reference
+- [`AVALONIA_MIGRATION_GUIDE.md`](../../docs/archive/avalonia/AVALONIA_MIGRATION_GUIDE.md) - Original migration plan
+- [`AVALONIA_DESIGN_SYSTEM.md`](../../docs/archive/avalonia/AVALONIA_DESIGN_SYSTEM.md) - Design specs (reusable)
+- [`AVALONIA_UI_MOCKUPS.md`](../../docs/archive/avalonia/AVALONIA_UI_MOCKUPS.md) - Layout diagrams (reusable)
+- [`GPT5_CODEX_PROMPT.md`](../../docs/archive/avalonia/GPT5_CODEX_PROMPT.md) - Implementation prompt
+- [`QUICK_START_FOR_GPT5.md`](../../docs/archive/avalonia/QUICK_START_FOR_GPT5.md) - Quick reference
 
 ### External Resources
 - [Tauri Documentation](https://tauri.app/v2/)

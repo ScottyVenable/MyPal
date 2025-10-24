@@ -1,0 +1,15 @@
+{
+  "name": "mypal-tauri",
+  "version": "0.3.0",
+  "private": true,
+  "description": "MyPal desktop application powered by Tauri",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "lint": "tauri lint",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

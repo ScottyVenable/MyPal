@@ -1,0 +1,15 @@
+[package]
+name = "mypal-tauri"
+version = "0.3.0"
+edition = "2021"
+authors = ["MyPal Team"]
+description = "MyPal desktop application powered by Tauri"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["wry"] }
+tauri-plugin-shell = "2"
+
+[build-dependencies]
+tauri-build = { version = "2" }

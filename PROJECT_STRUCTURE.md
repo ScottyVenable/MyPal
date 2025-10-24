@@ -11,8 +11,10 @@ MyPal/
 │   └── instructions/           # Project instructions for AI assistants
 ├── app/                        # Main application code
 │   ├── backend/               # Node.js/Express backend server
+│   ├── desktop/               # Desktop shells (Tauri)
 │   └── frontend/              # Vanilla JavaScript frontend
 ├── docs/                       # Project documentation
+│   ├── archive/               # Legacy documentation (Avalonia, etc.)
 │   ├── ai/                    # AI and LLM integration documentation
 │   ├── analysis/              # Project analysis and metrics
 │   ├── design/                # Design specifications and mockups
@@ -25,7 +27,6 @@ MyPal/
 ├── issues/                     # Issue tracking files (gitignored)
 │   ├── bugs/                  # Active bug reports
 │   └── [feature/enhancement]  # Feature and enhancement requests
-├── launcher/                   # Electron desktop wrapper
 ├── mobile/                     # React Native mobile app (in development)
 ├── scripts/                    # Automation and utility scripts
 ├── TRASH/                      # Archived/outdated files (gitignored)
@@ -57,6 +58,7 @@ MyPal/
 - **`/ai`**: AI integration, prompts, and LLM configuration
 - **`/analysis`**: Project metrics, performance analysis
 - **`/design`**: UI/UX designs, wireframes, architecture diagrams
+- **`/archive`**: Legacy documentation; `avalonia/` contains retired Avalonia guides
 - **`/development`**: Developer guides (LOGGING_GUIDE.md, AGENT.md, etc.)
 - **`/features`**: Feature specifications and implementation details
 - **`/performance_logs`**: Performance monitoring and benchmarks
@@ -77,13 +79,13 @@ MyPal/
 
 **Note**: This folder is excluded from Git to keep local development organized separately from GitHub issues.
 
-### `/launcher` - Electron Desktop Wrapper
-**Electron configuration for desktop application.**
+### `/app/desktop` - Desktop Shells
+**Tauri configuration for the desktop application.**
 
-- `main.js` - Electron main process
-- `preload.js` - Preload scripts for security
-- `package.json` - Desktop app dependencies
-- Auto-startup backend integration
+- `tauri-app/` - Active Tauri 2.0 project wrapping the SPA
+  - `package.json` - Tauri CLI scripts (`dev`, `build`, etc.)
+  - `src-tauri/` - Rust entrypoint and `tauri.conf.json`
+- `DEPRECATED_NOTICE.md` - Historical context for the former Avalonia/Electron work
 
 ### `/mobile` - React Native Mobile App (In Development)
 **Mobile application implementation (not yet complete).**
