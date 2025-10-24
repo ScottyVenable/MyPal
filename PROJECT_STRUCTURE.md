@@ -14,6 +14,7 @@ MyPal/
 │   ├── desktop/               # Desktop shells (Tauri)
 │   └── frontend/              # Vanilla JavaScript frontend
 ├── docs/                       # Project documentation
+│   ├── archive/               # Legacy documentation (Avalonia, etc.)
 │   ├── ai/                    # AI and LLM integration documentation
 │   ├── analysis/              # Project analysis and metrics
 │   ├── design/                # Design specifications and mockups
@@ -57,6 +58,7 @@ MyPal/
 - **`/ai`**: AI integration, prompts, and LLM configuration
 - **`/analysis`**: Project metrics, performance analysis
 - **`/design`**: UI/UX designs, wireframes, architecture diagrams
+- **`/archive`**: Legacy documentation; `avalonia/` contains retired Avalonia guides
 - **`/development`**: Developer guides (LOGGING_GUIDE.md, AGENT.md, etc.)
 - **`/features`**: Feature specifications and implementation details
 - **`/performance_logs`**: Performance monitoring and benchmarks

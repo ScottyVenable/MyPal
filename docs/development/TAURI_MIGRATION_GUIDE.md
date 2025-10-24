@@ -1,6 +1,6 @@
 # Tauri 2.0 Migration Implementation Guide
 
-**Companion Document to:** AVALONIA_DEPRECATION_ANALYSIS.md  
+**Companion Document to:** docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md  
 **Version:** 1.0  
 **Date:** October 23, 2025  
 **Target Timeline:** 6 weeks

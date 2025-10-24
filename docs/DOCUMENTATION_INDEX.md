@@ -30,7 +30,7 @@ This analysis produced **6 comprehensive documents** totaling **~100 KB** of str
 
 ### 2. 📊 Comprehensive Analysis
 
-**[AVALONIA_DEPRECATION_ANALYSIS.md](./AVALONIA_DEPRECATION_ANALYSIS.md)** (38 KB)
+**[AVALONIA_DEPRECATION_ANALYSIS.md](./docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md)** (38 KB)
 - Complete framework analysis (40+ pages)
 - Detailed technology comparison
 - Performance benchmarks
@@ -81,6 +81,8 @@ This analysis produced **6 comprehensive documents** totaling **~100 KB** of str
 - What to salvage
 - Historical context
 - **Best for:** Understanding Avalonia work, archival
+
+All Avalonia-specific design docs now live under [`docs/archive/avalonia/`](./docs/archive/avalonia/) for historical reference.
 
 ---
 
@@ -236,7 +238,7 @@ WEEK 6: Polish & Release
 ### For Technical Team
 1. [DEPRECATION_SUMMARY.md](./DEPRECATION_SUMMARY.md) (10 min read)
 2. [FRAMEWORK_COMPARISON_MATRIX.md](./FRAMEWORK_COMPARISON_MATRIX.md) (15 min read)
-3. [AVALONIA_DEPRECATION_ANALYSIS.md](./AVALONIA_DEPRECATION_ANALYSIS.md) (45 min read)
+3. [AVALONIA_DEPRECATION_ANALYSIS.md](./docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md) (45 min read)
 4. [TAURI_MIGRATION_GUIDE.md](./TAURI_MIGRATION_GUIDE.md) (30 min read)
 
 **Total:** 100 minutes (1.5 hours)
