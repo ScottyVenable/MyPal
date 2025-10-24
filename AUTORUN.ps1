@@ -5,7 +5,8 @@
 .DESCRIPTION
     This script ensures all npm dependencies are installed and starts MyPal
     using the Tauri desktop shell. It automatically sets up data directories
-    and environment variables for development.
+    and environment variables for development. Logs are organized into
+    date-based subdirectories for easier navigation and debugging.
 
 .PARAMETER SkipInstall
     Skip checking and installing npm dependencies. Useful for faster restarts
@@ -14,6 +15,17 @@
 .PARAMETER NoServerConsole
     Prevent the server console window from auto-opening. The console can still
     be opened manually via the system tray menu.
+
+.PARAMETER LogTimeFormat
+    Set the time format for log directory naming. Options:
+    - '12hour' (default): hh-mm-ss_AM/PM format (e.g., 02-30-45_PM)
+    - '24hour': HH-mm-ss format (e.g., 14-30-45)
+    - 'timestamp': HHmmss format (e.g., 143045)
+    - 'custom': Use CustomLogFormat parameter for custom format
+
+.PARAMETER CustomLogFormat
+    Custom PowerShell date/time format string when LogTimeFormat is 'custom'.
+    Example: 'HHmmss-fff' for millisecond precision
 
 .EXAMPLE
     .\autorun.ps1
@@ -28,16 +40,35 @@
     Launch without auto-opening the server console window.
 
 .EXAMPLE
+    .\autorun.ps1 -LogTimeFormat 24hour
+    Launch with 24-hour time format for log directories.
+
+.EXAMPLE
+    .\autorun.ps1 -LogTimeFormat custom -CustomLogFormat 'HHmmss-fff'
+    Launch with custom millisecond-precision time format.
+
+.EXAMPLE
     .\autorun.ps1 -SkipInstall -NoServerConsole
     Quick launch with no console window.
 #>
 
 param(
     [switch]$SkipInstall,
-    [switch]$NoServerConsole
+    [switch]$NoServerConsole,
+    [ValidateSet('12hour', '24hour', 'timestamp', 'custom')]
+    [string]$LogTimeFormat = '12hour',
+    [string]$CustomLogFormat = ''
 )
 
 $ErrorActionPreference = "Stop"
+
+# Log directory time format configurations
+$LogTimeFormats = @{
+    '12hour'    = 'hh-mm-ss_tt'           # 02-30-45_PM
+    '24hour'    = 'HH-mm-ss'              # 14-30-45
+    'timestamp' = 'HHmmss'                # 143045
+    'custom'    = $CustomLogFormat        # User-defined
+}
 
 function Start-LogConsole {
     param(
@@ -127,9 +158,20 @@ Ensure-NpmDependencies -Directory $tauriDir
 
 # Set up data directories
 $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "dev-data"
-$env:MYPAL_LOGS_DIR = Join-Path $scriptRoot "dev-logs"
+$baseLogsDir = Join-Path $scriptRoot "dev-logs"
 $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
 $env:MYPAL_FORCE_TELEMETRY = '1'
+
+# Create timestamped log directory: dev-logs/YYYY-MM-DD/HH-MM-SS_AM-PM/
+$dateFolder = Get-Date -Format "yyyy-MM-dd"
+$timeFormat = $LogTimeFormats[$LogTimeFormat]
+if ([string]::IsNullOrWhiteSpace($timeFormat) -and $LogTimeFormat -eq 'custom') {
+    Write-Warning "Custom log format not provided. Falling back to 12hour format."
+    $timeFormat = $LogTimeFormats['12hour']
+}
+$timeFolder = Get-Date -Format $timeFormat
+$sessionLogsDir = Join-Path $baseLogsDir (Join-Path $dateFolder $timeFolder)
+$env:MYPAL_LOGS_DIR = $sessionLogsDir
 
 # Optional: Skip auto-opening server console
 if ($NoServerConsole) {
@@ -157,9 +199,11 @@ Write-Host "  - Background Mode: Keep server running when window closes" -Foregr
 Write-Host ""
 Write-Host "Data Directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
 Write-Host "Logs Directory: $env:MYPAL_LOGS_DIR" -ForegroundColor Gray
+Write-Host "Log Format: $LogTimeFormat" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Tip: Run '.\autorun.ps1 -NoServerConsole' to skip the console window" -ForegroundColor DarkGray
 Write-Host "Tip: Run '.\autorun.ps1 -SkipInstall' for faster restarts" -ForegroundColor DarkGray
+Write-Host "Tip: Run '.\autorun.ps1 -LogTimeFormat 24hour' for 24-hour log naming" -ForegroundColor DarkGray
 Write-Host ""
 
 # Interactive mode selection
@@ -179,7 +223,12 @@ switch ($modeChoice) {
         # Production mode
         Write-Host "`nProduction Mode Selected" -ForegroundColor Green
         $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "data"
-        $env:MYPAL_LOGS_DIR = Join-Path $scriptRoot "logs"
+        $baseLogsDir = Join-Path $scriptRoot "logs"
+        $dateFolder = Get-Date -Format "yyyy-MM-dd"
+        $timeFormat = $LogTimeFormats[$LogTimeFormat]
+        $timeFolder = Get-Date -Format $timeFormat
+        $sessionLogsDir = Join-Path $baseLogsDir (Join-Path $dateFolder $timeFolder)
+        $env:MYPAL_LOGS_DIR = $sessionLogsDir
         $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
         $env:MYPAL_FORCE_TELEMETRY = '0'
         $env:NODE_ENV = 'production'

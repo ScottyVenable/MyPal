@@ -1,0 +1,63 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch MyPal Tauri (Dev)",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/app/desktop/tauri-app",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["run", "tauri", "dev"],
+            "skipFiles": ["<node_internals>/**"],
+            "env": {
+                "MYPAL_DATA_DIR": "${workspaceFolder}/dev-data",
+                "MYPAL_LOGS_DIR": "${workspaceFolder}/dev-logs",
+                "MYPAL_MODELS_DIR": "${workspaceFolder}/app/backend/models",
+                "NODE_ENV": "development",
+                "RUST_BACKTRACE": "1"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen"
+        },
+        {
+            "name": "Launch MyPal Backend Only",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/app/backend",
+            "runtimeExecutable": "npm",
+            "runtimeArgs": ["run", "dev"],
+            "skipFiles": ["<node_internals>/**"],
+            "env": {
+                "MYPAL_DATA_DIR": "${workspaceFolder}/dev-data",
+                "MYPAL_LOGS_DIR": "${workspaceFolder}/dev-logs",
+                "MYPAL_MODELS_DIR": "${workspaceFolder}/app/backend/models",
+                "NODE_ENV": "development",
+                "PORT": "31337"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "outputCapture": "std"
+        },
+        {
+            "name": "Attach to MyPal Backend",
+            "type": "node",
+            "request": "attach",
+            "port": 9229,
+            "skipFiles": ["<node_internals>/**"],
+            "restart": true,
+            "sourceMaps": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack Debug",
+            "configurations": ["Launch MyPal Backend Only", "Launch MyPal Tauri (Dev)"],
+            "stopAll": true,
+            "presentation": {
+                "hidden": false,
+                "group": "MyPal",
+                "order": 1
+            }
+        }
+    ]
+}
