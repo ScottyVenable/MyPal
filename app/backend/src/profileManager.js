@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import StorageUtil from './storageUtil.js';
 
 class ProfileManager {
   constructor(baseDataDir) {
@@ -27,23 +28,15 @@ class ProfileManager {
   }
 
   loadIndex() {
-    try {
-      const data = fs.readFileSync(this.indexPath, 'utf8');
-      return JSON.parse(data);
-    } catch (err) {
-      console.error('Failed to load profile index:', err);
-      return { profiles: [], lastUsedId: null, version: '1.0.0' };
-    }
+    return StorageUtil.readJson(this.indexPath, {
+      profiles: [],
+      lastUsedId: null,
+      version: '1.0.0'
+    });
   }
 
   saveIndex(index) {
-    try {
-      fs.writeFileSync(this.indexPath, JSON.stringify(index, null, 2), 'utf8');
-      return true;
-    } catch (err) {
-      console.error('Failed to save profile index:', err);
-      return false;
-    }
+    return StorageUtil.writeJson(this.indexPath, index);
   }
 
   generateId() {
@@ -125,7 +118,7 @@ class ProfileManager {
     try {
       for (const [filename, data] of Object.entries(initialData)) {
         const filePath = this.getProfileDataPath(id, filename);
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+        StorageUtil.writeJson(filePath, data);
       }
 
       // Add to index
@@ -166,7 +159,7 @@ class ProfileManager {
       const metadataPath = this.getProfileDataPath(p.id, 'metadata.json');
       try {
         if (fs.existsSync(metadataPath)) {
-          const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+          const metadata = StorageUtil.readJson(metadataPath);
           return {
             ...p,
             level: metadata.level || 1,
@@ -204,9 +197,9 @@ class ProfileManager {
     // Update last played
     const metadataPath = this.getProfileDataPath(profileId, 'metadata.json');
     try {
-      const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+      const metadata = StorageUtil.readJson(metadataPath);
       metadata.lastPlayedAt = Date.now();
-      fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+      StorageUtil.writeJson(metadataPath, metadata);
       
       // Update index
       index.lastUsedId = profileId;
@@ -276,15 +269,14 @@ class ProfileManager {
     }
 
     const filePath = this.getProfileDataPath(this.currentProfile, filename);
-    try {
-      if (fs.existsSync(filePath)) {
-        const data = fs.readFileSync(filePath, 'utf8');
-        return JSON.parse(data);
-      }
-    } catch (err) {
-      console.error(`Failed to load ${filename} for current profile:`, err);
+    
+    // Check for compressed version first
+    const compressedPath = filePath + '.gz';
+    if (fs.existsSync(compressedPath)) {
+      return StorageUtil.readJson(compressedPath, null, true);
     }
-    return null;
+    
+    return StorageUtil.readJson(filePath, null);
   }
 
   saveCurrentProfileData(filename, data) {
@@ -293,13 +285,19 @@ class ProfileManager {
     }
 
     const filePath = this.getProfileDataPath(this.currentProfile, filename);
-    try {
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-      return true;
-    } catch (err) {
-      console.error(`Failed to save ${filename} for current profile:`, err);
-      return false;
+    
+    // Use compression for large files (neural.json)
+    const shouldCompress = filename === 'neural.json' && StorageUtil.shouldCompress(filePath, 50);
+    
+    if (shouldCompress) {
+      // Remove old uncompressed version if it exists
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      return StorageUtil.writeJson(filePath, data, true);
     }
+    
+    return StorageUtil.writeJson(filePath, data);
   }
 
   updateProfileMetadata(updates) {
@@ -315,7 +313,10 @@ class ProfileManager {
     Object.assign(metadata, updates);
     metadata.lastPlayedAt = Date.now();
 
-    return this.saveCurrentProfileData('metadata.json', metadata);
+    return StorageUtil.writeJson(
+      this.getProfileDataPath(this.currentProfile, 'metadata.json'),
+      metadata
+    );
   }
 
   // Get path to current profile's data file
