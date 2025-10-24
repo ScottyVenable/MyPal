@@ -70,6 +70,44 @@ $LogTimeFormats = @{
     'custom'    = $CustomLogFormat        # User-defined
 }
 
+function Remove-EmptyLogDirectories {
+    param(
+        [string]$RootPath
+    )
+    
+    if (-not (Test-Path $RootPath)) {
+        return
+    }
+    
+    Write-Host "Cleaning empty log directories in: $RootPath" -ForegroundColor DarkGray
+    
+    $removed = 0
+    # Get all directories recursively, deepest first
+    Get-ChildItem -Path $RootPath -Directory -Recurse -Force | 
+        Sort-Object { $_.FullName.Length } -Descending | 
+        ForEach-Object {
+            # Check if directory is empty (no files and no subdirectories)
+            $hasFiles = (Get-ChildItem -Path $_.FullName -File -Force -ErrorAction SilentlyContinue).Count -gt 0
+            $hasSubDirs = (Get-ChildItem -Path $_.FullName -Directory -Force -ErrorAction SilentlyContinue).Count -gt 0
+            
+            if (-not $hasFiles -and -not $hasSubDirs) {
+                try {
+                    Remove-Item -Path $_.FullName -Force -ErrorAction Stop
+                    $removed++
+                    Write-Host "  Removed empty: $($_.FullName)" -ForegroundColor DarkGray
+                } catch {
+                    Write-Host "  Failed to remove: $($_.FullName) - $($_.Exception.Message)" -ForegroundColor DarkYellow
+                }
+            }
+        }
+    
+    if ($removed -gt 0) {
+        Write-Host "Cleaned $removed empty log director$(if($removed -eq 1){'y'}else{'ies'})" -ForegroundColor Green
+    } else {
+        Write-Host "No empty log directories found" -ForegroundColor DarkGray
+    }
+}
+
 function Start-LogConsole {
     param(
         [string]$LogFile,
@@ -184,6 +222,12 @@ if ($NoServerConsole) {
         New-Item -ItemType Directory -Path $_ -Force | Out-Null
     }
 }
+
+# Clean up empty log directories
+Write-Host ""
+Remove-EmptyLogDirectories -RootPath $baseLogsDir
+Write-Host ""
+
 Clear-Host
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan

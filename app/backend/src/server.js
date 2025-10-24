@@ -4462,7 +4462,22 @@ function updatePersonalityFromInteraction(state, userText) {
 }
 
 const app = express();
-app.use(cors());
+
+// CORS configuration - allow requests from Tauri desktop app and browser
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Electron, Tauri, or curl requests)
+    // Also allow localhost and Tauri custom protocols
+    if (!origin || origin.startsWith('tauri://') || origin.startsWith('http://localhost')) {
+      callback(null, true);
+    } else {
+      callback(null, true); // For now, allow all origins (can restrict later)
+    }
+  },
+  credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '1mb' }));
 
 // Request logging middleware

@@ -12,4 +12,4 @@ tauri = { version = "2", features = ["wry"] }
 tauri-plugin-shell = "2"
 
 [build-dependencies]
-tauri-build = { version = "2" }
+tauri-build = { version = "2", features = [] }
