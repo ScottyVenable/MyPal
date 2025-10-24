@@ -1,4 +1,5 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "MyPal",
   "version": "0.3.0",
   "identifier": "com.mypal.app",
@@ -6,7 +7,7 @@
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
     "devUrl": "tauri://localhost",
-    "distDir": "../../../frontend"
+    "frontendDist": "../../../frontend"
   },
   "app": {
     "withGlobalTauri": true,
@@ -27,11 +28,12 @@
   },
   "bundle": {
     "active": true,
-    "identifier": "com.mypal.app",
     "targets": ["msi", "appimage", "dmg"],
     "icon": []
   },
   "plugins": {
-    "shell": {}
+    "shell": {
+      "open": true
+    }
   }
 }
