@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Launches MyPal with the Electron launcher in development mode.
+    Launches MyPal with the Tauri desktop shell in development mode.
 
 .DESCRIPTION
     This script ensures all npm dependencies are installed and starts MyPal
-    using the Electron launcher. It automatically sets up data directories
+    using the Tauri desktop shell. It automatically sets up data directories
     and environment variables for development.
 
 .PARAMETER SkipInstall
@@ -90,19 +90,40 @@ function Ensure-NpmDependencies {
         Write-Host "Installing npm dependencies in $Directory..."
         Push-Location $Directory
         try {
-            npm install | Write-Output
+            $npmPath = Get-NpmExecutable
+            & $npmPath install | Write-Output
         } finally {
             Pop-Location
         }
     }
 }
 
+function Get-NpmExecutable {
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+    if ($null -eq $npm) {
+        throw "npm executable not found in PATH. Please install Node.js and ensure npm is available."
+    }
+    return $npm.Source
+}
+
+function Start-BackendServer {
+    param(
+        [string]$Directory
+    )
+
+    $npmPath = Get-NpmExecutable
+    Write-Host "Starting MyPal backend..." -ForegroundColor Yellow
+    $backendProcess = Start-Process -FilePath $npmPath -ArgumentList @("run", "dev") -WorkingDirectory $Directory -WindowStyle Hidden -PassThru
+    Start-Sleep -Seconds 1
+    return $backendProcess
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendDir = Join-Path $scriptRoot "app\backend"
-$launcherDir = Join-Path $scriptRoot "launcher"
+$tauriDir = Join-Path $scriptRoot "app\desktop\tauri-app"
 
 Ensure-NpmDependencies -Directory $backendDir
-Ensure-NpmDependencies -Directory $launcherDir
+Ensure-NpmDependencies -Directory $tauriDir
 
 # Set up data directories
 $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "dev-data"
@@ -126,12 +147,12 @@ if ($NoServerConsole) {
 Clear-Host
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Starting MyPal with Electron Launcher" -ForegroundColor Cyan
+Write-Host "    Starting MyPal with Tauri Desktop    " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Features:" -ForegroundColor Yellow
 Write-Host "  - Server Console: Auto-opens to show real-time logs" -ForegroundColor White
-Write-Host "  - System Tray: Right-click tray icon for menu" -ForegroundColor White
+Write-Host "  - Tauri Shell: Lightweight WebView with native menus" -ForegroundColor White
 Write-Host "  - Background Mode: Keep server running when window closes" -ForegroundColor White
 Write-Host ""
 Write-Host "Data Directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
@@ -249,14 +270,16 @@ if ($runCommands -eq "y" -or $runCommands -eq "Y") {
             Push-Location $backendDir
             try {
                 Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-                npm install
+                $npmPath = Get-NpmExecutable
+                & $npmPath install
             } finally {
                 Pop-Location
             }
-            Push-Location $launcherDir
+            Push-Location $tauriDir
             try {
                 Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-                npm install
+                $npmPath = Get-NpmExecutable
+                & $npmPath install
             } finally {
                 Pop-Location
             }
@@ -266,7 +289,8 @@ if ($runCommands -eq "y" -or $runCommands -eq "Y") {
             Write-Host "Running tests..." -ForegroundColor Yellow
             Push-Location $backendDir
             try {
-                npm test
+                $npmPath = Get-NpmExecutable
+                & $npmPath test
             } finally {
                 Pop-Location
             }
@@ -293,62 +317,37 @@ if ($shouldOpenLogConsole) {
 }
 
 Write-Host ""
-Write-Host "Select frontend experience:" -ForegroundColor Cyan
-Write-Host "  [1] Legacy HTML (Electron launcher)" -ForegroundColor White
-Write-Host "  [2] Avalonia Desktop (new preview)" -ForegroundColor White
-Write-Host ""
-$frontendChoice = Read-Host "Enter choice [1-2] (press Enter for default)"
-if ([string]::IsNullOrWhiteSpace($frontendChoice)) {
-    $frontendChoice = "1"
+Write-Host "Starting services..." -ForegroundColor Cyan
+$backendProcess = $null
+try {
+    $backendProcess = Start-BackendServer -Directory $backendDir
+} catch {
+    Write-Error "Failed to start backend: $_"
+    exit 1
+}
+
+if ($shouldOpenLogConsole) {
+    Start-Sleep -Milliseconds 500
+    Write-Host "Opening live log console window..." -ForegroundColor Cyan
+    Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
 }
 
 Write-Host ""
-switch ($frontendChoice) {
-    "2" {
-        Write-Host "Launching MyPal Avalonia desktop client..." -ForegroundColor Green
-        $desktopProject = Join-Path $scriptRoot "app\desktop\MyPal.Desktop\MyPal.Desktop.csproj"
-        if (-not (Test-Path $desktopProject)) {
-            Write-Error "Avalonia project not found at $desktopProject"
-            exit 1
-        }
+Write-Host "Launching MyPal Tauri desktop (Press Ctrl+C to stop)..." -ForegroundColor Yellow
+Write-Host ""
 
-        $desktopDir = Split-Path $desktopProject -Parent
-        
-        Push-Location $desktopDir
+$npmPath = Get-NpmExecutable
+Push-Location $tauriDir
+try {
+    & $npmPath run dev
+} finally {
+    Pop-Location
+    if ($backendProcess -and -not $backendProcess.HasExited) {
+        Write-Host "Stopping backend..." -ForegroundColor DarkGray
         try {
-            if ($shouldOpenLogConsole) {
-                Start-Sleep -Milliseconds 500
-                Write-Host "Opening live log console window..." -ForegroundColor Cyan
-                Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
-                Start-Sleep -Milliseconds 500
-            }
-            
-            Write-Host ""
-            Write-Host "Starting Avalonia... (Press Ctrl+C to stop)" -ForegroundColor Yellow
-            Write-Host ""
-            
-            # Run dotnet in foreground so the script doesn't exit
-            dotnet run
-        } finally {
-            Pop-Location
-        }
-    }
-    default {
-        Write-Host "Launching MyPal Electron (legacy HTML frontend)..." -ForegroundColor Green
-        Write-Host "Note: Use DevTools (F12) in the Electron window for debugging" -ForegroundColor Gray
-        
-        # Start npm in current console so it stays alive
-        Push-Location $launcherDir
-        try {
-            Write-Host ""
-            Write-Host "Starting Electron... (Press Ctrl+C to stop)" -ForegroundColor Yellow
-            Write-Host ""
-            
-            # Run npm in foreground so the script doesn't exit
-            # No log console needed - Electron has built-in DevTools
-            npm run dev
-        } finally {
-            Pop-Location
+            Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
+        } catch {
+            Write-Verbose "Backend process already stopped."
         }
     }
 }

@@ -14,11 +14,11 @@
 
 ## PROJECT OVERVIEW
 
-### Core Concept
-MyPal ("Pal") is an evolving AI companion that starts as a digital *tabula rasa* and learns exclusively from user interactions. It progresses through authentic developmental stages from infancy (babbling) to childhood (complex reasoning), with all knowledge, personality, and capabilities shaped solely by the user acting as teacher/mentor.
-
-### Philosophical Foundation
-- **Piaget's Constructivism**: Knowledge built through assimilation/accommodation processes
+**Desktop App (Tauri)**:
+  - Check Tauri CLI/runtime versions (`tauri -V`)
+  - Ensure backend dev server is running before launching shell
+  - Verify `tauri.conf.json` app URL and distDir paths
+  - Validate plugin permissions (shell, tray) per platform
 - **Vygotsky's Sociocultural Theory**: Learning occurs within Zone of Proximal Development (ZPD)
 - **User as MKO**: User acts as "More Knowledgeable Other" providing scaffolding
 - **Privacy-First**: All data stored locally, no telemetry, complete user ownership
@@ -34,8 +34,8 @@ MyPal ("Pal") is an evolving AI companion that starts as a digital *tabula rasa*
 │ - Chart.js graphs  │ - WebSocket realtime   │ - Profile mgmt│
 │ - vis-network      │ - Dev constraints      │ - XP/CP system│
 ├─────────────────────────────────────────────────────────────┤
-│                Launcher (Electron)                         │
-│ - launcher/ - Desktop wrapper with auto backend startup    │
+│            Desktop Shell (Tauri 2.0)                       │
+│ - app/desktop/tauri-app - Lightweight shell around the SPA │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,7 +43,7 @@ MyPal ("Pal") is an evolving AI companion that starts as a digital *tabula rasa*
 - **Frontend**: Vanilla JavaScript ES6+ with Chart.js and vis-network
 - **Backend**: Node.js/Express with WebSocket support
 - **Database**: JSON file-based storage with SQLite consideration for future
-- **Desktop Wrapper**: Electron for cross-platform desktop deployment
+- **Desktop Shell**: Tauri 2.0 for cross-platform desktop deployment
 - **Real-time**: WebSocket for neural network visualization
 - **State Management**: Local storage and in-memory state synchronization
 
@@ -70,16 +70,16 @@ MyPal ("Pal") is an evolving AI companion that starts as a digital *tabula rasa*
    ```
 
 2. **Install Dependencies**:
-   ```bash
-   # Backend dependencies
-   cd app/backend
-   npm install
-   
-   # Launcher dependencies (for desktop app)
-   cd ../../launcher
-   npm install
-   cd ..
-   ```
+  ```bash
+  # Backend dependencies
+  cd app/backend
+  npm install
+
+  # Desktop shell dependencies (Tauri)
+  cd ../desktop/tauri-app
+  npm install
+  cd ../../..
+  ```
 
 3. **Development Tools Configuration**:
    - Install recommended VS Code extensions
@@ -161,7 +161,7 @@ MyPal/
 │       ├── app.js                  # Main client logic (3000+ lines)
 │       ├── index.html              # UI structure
 │       └── styles.css              # Styling
-├── launcher/                       # Electron desktop wrapper
+├── app/desktop/tauri-app/          # Tauri desktop shell project
 ├── docs/                          # Comprehensive documentation
 └── patches/                       # Bug fixes and updates
 ```
@@ -825,16 +825,17 @@ cd MyPal
 cd app/backend
 npm install
 
-# Launcher dependencies (for desktop app)
-cd ../../launcher
+# Desktop shell dependencies (Tauri)
+cd ../desktop/tauri-app
 npm install
 
-# Start development server
-cd ../app/backend
-npm start  # Starts on localhost:3001
+# Start backend (terminal 1)
+cd app/backend
+npm run dev  # Starts on http://localhost:3001
 
-# Open frontend
-# Navigate to app/frontend/index.html in browser
+# Start desktop shell (terminal 2)
+cd app/desktop/tauri-app
+npm run dev
 ```
 
 ### Production Considerations
@@ -1009,7 +1010,7 @@ async function saveMultipleCollections(profileId, collections) {
   rm -rf node_modules package-lock.json
   npm install
   
-  cd ../../launcher  
+  cd ../desktop/tauri-app
   rm -rf node_modules package-lock.json
   npm install
   ```
@@ -1032,7 +1033,7 @@ async function saveMultipleCollections(profileId, collections) {
 ```bash
 # Solution: Install dependencies
 cd app/backend && npm install
-cd ../../launcher && npm install
+cd app/desktop/tauri-app && npm install
 ```
 
 #### 2. Port 3001 already in use

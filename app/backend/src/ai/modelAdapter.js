@@ -3,8 +3,8 @@
  * Supports: Ollama (local), OpenAI, Azure OpenAI, Google Gemini, and local-only fallback
  */
 
-const http = require('http');
-const https = require('https');
+import http from 'http';
+import https from 'https';
 
 class ModelAdapter {
   constructor(config = {}) {
@@ -249,4 +249,5 @@ class ModelAdapter {
   }
 }
 
-module.exports = ModelAdapter;
+export default ModelAdapter;
+

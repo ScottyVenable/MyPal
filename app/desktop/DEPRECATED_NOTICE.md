@@ -2,7 +2,7 @@
 
 **Status:** This Avalonia UI implementation has been officially deprecated as of October 23, 2025.
 
-**Reason:** After comprehensive analysis (see `AVALONIA_DEPRECATION_ANALYSIS.md`), the team has decided to migrate to Tauri 2.0 with React for superior 3D rendering capabilities, smaller bundle size, and faster development velocity.
+**Reason:** After comprehensive analysis (see `AVALONIA_DEPRECATION_ANALYSIS.md`), the team has decided to migrate to Tauri 2.0 with React/HTML for superior 3D rendering capabilities, smaller bundle size, and faster development velocity. The active Tauri desktop project now lives at `app/desktop/tauri-app` and consumes the existing `app/frontend` codebase.
 
 ---
 

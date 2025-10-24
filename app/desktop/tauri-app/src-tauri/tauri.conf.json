@@ -1,0 +1,37 @@
+{
+  "productName": "MyPal",
+  "version": "0.3.0",
+  "identifier": "com.mypal.app",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devUrl": "tauri://localhost",
+    "distDir": "../../../frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "MyPal",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "assetProtocol": {
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "identifier": "com.mypal.app",
+    "targets": ["msi", "appimage", "dmg"],
+    "icon": []
+  },
+  "plugins": {
+    "shell": {}
+  }
+}
