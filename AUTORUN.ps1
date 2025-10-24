@@ -138,7 +138,7 @@ function Start-LogConsole {
         -ArgumentList "-NoExit", "-Command", $commandScript | Out-Null
 }
 
-function Ensure-NpmDependencies {
+function Initialize-NpmDependencies {
     param(
         [string]$Directory
     )
@@ -209,10 +209,10 @@ function Test-Requirement {
                     $result.Message = "Version $($result.Version) found, but $MinVersion+ required"
                     $result.Installed = $false
                 } else {
-                    $result.Message = "Version $($result.Version) ✓"
+                    $result.Message = "Version $($result.Version) [OK]"
                 }
             } else {
-                $result.Message = "Installed ✓"
+                $result.Message = "Installed"
             }
         }
     } catch {
@@ -244,7 +244,7 @@ function Test-AllRequirements {
         $result = Test-Requirement -Command $req.Command -Name $req.Name -MinVersion $req.MinVersion -DownloadUrl $req.Url
         $results += $result
         
-        $statusIcon = if ($result.Installed) { "✓" } else { "✗" }
+        $statusIcon = if ($result.Installed) { "[SUCCESS]" } else { "[FAILED]" }
         $statusColor = if ($result.Installed) { "Green" } else { "Red" }
         
         Write-Host "  [$statusIcon] " -NoNewline -ForegroundColor $statusColor
@@ -262,7 +262,7 @@ function Test-AllRequirements {
     Write-Host ""
     
     if (-not $allPassed) {
-        Write-Host "⚠ Missing Requirements Detected" -ForegroundColor Yellow
+        Write-Host "!! Missing Requirements Detected !!" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "Some required tools are not installed or need updating." -ForegroundColor Yellow
         Write-Host "Please install the missing components before running MyPal." -ForegroundColor Yellow
@@ -295,7 +295,7 @@ function Test-AllRequirements {
         }
         Write-Host ""
     } else {
-        Write-Host "✓ All requirements satisfied!" -ForegroundColor Green
+        Write-Host "[OK] All requirements satisfied!" -ForegroundColor Green
         Write-Host ""
     }
     
@@ -320,8 +320,8 @@ $tauriDir = Join-Path $scriptRoot "app\desktop\tauri-app"
 # Check system requirements
 Test-AllRequirements | Out-Null
 
-Ensure-NpmDependencies -Directory $backendDir
-Ensure-NpmDependencies -Directory $tauriDir
+Initialize-NpmDependencies -Directory $backendDir
+Initialize-NpmDependencies -Directory $tauriDir
 
 # Set up data directories
 $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "dev-data"
