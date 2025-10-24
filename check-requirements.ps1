@@ -83,23 +83,23 @@ function Test-Command {
                     
                     if ($currentVer -ge $minVer) {
                         $result.MeetsMinimum = $true
-                        $result.Message = "✓ v$($result.Version)"
+                        $result.Message = "[OK] v$($result.Version)"
                     } else {
-                        $result.Message = "✗ v$($result.Version) (need $MinVersion+)"
+                        $result.Message = "[X] v$($result.Version) (need $MinVersion+)"
                         $result.Installed = $false
                     }
                 } catch {
-                    $result.Message = "✓ Installed"
+                    $result.Message = "[OK] Installed"
                     $result.MeetsMinimum = $true
                 }
             } else {
-                $result.Message = "✓ Installed"
+                $result.Message = "[OK] Installed"
                 $result.MeetsMinimum = $true
             }
         }
     } catch {
         $result.Installed = $false
-        $result.Message = "✗ Not found"
+        $result.Message = "[X] Not found"
     }
     
     return $result
@@ -123,7 +123,7 @@ function Test-NpmPackages {
     $nodeModules = Join-Path $Directory "node_modules"
     
     if (-not (Test-Path $packageJson)) {
-        $result.Message = "✗ package.json not found"
+        $result.Message = "[X] package.json not found"
         return $result
     }
     
@@ -134,21 +134,21 @@ function Test-NpmPackages {
             Pop-Location
             
             # Count installed packages
-            $result.PackageCount = ([regex]::Matches($packages, "─ ")).Count
+            $result.PackageCount = ([regex]::Matches($packages, "-- ")).Count
             
             if ($LASTEXITCODE -eq 0) {
                 $result.Installed = $true
-                $result.Message = "✓ $($result.PackageCount) packages"
+                $result.Message = "[OK] $($result.PackageCount) packages"
             } else {
                 # Some packages installed but there are issues
                 $result.Installed = $false
-                $result.Message = "⚠ Issues detected (run npm install)"
+                $result.Message = "[!] Issues detected (run npm install)"
             }
         } catch {
-            $result.Message = "⚠ Unable to verify"
+            $result.Message = "[!] Unable to verify"
         }
     } else {
-        $result.Message = "✗ Not installed (run npm install)"
+        $result.Message = "[X] Not installed (run npm install)"
     }
     
     return $result
@@ -212,7 +212,7 @@ $npmResults += Test-NpmPackages -Directory $backendDir -Name "Backend"
 $npmResults += Test-NpmPackages -Directory $tauriDir -Name "Tauri CLI"
 
 foreach ($result in $npmResults) {
-    $statusColor = if ($result.Installed) { "Green" } elseif ($result.Message -like "*⚠*") { "Yellow" } else { "Red" }
+    $statusColor = if ($result.Installed) { "Green" } elseif ($result.Message -like "*[!]*") { "Yellow" } else { "Red" }
     
     Write-Host "  $($result.Name):" -NoNewline -ForegroundColor White
     Write-Host (" " * (20 - $result.Name.Length)) -NoNewline
@@ -232,7 +232,7 @@ Write-Host ""
 # Summary and recommendations
 if ($allPassed) {
     Write-Host "========================================" -ForegroundColor Green
-    Write-Host "  ✓ All Requirements Satisfied!" -ForegroundColor Green
+    Write-Host "  [OK] All Requirements Satisfied!" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "You're ready to run MyPal! Launch with:" -ForegroundColor Cyan
@@ -241,7 +241,7 @@ if ($allPassed) {
     Write-Host ""
 } else {
     Write-Host "========================================" -ForegroundColor Yellow
-    Write-Host "  ⚠ Missing Requirements Detected" -ForegroundColor Yellow
+    Write-Host "  [!] Missing Requirements Detected" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host ""
     
@@ -252,9 +252,9 @@ if ($allPassed) {
     if ($missingRuntime) {
         Write-Host "Missing Runtime Components:" -ForegroundColor Cyan
         foreach ($item in $missingRuntime) {
-            Write-Host "  • $($item.Name)" -ForegroundColor White
+            Write-Host "  * $($item.Name)" -ForegroundColor White
             if ($item.DownloadUrl) {
-                Write-Host "    → $($item.DownloadUrl)" -ForegroundColor Gray
+                Write-Host "    -> $($item.DownloadUrl)" -ForegroundColor Gray
             }
         }
         Write-Host ""
@@ -263,8 +263,8 @@ if ($allPassed) {
     if ($missingNpm) {
         Write-Host "Missing npm Dependencies:" -ForegroundColor Cyan
         foreach ($item in $missingNpm) {
-            Write-Host "  • $($item.Name)" -ForegroundColor White
-            Write-Host "    → cd $($item.Path) && npm install" -ForegroundColor Gray
+            Write-Host "  * $($item.Name)" -ForegroundColor White
+            Write-Host "    -> cd $($item.Path) && npm install" -ForegroundColor Gray
         }
         Write-Host ""
         
@@ -282,7 +282,7 @@ if ($allPassed) {
                 }
             }
             
-            Write-Host "✓ npm dependencies installed!" -ForegroundColor Green
+            Write-Host "[OK] npm dependencies installed!" -ForegroundColor Green
             Write-Host ""
         }
     }
