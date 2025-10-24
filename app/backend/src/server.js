@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import util from 'util';
 import { WebSocketServer } from 'ws';
 import ProfileManager from './profileManager.js';
+import StorageUtil from './storageUtil.js';
 import ModelAdapter from './ai/modelAdapter.js';
 import PromptBuilder from './ai/promptBuilder.js';
 
@@ -257,14 +258,7 @@ const files = {
 };
 
 function readJson(file, fallback) {
-  try {
-    if (!fs.existsSync(file)) return fallback;
-    const text = fs.readFileSync(file, 'utf8');
-    return JSON.parse(text || 'null') ?? fallback;
-  } catch (e) {
-    console.error('readJson error', file, e);
-    return fallback;
-  }
+  return StorageUtil.readJson(file, fallback);
 }
 
 function writeJson(file, data) {
@@ -274,7 +268,7 @@ function writeJson(file, data) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    return StorageUtil.writeJson(file, data);
   } catch (error) {
     console.error('Error writing JSON file:', file, error);
     throw error; // Re-throw so callers can handle it

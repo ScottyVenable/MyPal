@@ -1,15 +1,1 @@
-[
-  {
-    "id": "d4Rqw1SCEDoGHu2nHE09n",
-    "role": "user",
-    "text": "Hello Pal, how are you?",
-    "ts": 1761065577596
-  },
-  {
-    "id": "mPNqeIXy0uAMGw3RMcz88",
-    "role": "pal",
-    "text": "mm",
-    "kind": "nascent-awareness",
-    "ts": 1761065577596
-  }
-]
+[{"id":"d4Rqw1SCEDoGHu2nHE09n","role":"user","text":"Hello Pal, how are you?","ts":1761065577596},{"id":"mPNqeIXy0uAMGw3RMcz88","role":"pal","text":"mm","kind":"nascent-awareness","ts":1761065577596}]
