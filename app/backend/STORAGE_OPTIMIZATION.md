@@ -112,6 +112,52 @@ const savings = DataOptimizer.calculateSavings(original, optimized);
 console.log(`Saved ${savings.percent}%`);
 ```
 
+### LazyLoader API
+
+```javascript
+import LazyLoader, { getLazyLoader } from './lazyLoader.js';
+
+// Create a new loader or use singleton
+const loader = getLazyLoader();
+
+// Register data sources for lazy loading
+loader.register('neuralNetwork', () => {
+  // Load neural network from file
+  return StorageUtil.readJson('neural.json.gz', null, true);
+}, {
+  estimatedSize: 25 * 1024, // 25KB
+  ttl: 60000, // 60 second cache
+  priority: 1
+});
+
+// Load data (from cache or source)
+const network = await loader.load('neuralNetwork');
+
+// Load synchronously if needed
+const networkSync = loader.loadSync('neuralNetwork');
+
+// Preload data into cache
+await loader.preload('neuralNetwork');
+
+// Check if cached
+if (loader.isCached('neuralNetwork')) {
+  console.log('Data is in cache');
+}
+
+// Get cache statistics
+const stats = loader.getStats();
+console.log(`Cache: ${stats.cachedItems} items, ${stats.cacheSize} bytes`);
+
+// Evict specific item
+loader.evict('neuralNetwork');
+
+// Clear all cache
+loader.clear();
+
+// Set cache size limit
+loader.setMaxCacheSize(10 * 1024 * 1024); // 10MB
+```
+
 ## Migration
 
 ### Migrating Existing Data
@@ -196,21 +242,28 @@ Run the test suite:
 
 ```bash
 cd app/backend
-npm test tests/storageUtil.test.js      # Storage utility tests
-npm test tests/dataOptimizer.test.js    # Data optimizer tests
-npm test                                 # All tests
+npm test tests/storageUtil.test.js      # Storage utility tests (13 tests)
+npm test tests/dataOptimizer.test.js    # Data optimizer tests (8 tests)
+npm test tests/lazyLoader.test.js       # Lazy loader tests (13 tests)
+npm test tests/chat.test.js             # Chat functionality tests (2 tests)
+npm test                                 # All tests (36 tests)
 ```
 
 Test coverage:
-- ✅ Minified JSON read/write
+- ✅ Minified JSON read/write (13 tests)
 - ✅ Compression/decompression
 - ✅ File size calculations
 - ✅ Migration operations
-- ✅ Vocabulary deduplication
+- ✅ Vocabulary deduplication (8 tests)
 - ✅ Memory optimization
 - ✅ Profile optimization
 - ✅ Data restoration
+- ✅ Lazy loading and caching (13 tests)
+- ✅ LRU eviction
+- ✅ TTL expiration
+- ✅ Cache management
 - ✅ Backward compatibility
+- ✅ Chat endpoint integration (2 tests)
 
 ## Troubleshooting
 
@@ -235,8 +288,12 @@ If data appears corrupted:
 
 ## Future Enhancements
 
-Planned optimizations:
-- [ ] Lazy loading for neural network regions
+Phase 3 features implemented:
+- ✅ Lazy loading for neural network regions
+- ✅ LRU cache with configurable size limits
+- ✅ Automatic cache eviction and memory management
+
+Additional planned optimizations:
 - [ ] Pagination for chat log retrieval  
 - [ ] Indexed access for memory lookups
 - [ ] Incremental compression updates
