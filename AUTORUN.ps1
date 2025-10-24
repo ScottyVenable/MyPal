@@ -57,10 +57,49 @@ param(
     [switch]$NoServerConsole,
     [ValidateSet('12hour', '24hour', 'timestamp', 'custom')]
     [string]$LogTimeFormat = '12hour',
-    [string]$CustomLogFormat = ''
+    [string]$CustomLogFormat = '',
+    [switch]$CheckRequirementsOnly
 )
 
 $ErrorActionPreference = "Stop"
+
+# Refresh PATH from system environment variables to include newly installed tools
+Write-Host "Refreshing environment variables..." -ForegroundColor DarkGray
+$machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+$userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+if ($machinePath -and $userPath) {
+    $env:Path = "$machinePath;$userPath"
+}
+
+# Ensure common developer tool paths are available in this session
+function Add-PathIfExists {
+    param([string[]]$Paths)
+    
+    if (-not $Paths) { return }
+    
+    $currentPaths = $env:PATH -split ';'
+    
+    foreach ($path in $Paths) {
+        if ([string]::IsNullOrWhiteSpace($path)) { continue }
+        
+        $expandedPath = [Environment]::ExpandEnvironmentVariables($path)
+        if (Test-Path $expandedPath) {
+            $alreadyPresent = $currentPaths | Where-Object { $_.TrimEnd('\') -ieq $expandedPath.TrimEnd('\') }
+            if (-not $alreadyPresent) {
+                $env:PATH = "$expandedPath;$env:PATH"
+                $currentPaths += $expandedPath
+            }
+        }
+    }
+}
+
+# Rust installer typically drops tools in %USERPROFILE%\.cargo\bin
+# Node.js is typically in Program Files\nodejs
+Add-PathIfExists -Paths @(
+    "$env:USERPROFILE\.cargo\bin",
+    "$env:ProgramFiles\nodejs",
+    "${env:ProgramFiles(x86)}\nodejs"
+)
 
 # Log directory time format configurations
 $LogTimeFormats = @{
@@ -191,7 +230,12 @@ function Test-Requirement {
     }
     
     try {
-        $output = & $Command 2>&1 | Out-String
+        $commandToRun = $Command
+        if ($Command -is [string]) {
+            $commandToRun = [ScriptBlock]::Create($Command)
+        }
+
+        $output = & $commandToRun 2>&1 | Out-String
         if ($LASTEXITCODE -eq 0 -or $output) {
             $result.Installed = $true
             
@@ -319,6 +363,11 @@ $tauriDir = Join-Path $scriptRoot "app\desktop\tauri-app"
 
 # Check system requirements
 Test-AllRequirements | Out-Null
+
+if ($CheckRequirementsOnly) {
+    Write-Host "Requirement check completed (CheckRequirementsOnly flag supplied)." -ForegroundColor Cyan
+    return
+}
 
 Initialize-NpmDependencies -Directory $backendDir
 Initialize-NpmDependencies -Directory $tauriDir
