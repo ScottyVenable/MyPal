@@ -9,6 +9,8 @@ import bcrypt from 'bcryptjs';
 import util from 'util';
 import { WebSocketServer } from 'ws';
 import ProfileManager from './profileManager.js';
+import ModelAdapter from './ai/modelAdapter.js';
+import PromptBuilder from './ai/promptBuilder.js';
 
 dotenv.config();
 
@@ -4254,6 +4256,151 @@ function buildThoughtEntry({ state, userText, responseContext, responsePlan, imp
   };
 }
 
+/**
+ * AI-Enhanced Response Generation
+ * Uses external LLM when enabled, falls back to local-only mode
+ */
+async function generateAIResponse(input, state, vocabulary, context, memories = [], chatLog = []) {
+  const settings = state.settings || {};
+  const provider = settings.apiProvider || 'local';
+  
+  // If local mode or no model configured, use original constraint system
+  if (provider === 'local') {
+    return constrainResponse(input, state, vocabulary, context, memories, chatLog);
+  }
+
+  try {
+    // Get API key from secrets if needed
+    const secrets = readSecrets();
+    const apiKey = provider !== 'ollama' ? secrets[`${provider}Key`] : null;
+
+    // Initialize model adapter
+    const adapter = new ModelAdapter({
+      provider: provider,
+      apiKey: apiKey,
+      model: settings.aiModel || null, // Use user-selected model if specified
+    });
+
+    // Health check for provider
+    const health = await adapter.healthCheck();
+    if (!health.healthy) {
+      console.warn(`[AI] ${provider} not available, falling back to local mode:`, health.error || 'Provider unhealthy');
+      return constrainResponse(input, state, vocabulary, context, memories, chatLog);
+    }
+
+    // Build developmentally-appropriate prompt
+    const concepts = getCollections().concepts || [];
+    const facts = getCollections().facts || [];
+    const promptBuilder = new PromptBuilder(state, vocabulary, concepts, facts, memories);
+    
+    // Get recent chat history (limit based on level)
+    const recentChat = chatLog.slice(-10);
+    const prompt = promptBuilder.buildPrompt(input, recentChat);
+
+    // Get dynamic parameters based on developmental stage
+    const temperature = promptBuilder.getTemperature();
+    const maxTokens = promptBuilder.getMaxTokens();
+    const stop = promptBuilder.getStopSequences();
+
+    console.log(`[AI] Generating response with ${provider} (temp: ${temperature}, tokens: ${maxTokens})`);
+
+    // Generate response
+    const rawResponse = await adapter.generate(prompt, {
+      temperature,
+      maxTokens,
+      stop,
+    });
+
+    // Post-process and validate response
+    const processedResponse = postProcessAIResponse(rawResponse, state, vocabulary);
+
+    console.log('[AI] Response generated successfully');
+
+    return {
+      utterance_type: 'ai_generated',
+      output: processedResponse.text,
+      focus: processedResponse.focus,
+      reasoning: [`AI-generated (${provider})`, ...processedResponse.reasoning],
+      analysis: context,
+      strategy: 'ai-enhanced',
+      provider: provider,
+    };
+
+  } catch (error) {
+    console.error('[AI] Error generating AI response:', error.message);
+    console.log('[AI] Falling back to local-only mode');
+    
+    // Fallback to local mode on error
+    return constrainResponse(input, state, vocabulary, context, memories, chatLog);
+  }
+}
+
+/**
+ * Post-process AI response to ensure it meets developmental constraints
+ */
+function postProcessAIResponse(rawText, state, vocabulary) {
+  let text = rawText.trim();
+  const level = state.level;
+  const reasoning = [];
+
+  // Remove any accidental role markers
+  text = text.replace(/^(You \(Pal\)|Pal|Assistant):\s*/gi, '');
+  text = text.replace(/^(Friend|User|Human):\s*/gi, '');
+
+  // Stage-specific validation and correction
+  if (level <= 1) {
+    // Sensorimotor: Should only be simple sounds
+    const phonemes = ['ba', 'da', 'ga', 'ma', 'pa', 'ka', 'la', 'na', 'ta'];
+    const match = text.match(/[a-z]+/i);
+    if (match && phonemes.includes(match[0].toLowerCase())) {
+      text = match[0].toLowerCase();
+    } else {
+      text = phonemes[Math.floor(Math.random() * phonemes.length)];
+      reasoning.push('Corrected to babble sound');
+    }
+  } else if (level <= 3) {
+    // Early preoperational: Single words only
+    const words = text.split(/\s+/);
+    if (words.length > 1) {
+      // Find a vocabulary word if possible
+      const vocabWord = words.find(w => vocabulary.some(v => v.word.toLowerCase() === w.toLowerCase()));
+      text = vocabWord || words[0];
+      reasoning.push('Reduced to single word');
+    }
+  } else if (level <= 6) {
+    // Preoperational: 2-4 words maximum
+    const words = text.split(/\s+/);
+    if (words.length > 4) {
+      text = words.slice(0, 4).join(' ');
+      reasoning.push('Truncated to 4 words');
+    }
+  } else if (level <= 10) {
+    // Concrete operational: 1-2 sentences
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim());
+    if (sentences.length > 2) {
+      text = sentences.slice(0, 2).join('. ') + '.';
+      reasoning.push('Limited to 2 sentences');
+    }
+  } else {
+    // Formal operational: 2-3 sentences
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim());
+    if (sentences.length > 3) {
+      text = sentences.slice(0, 3).join('. ') + '.';
+      reasoning.push('Limited to 3 sentences');
+    }
+  }
+
+  // Extract focus word (most relevant vocabulary word used)
+  const words = text.toLowerCase().split(/\W+/).filter(Boolean);
+  const focus = words.find(w => vocabulary.some(v => v.word.toLowerCase() === w)) || words[0] || null;
+
+  return {
+    text,
+    focus,
+    reasoning,
+  };
+}
+
 function constrainResponse(input, state, vocabulary, context, memories = [], chatLog = []) {
   const ctx = context || analyzeUserMessage(input);
 
@@ -4517,7 +4664,7 @@ app.post('/api/settings', (req, res) => {
     if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
       profileSettings.xpMultiplier = xpMultiplier;
     }
-    if (typeof apiProvider === 'string' && ['local','openai','azure','gemini'].includes(apiProvider)) {
+    if (typeof apiProvider === 'string' && ['local','ollama','openai','azure','gemini'].includes(apiProvider)) {
       profileSettings.apiProvider = apiProvider;
     }
     if (typeof telemetry === 'boolean') {
@@ -4546,7 +4693,7 @@ app.post('/api/settings', (req, res) => {
     if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
       state.settings.xpMultiplier = xpMultiplier;
     }
-    if (typeof apiProvider === 'string' && ['local','openai','azure','gemini'].includes(apiProvider)) {
+    if (typeof apiProvider === 'string' && ['local','ollama','openai','azure','gemini'].includes(apiProvider)) {
       state.settings.apiProvider = apiProvider;
     }
     if (typeof telemetry === 'boolean') {
@@ -4564,6 +4711,128 @@ app.post('/api/settings', (req, res) => {
     }
     saveState(state);
     res.json({ settings: state.settings });
+  }
+});
+
+// --- AI Model Management Endpoints ---
+// Get AI provider status and available models
+app.get('/api/ai/status', async (req, res) => {
+  try {
+    const { state } = getCollections();
+    const settings = state.settings || {};
+    const provider = settings.apiProvider || 'local';
+    
+    if (provider === 'local') {
+      return res.json({
+        provider: 'local',
+        status: 'active',
+        message: 'Using local-only response generation',
+      });
+    }
+
+    // Get API key
+    const secrets = readSecrets();
+    const apiKey = provider !== 'ollama' ? secrets[`${provider}Key`] : null;
+
+    // Create adapter and check health
+    const adapter = new ModelAdapter({
+      provider: provider,
+      apiKey: apiKey,
+      model: settings.aiModel || null,
+    });
+
+    const health = await adapter.healthCheck();
+    
+    res.json({
+      provider: provider,
+      status: health.healthy ? 'healthy' : 'unavailable',
+      model: settings.aiModel || adapter.model,
+      requiresKey: health.requiresKey,
+      error: health.error || null,
+      models: health.models || [],
+    });
+  } catch (error) {
+    res.status(500).json({
+      provider: 'unknown',
+      status: 'error',
+      error: error.message,
+    });
+  }
+});
+
+// List available models for current provider
+app.get('/api/ai/models', async (req, res) => {
+  try {
+    const { state } = getCollections();
+    const settings = state.settings || {};
+    const provider = settings.apiProvider || 'local';
+    
+    if (provider === 'local') {
+      return res.json({ models: [] });
+    }
+
+    const secrets = readSecrets();
+    const apiKey = provider !== 'ollama' ? secrets[`${provider}Key`] : null;
+
+    const adapter = new ModelAdapter({
+      provider: provider,
+      apiKey: apiKey,
+    });
+
+    const result = await adapter.listModels();
+    
+    res.json({
+      provider: provider,
+      models: result.models || [],
+      error: result.error || null,
+    });
+  } catch (error) {
+    res.status(500).json({
+      provider: 'unknown',
+      models: [],
+      error: error.message,
+    });
+  }
+});
+
+// Update AI provider settings (includes model selection)
+app.post('/api/ai/configure', (req, res) => {
+  try {
+    const { state } = getCollections();
+    const { provider, model, apiKey } = req.body || {};
+    
+    // Validate provider
+    const validProviders = ['local', 'ollama', 'openai', 'azure', 'gemini'];
+    if (provider && !validProviders.includes(provider)) {
+      return res.status(400).json({ error: 'Invalid provider' });
+    }
+
+    // Update settings
+    if (provider) {
+      state.settings.apiProvider = provider;
+    }
+    if (model) {
+      state.settings.aiModel = model;
+    }
+    if (apiKey && apiKey.length > 0) {
+      const secrets = readSecrets();
+      secrets[`${provider}Key`] = apiKey;
+      writeSecrets(secrets);
+      state.settings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
+    }
+
+    saveState(state);
+    
+    res.json({
+      success: true,
+      settings: {
+        apiProvider: state.settings.apiProvider,
+        aiModel: state.settings.aiModel,
+        apiKeyMask: state.settings.apiKeyMask || null,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -4608,7 +4877,7 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/chat', (req, res) => {
+app.post('/api/chat', async (req, res) => {
   console.log('[CHAT] Chat request received');
   const { message } = req.body || {};
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
@@ -4701,7 +4970,7 @@ app.post('/api/chat', (req, res) => {
   // 5. Decision making
   activateNeuralPattern('decision-making', neuralNetwork);
 
-  // Generate response: Use curiosity question if triggered, otherwise normal response
+  // Generate response: Use curiosity question if triggered, otherwise AI/normal response
   let constrained;
   if (curiosity && state.level >= 4) {
     // Pal asks "Why?" due to curiosity
@@ -4712,10 +4981,16 @@ app.post('/api/chat', (req, res) => {
       reasoning: [`Asking about ${curiosity.concept} (curiosity score: ${curiosity.curiosityScore.toFixed(2)})`],
     };
   } else {
-    // Normal response generation
-    console.log('[CHAT] Generating normal response...');
-    constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
-    console.log('[SUCCESS] Response generated');
+    // AI-enhanced or normal response generation
+    console.log('[CHAT] Generating response...');
+    try {
+      constrained = await generateAIResponse(message, state, vocabulary, responseContext, memories, chatLog);
+      console.log('[SUCCESS] Response generated');
+    } catch (error) {
+      console.error('[ERROR] Failed to generate response:', error);
+      // Fallback to simple constraint mode
+      constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
+    }
   }
 
   // XP: standard typed user response

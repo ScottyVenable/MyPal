@@ -49,24 +49,24 @@ function Start-LogConsole {
         New-Item -ItemType File -Path $LogFile -Force | Out-Null
     }
 
-    $commandScript = @'
+    $commandScript = @"
 & {
-    param($logPath, $rootDir)
-    try { Set-Location $rootDir } catch {}
+    param([string]`$logPath, [string]`$rootDir)
+    try { Set-Location `$rootDir } catch {}
     Clear-Host
-    if ($Host.Name -eq 'ConsoleHost') {
-        try { $host.UI.RawUI.WindowTitle = "MyPal Live Log" } catch {}
+    if (`$Host.Name -eq 'ConsoleHost') {
+        try { `$host.UI.RawUI.WindowTitle = "MyPal Live Log" } catch {}
     }
     Write-Host '=== MyPal Live Log ===' -ForegroundColor Cyan
-    Write-Host -ForegroundColor DarkGray "Watching: $logPath"
+    Write-Host -ForegroundColor DarkGray "Watching: `$logPath"
     Write-Host -ForegroundColor DarkGray 'Press Ctrl+C to close this window.'
     Write-Host ''
-    Get-Content -Path $logPath -Wait -Tail 200
-}
-'@
+    Get-Content -Path `$logPath -Wait -Tail 200
+} -logPath '$LogFile' -rootDir '$WorkingDirectory'
+"@
 
     Start-Process -FilePath "powershell.exe" `
-        -ArgumentList "-NoExit", "-Command", $commandScript, "-Args", "`"$LogFile`"", "`"$WorkingDirectory`"" | Out-Null
+        -ArgumentList "-NoExit", "-Command", $commandScript | Out-Null
 }
 
 function Ensure-NpmDependencies {
@@ -313,30 +313,42 @@ switch ($frontendChoice) {
         }
 
         $desktopDir = Split-Path $desktopProject -Parent
-        $avaloniaProcess = Start-Process -FilePath "dotnet" -ArgumentList "run" -WorkingDirectory $desktopDir -PassThru
-        if ($shouldOpenLogConsole) {
-            Start-Sleep -Seconds 1
-            Write-Host "Opening live log console window..." -ForegroundColor Cyan
-            Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
-        }
+        
+        Push-Location $desktopDir
         try {
-            Wait-Process -Id $avaloniaProcess.Id
-        } catch {
-            Write-Warning "Avalonia process ended unexpectedly."
+            if ($shouldOpenLogConsole) {
+                Start-Sleep -Milliseconds 500
+                Write-Host "Opening live log console window..." -ForegroundColor Cyan
+                Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
+                Start-Sleep -Milliseconds 500
+            }
+            
+            Write-Host ""
+            Write-Host "Starting Avalonia... (Press Ctrl+C to stop)" -ForegroundColor Yellow
+            Write-Host ""
+            
+            # Run dotnet in foreground so the script doesn't exit
+            dotnet run
+        } finally {
+            Pop-Location
         }
     }
     default {
         Write-Host "Launching MyPal Electron (legacy HTML frontend)..." -ForegroundColor Green
-        $electronProcess = Start-Process -FilePath "npm" -ArgumentList "run", "dev" -WorkingDirectory $launcherDir -PassThru
-        if ($shouldOpenLogConsole) {
-            Start-Sleep -Seconds 1
-            Write-Host "Opening live log console window..." -ForegroundColor Cyan
-            Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
-        }
+        Write-Host "Note: Use DevTools (F12) in the Electron window for debugging" -ForegroundColor Gray
+        
+        # Start npm in current console so it stays alive
+        Push-Location $launcherDir
         try {
-            Wait-Process -Id $electronProcess.Id
-        } catch {
-            Write-Warning "Electron launcher process ended unexpectedly."
+            Write-Host ""
+            Write-Host "Starting Electron... (Press Ctrl+C to stop)" -ForegroundColor Yellow
+            Write-Host ""
+            
+            # Run npm in foreground so the script doesn't exit
+            # No log console needed - Electron has built-in DevTools
+            npm run dev
+        } finally {
+            Pop-Location
         }
     }
 }
