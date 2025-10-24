@@ -269,7 +269,7 @@ After 2-3 weeks of Avalonia development (40% complete), the team has decided to 
 ## Documentation
 
 **Comprehensive Analysis (38 KB):**
-- [`AVALONIA_DEPRECATION_ANALYSIS.md`](./AVALONIA_DEPRECATION_ANALYSIS.md)
+- [`AVALONIA_DEPRECATION_ANALYSIS.md`](./docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md)
 
 **Quick Reference:**
 - [`FRAMEWORK_COMPARISON_MATRIX.md`](./FRAMEWORK_COMPARISON_MATRIX.md)

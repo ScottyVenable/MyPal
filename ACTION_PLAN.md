@@ -9,7 +9,7 @@
 ## Phase 0: Immediate Actions (This Week)
 
 ### ✅ Documentation Complete
-- [x] Create comprehensive analysis (`AVALONIA_DEPRECATION_ANALYSIS.md`)
+- [x] Create comprehensive analysis (`docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md`)
 - [x] Create framework comparison matrix
 - [x] Create implementation guide (`TAURI_MIGRATION_GUIDE.md`)
 - [x] Create executive summary
@@ -446,7 +446,7 @@ Distribution:
 ## Quick Reference
 
 **Documentation:**
-- Main Analysis: `AVALONIA_DEPRECATION_ANALYSIS.md`
+- Main Analysis: `docs/archive/avalonia/AVALONIA_DEPRECATION_ANALYSIS.md`
 - Implementation Guide: `TAURI_MIGRATION_GUIDE.md`
 - Comparison Matrix: `FRAMEWORK_COMPARISON_MATRIX.md`
 - Visual Summary: `DECISION_VISUAL_SUMMARY.md`

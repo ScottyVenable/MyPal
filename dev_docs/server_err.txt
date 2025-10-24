@@ -1,0 +1,64 @@
+node:internal/modules/package_json_reader:255
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'express' imported from G:\My Drive\Technology\AI Projects\MyPal\app\backend\src\server.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:255:9)
+    at packageResolve (node:internal/modules/esm/resolve:767:81)
+    at moduleResolve (node:internal/modules/esm/resolve:853:18)
+    at defaultResolve (node:internal/modules/esm/resolve:983:11)
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:801:12)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:725:25)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:309:38)
+    at #link (node:internal/modules/esm/module_job:208:49) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.4.1
+
+==== 2025-10-20T22:55:43.150Z stderr ====
+
+==== 2025-10-20T22:59:53.807Z stderr ====
+
+==== 2025-10-20T23:05:23.869Z stderr ====
+
+==== 2025-10-20T23:12:14.359Z stderr ====
+
+==== 2025-10-20T23:25:08.393Z stderr ====
+
+==== 2025-10-20T23:28:26.790Z stderr ====
+
+==== 2025-10-21T00:25:30.728Z stderr ====
+
+==== 2025-10-21T00:28:20.048Z stderr ====
+
+==== 2025-10-21T04:50:38.041Z stderr ====
+
+==== 2025-10-21T04:54:21.319Z stderr ====
+
+==== 2025-10-21T04:58:32.891Z stderr ====
+
+==== 2025-10-21T05:08:23.801Z stderr ====
+Error: ENOENT: no such file or directory, open 'C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\dev-data\state.json'
+    at Object.writeFileSync (node:fs:2368:20)
+    at writeJson (file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:176:6)
+    at saveState (file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:210:3)
+    at saveCollections (file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:227:3)
+    at file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:1229:3
+    at Layer.handle [as handle_request] (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\index.js:284:15
+Error: ENOENT: no such file or directory, open 'C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\dev-data\state.json'
+    at Object.writeFileSync (node:fs:2368:20)
+    at writeJson (file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:176:6)
+    at saveState (file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:210:3)
+    at saveCollections (file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:227:3)
+    at file:///C:/Users/scott/OneDrive/Desktop/Coding/AI%20Projects/MyPal/MyPal/app/backend/src/server.js:1229:3
+    at Layer.handle [as handle_request] (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\layer.js:95:5)
+    at next (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\route.js:149:13)
+    at Route.dispatch (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\route.js:119:3)
+    at Layer.handle [as handle_request] (C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\layer.js:95:5)
+    at C:\Users\scott\OneDrive\Desktop\Coding\AI Projects\MyPal\MyPal\app\backend\node_modules\express\lib\router\index.js:284:15
