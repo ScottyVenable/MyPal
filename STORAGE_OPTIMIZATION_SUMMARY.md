@@ -239,7 +239,7 @@ Test coverage:
 ### For Existing Installations
 1. ✅ Pull latest code
 2. ✅ Run `npm install` (no new dependencies)
-3. ✅ Run migration script: `node scripts/migrate-storage.js`
+3. ✅ Run migration script: `cd app/backend && node scripts/migrate-storage.js`
 4. ✅ Verify tests pass: `npm test`
 5. ✅ Start server normally
 
