@@ -1,0 +1,16 @@
+{
+  "name": "mypal-mobile-backend",
+  "version": "0.3.0-alpha",
+  "private": true,
+  "description": "Embedded Node.js backend for MyPal Mobile",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "ws": "^8.16.0",
+    "nanoid": "^3.3.7"
+  }
+}
