@@ -58,16 +58,45 @@ MyPal is a local-first AI companion featuring a vanilla JavaScript SPA, a Node.j
 - After every substantial change, sync the project board at `https://github.com/users/ScottyVenable/projects/5/views/1` using GitHub CLI.
 
 ## GitHub Project Board Management
-**Project URL**: `https://github.com/users/ScottyVenable/projects/5/views/1`
+**Project URL**: `https://github.com/users/ScottyVenable/projects/5/views/1`  
+**Project Number**: `5` | **Owner**: `ScottyVenable`
 
-After every substantial change, create or update project items using GitHub CLI. All tasks, bugs, features, and refactors must be tracked on the board with proper metadata.
+After every substantial change, create or update project items using GitHub CLI. All tasks, bugs, features, and refactors must be tracked on the board with proper metadata. This section uses **Projects v2** terminology (project number, owner, project ID, item ID, field ID).
 
-### Creating Project Items
+---
 
-Use `gh project item-create` with the following structure:
+### Prerequisites & Authentication
+
+**Required**: GitHub CLI installed and authenticated with `project` scope.
 
 ```powershell
-# PowerShell multi-line string syntax for body
+# Check authentication and scopes
+gh auth status
+
+# If 'project' scope missing, refresh token
+gh auth refresh -s project
+```
+
+**Verify Setup**:
+- ✅ GitHub CLI version 2.0+ (`gh --version`)
+- ✅ Authenticated with token that has `project` scope
+- ✅ Access to project `ScottyVenable/5`
+
+---
+
+### Creating Draft Items
+
+Use `gh project item-create <project-number> --owner <owner>` to create draft items. These become trackable tasks on the board.
+
+**Basic Syntax**:
+```powershell
+gh project item-create 5 --owner ScottyVenable `
+  --title "Brief task description" `
+  --body "Optional detailed description"
+```
+
+**With Markdown Body** (PowerShell multi-line string):
+```powershell
 $body = @"
 ## Objective
 [1-2 sentence summary of the task]
@@ -83,7 +112,6 @@ $body = @"
 ## Technical Approach
 1. **Step 1**: Implementation detail
 2. **Step 2**: Implementation detail
-3. **Step 3**: Implementation detail
 
 ## Files to Modify
 - ``path/to/file1.js`` - Changes needed
@@ -95,40 +123,201 @@ $body = @"
 - Manual QA: Verification steps
 
 ## Dependencies
-- Blocks: #123
-- Depends on: #456
+- Blocks: Other items blocked by this
+- Depends on: Items this depends on
 
 ## Notes
 Additional context, gotchas, references.
 "@
 
 gh project item-create 5 --owner ScottyVenable `
-  --title "[TYPE] Brief description" `
+  --title "[TYPE] Brief action-oriented description" `
   --body $body
 ```
 
-**Important**: Use double backticks (` `` `) around code/paths in the body to prevent PowerShell interpretation.
+**Important**: Use double backticks (` `` `) around code/paths in PowerShell strings to prevent interpretation.
 
-### Required Fields
+**Output Formatting**:
+```powershell
+# JSON output with selected fields
+gh project item-create 5 --owner ScottyVenable --title "New task" `
+  --format json --jq '.id'
 
-Set these fields immediately after item creation using `gh project item-edit`:
+# Capture item ID for immediate field updates
+$itemId = gh project item-create 5 --owner ScottyVenable --title "New task" `
+  --format json --jq '.id' | ConvertFrom-Json
+```
 
-| Field | Values | Description |
-|-------|--------|-------------|
-| **Status** | `Todo`, `In Progress`, `Done`, `Backlog` | Current work state |
-| **Priority** | `P0` (Critical), `P1` (High), `P2` (Medium), `P3` (Low) | Urgency level |
-| **Size** | `XS` (1-2h), `S` (half-day), `M` (1-2d), `L` (3-5d), `XL` (1-2wk) | Effort estimate |
-| **Estimate** | Numeric (hours or points) | Story points or time estimate |
-| **Iteration** | `v1.1-sprint-1`, `v1.2-sprint-2` | Sprint/milestone ID |
-| **Start date** | `YYYY-MM-DD` | When work begins |
-| **End date** | `YYYY-MM-DD` | Target completion |
-| **Assignees** | GitHub username | Who owns this (optional) |
+---
 
-**Note**: Field names with spaces must be quoted: `--field "Start date"="2025-10-24"`
+### Editing Project Items
 
-### Title Format
+**Critical**: For project items (non-draft issues), **update only ONE field per `gh project item-edit` call** and include `--project-id`.
 
-Structure: `[TYPE] Brief action-oriented description`
+#### Field Type Flags
+
+Choose the correct value flag based on field type:
+
+| Field Type | Flag | Example |
+|------------|------|---------|
+| **Text** | `--text "<value>"` | `--text "In review"` |
+| **Number** | `--number <value>` | `--number 8` |
+| **Date** | `--date <value>` | `--date "2025-10-24"` (YYYY-MM-DD) |
+| **Single-select** | `--single-select-option-id <id>` | `--single-select-option-id "abc123"` |
+| **Clear field** | `--clear` | `--clear` |
+
+#### Basic Edit Pattern
+
+```powershell
+# Set text field
+gh project item-edit --id <ITEM_ID> --field-id <FIELD_ID> --project-id 5 --text "New value"
+
+# Set number field
+gh project item-edit --id <ITEM_ID> --field-id <FIELD_ID> --project-id 5 --number 10
+
+# Set date field (YYYY-MM-DD format)
+gh project item-edit --id <ITEM_ID> --field-id <FIELD_ID> --project-id 5 --date "2025-10-24"
+
+# Clear a field
+gh project item-edit --id <ITEM_ID> --field-id <FIELD_ID> --project-id 5 --clear
+```
+
+#### Draft Issue Updates
+
+For draft issues, update title/body **without** `--project-id`:
+
+```powershell
+# Update draft title
+gh project item-edit --id <ITEM_ID> --title "New title"
+
+# Update draft body
+gh project item-edit --id <ITEM_ID> --body "Updated description"
+```
+
+#### MyPal Project Fields
+
+Our project uses these custom fields (update one per call):
+
+| Field Name | Type | Example Values | Flag |
+|------------|------|----------------|------|
+| **Status** | Single-select | `Todo`, `In Progress`, `Done`, `Backlog` | `--field-id <id> --single-select-option-id <option-id>` |
+| **Priority** | Single-select | `P0`, `P1`, `P2`, `P3` | `--field-id <id> --single-select-option-id <option-id>` |
+| **Size** | Single-select | `XS`, `S`, `M`, `L`, `XL` | `--field-id <id> --single-select-option-id <option-id>` |
+| **Estimate** | Number | `1`, `2`, `5`, `8`, `13` | `--field-id <id> --number <value>` |
+| **Iteration** | Text | `v1.1-sprint-1`, `v1.2-sprint-2` | `--field-id <id> --text "<value>"` |
+| **Start date** | Date | `2025-10-24` | `--field-id <id> --date "YYYY-MM-DD"` |
+| **End date** | Date | `2025-10-30` | `--field-id <id> --date "YYYY-MM-DD"` |
+
+**Note**: Field and option IDs are UUIDs. Query with `gh project field-list` and `gh project item-list` to get exact IDs.
+
+---
+
+### Listing & Querying Items
+
+**Basic List**:
+```powershell
+# List all items
+gh project item-list 5 --owner ScottyVenable
+
+# Limit results
+gh project item-list 5 --owner ScottyVenable --limit 20
+```
+
+**JSON Output with Selected Fields**:
+```powershell
+# Select specific fields
+gh project item-list 5 --owner ScottyVenable --json id,title,updatedAt
+
+# Extract item IDs only
+gh project item-list 5 --owner ScottyVenable --json id --jq '.[].id'
+
+# Filter by title pattern (using jq)
+gh project item-list 5 --owner ScottyVenable --json id,title `
+  --jq '.[] | select(.title | contains("FEATURE"))'
+```
+
+**Go Template Formatting**:
+```powershell
+# Pretty table with timeago helper
+gh project item-list 5 --owner ScottyVenable --json title,updatedAt `
+  --template '{{range .}}{{tablerow .title (timeago .updatedAt)}}{{end}}{{tablerender}}'
+
+# Custom format with hyperlinks
+gh project item-list 5 --owner ScottyVenable --json title,url `
+  --template '{{range .}}{{hyperlink .title .url}}{{"\n"}}{{end}}'
+```
+
+**Available Template Helpers**: `tablerow`, `tablerender`, `timeago`, `hyperlink`, `color`, `autocolor`, `pluck`, `join`. See `gh help formatting` for full reference.
+
+---
+
+### End-to-End Workflow Example
+
+Complete workflow: create item → capture ID → set fields → verify.
+
+```powershell
+# Step 1: Create draft item with structured body
+$body = @"
+## Objective
+Implement local AI model loading for offline conversations.
+
+## Acceptance Criteria
+- [ ] Backend loads GGML models from ``models/`` directory
+- [ ] UI shows available models in Settings
+- [ ] Chat works offline with selected model
+
+## Technical Approach
+1. **Backend**: Integrate ``@llama-node/llama-cpp``
+2. **Frontend**: Add model selector dropdown
+3. **Memory**: Monitor RAM usage, implement pooling
+
+## Files to Modify
+- ``app/backend/src/ai/modelManager.js`` - New service
+- ``app/frontend/app.js`` - UI updates
+
+## Testing Strategy
+- Unit tests: Model loading/unloading
+- Integration tests: End-to-end offline chat
+- Manual QA: Load 3 models, verify switching
+"@
+
+# Create and capture item ID
+$itemId = (gh project item-create 5 --owner ScottyVenable `
+  --title "[FEATURE] Offline local AI model support" `
+  --body $body `
+  --format json | ConvertFrom-Json).id
+
+Write-Host "Created item: $itemId"
+
+# Step 2: Set fields (one per call, requires field IDs)
+# Note: Get field IDs with `gh project field-list 5 --owner ScottyVenable --format json`
+
+# Set Status to "Todo" (example field ID and option ID - query actual IDs)
+gh project item-edit --id $itemId --field-id "PVTF_field123" --project-id 5 `
+  --single-select-option-id "option_todo_id"
+
+# Set Priority to "P1" (example IDs)
+gh project item-edit --id $itemId --field-id "PVTF_field456" --project-id 5 `
+  --single-select-option-id "option_p1_id"
+
+# Set Estimate to 10 points
+gh project item-edit --id $itemId --field-id "PVTF_field789" --project-id 5 `
+  --number 10
+
+# Set Start date
+gh project item-edit --id $itemId --field-id "PVTF_fieldStart" --project-id 5 `
+  --date "2025-10-24"
+
+# Step 3: Verify updates
+gh project item-list 5 --owner ScottyVenable --json id,title,Status,Priority `
+  --jq ".[] | select(.id == \"$itemId\")"
+```
+
+---
+
+### Title Format Standards
+
+Structure: `[TYPE] Brief action-oriented description` (<80 chars)
 
 **Type Prefixes**:
 - `[FEATURE]` - New functionality
@@ -145,12 +334,11 @@ Structure: `[TYPE] Brief action-oriented description`
 - `[REFACTOR] Migrate backend to TypeScript`
 - `[DOCS] Update API reference for v1.1`
 
-### Body Markdown Format
+---
 
-The `--body` must use proper Markdown for readability in the GitHub UI:
+### Body Markdown Templates
 
-#### Required Sections
-
+#### Feature Template
 ```markdown
 ## Objective
 Clear, concise statement of what needs to be done (1-2 sentences).
@@ -179,9 +367,9 @@ Why is this needed? What problem does it solve? How does it fit the roadmap?
 - **Manual QA**: Step-by-step verification procedure
 
 ## Dependencies
-- **Blocks**: #123 (list items blocked by this)
-- **Depends on**: #456 (list items this depends on)
-- **Related**: #789 (loosely related work)
+- **Blocks**: Items blocked by this work
+- **Depends on**: Items this depends on
+- **Related**: Loosely related work
 
 ## Notes
 - Edge cases to consider
@@ -190,109 +378,7 @@ Why is this needed? What problem does it solve? How does it fit the roadmap?
 - Links to external resources
 ```
 
-#### Optional Sections (add as needed)
-
-```markdown
-## Risk Assessment
-- **High**: Risk description and mitigation
-- **Medium**: Risk description and mitigation
-
-## Timeline Breakdown
-- Week 1: Phase 1 tasks
-- Week 2: Phase 2 tasks
-
-## Resources
-- [Design doc](link)
-- [API spec](link)
-- [Research notes](link)
-```
-
-### Complete Example
-
-```powershell
-$body = @"
-## Objective
-Add support for loading local LLM models (GGML format) to enable fully offline AI conversations without external API dependencies.
-
-## Background
-Users want privacy-first AI interactions without cloud services. Local models eliminate API costs, reduce latency, and enable offline usage. This is a core differentiator for MyPal v1.1.
-
-## Acceptance Criteria
-- [ ] Backend can load GGML model files from ``models/`` directory
-- [ ] UI displays available models and allows selection
-- [ ] Chat works offline with selected local model
-- [ ] Model switching doesn't lose conversation context
-- [ ] Settings panel shows model memory usage
-
-## Technical Approach
-1. **Backend Integration**: Use ``@llama-node/llama-cpp`` for GGML support
-2. **Model Management**: Create ``ModelManager`` service for loading/unloading
-3. **UI Updates**: Add model selector dropdown in Settings tab
-4. **Context Handling**: Serialize conversation history for model switches
-5. **Memory Management**: Monitor RAM usage, implement model pooling
-
-## Files to Modify
-- ``app/backend/src/ai/modelManager.js`` - Create new service
-- ``app/backend/src/ai/modelAdapter.js`` - Add GGML adapter
-- ``app/frontend/app.js`` - Add model selector UI
-- ``app/frontend/index.html`` - Settings tab updates
-- ``docs/AI_SETUP_GUIDE.md`` - Document model installation
-
-## Testing Strategy
-- **Unit tests**: ModelManager load/unload, memory tracking
-- **Integration tests**: End-to-end chat with local model
-- **Manual QA**: Load 3 different models, verify switching, check memory
-
-## Dependencies
-- **Depends on**: #234 (Backend refactor for plugin architecture)
-- **Related**: #567 (Performance optimization for large contexts)
-
-## Notes
-- Initial support for LLaMA 2 7B and Mistral 7B models
-- Recommend 16GB RAM minimum for smooth performance
-- Consider implementing model quantization (4-bit) for lower memory
-- Add warning if system RAM < 8GB
-"@
-
-gh project item-create 5 --owner ScottyVenable `
-  --title "[FEATURE] Implement offline local LLM support" `
-  --body $body
-```
-
-Then set fields:
-```powershell
-# Get the item ID from previous command output, or query:
-# gh project item-list 5 --owner ScottyVenable --format json | jq
-
-gh project item-edit --id <ITEM_ID> --project-id 5 --owner ScottyVenable `
-  --field Status="Todo" `
-  --field Priority="P1" `
-  --field Size="XL" `
-  --field Estimate="10" `
-  --field Iteration="v1.1-sprint-1" `
-  --field "Start date"="2025-10-24" `
-  --field "End date"="2025-11-07"
-```
-
-### Updating Items
-
-As work progresses, update status and dates:
-
-```powershell
-# Start work
-gh project item-edit --id <ITEM_ID> --project-id 5 --owner ScottyVenable `
-  --field Status="In Progress" `
-  --field "Start date"="2025-10-25"
-
-# Mark complete
-gh project item-edit --id <ITEM_ID> --project-id 5 --owner ScottyVenable `
-  --field Status="Done" `
-  --field "End date"="2025-10-30"
-```
-
-### Common Patterns
-
-**Bug Template**:
+#### Bug Template
 ```markdown
 ## Objective
 Fix [brief description of bug].
@@ -312,7 +398,7 @@ Bug report: [symptoms]. Affects [users/features].
 3. **Prevention**: [How to avoid similar bugs]
 
 ## Files to Modify
-- [List affected files]
+- [List affected files with line numbers if known]
 
 ## Testing Strategy
 - **Reproduction**: Steps to trigger original bug
@@ -320,7 +406,7 @@ Bug report: [symptoms]. Affects [users/features].
 - **Regression**: Automated test to prevent recurrence
 ```
 
-**Refactor Template**:
+#### Refactor Template
 ```markdown
 ## Objective
 Improve [component] by [refactoring goal].
@@ -348,28 +434,116 @@ Current code has [issues]. Refactoring will [benefits].
 - **Final**: Verify no behavior changes
 ```
 
+---
+
+### Status Update Patterns
+
+**Starting Work**:
+```powershell
+gh project item-edit --id <ITEM_ID> --field-id <STATUS_FIELD_ID> --project-id 5 `
+  --single-select-option-id <IN_PROGRESS_OPTION_ID>
+
+gh project item-edit --id <ITEM_ID> --field-id <START_DATE_FIELD_ID> --project-id 5 `
+  --date "2025-10-24"
+```
+
+**Marking Complete**:
+```powershell
+gh project item-edit --id <ITEM_ID> --field-id <STATUS_FIELD_ID> --project-id 5 `
+  --single-select-option-id <DONE_OPTION_ID>
+
+gh project item-edit --id <ITEM_ID> --field-id <END_DATE_FIELD_ID> --project-id 5 `
+  --date "2025-10-30"
+```
+
+**Blocking/Dependency Links**: Use item body markdown to reference related items (e.g., `Depends on: #234`). GitHub will auto-link when item is converted to issue.
+
+---
+
 ### Best Practices
 
 1. **Create items immediately** when work is identified (don't batch)
-2. **Use templates** for consistency (bug, feature, refactor)
-3. **Link related items** using `#issue-number` syntax
-4. **Update status frequently** (daily for active items)
-5. **Keep titles concise** (<80 chars) but descriptive
-6. **Use checkboxes** in acceptance criteria for trackability
-7. **Include file paths** with backticks for code references
-8. **Set realistic estimates** based on historical velocity
-9. **Document blockers** in Dependencies section
-10. **Add notes** for context that doesn't fit other sections
+2. **Use templates** for consistency (feature, bug, refactor)
+3. **Update ONE field per edit call** (Projects v2 requirement)
+4. **Query field/option IDs** before setting single-select fields
+5. **Update status frequently** (daily for active items)
+6. **Keep titles concise** (<80 chars) but descriptive
+7. **Use checkboxes** in acceptance criteria for trackability
+8. **Include file paths** with backticks in bodies
+9. **Set realistic estimates** based on historical velocity
+10. **Document blockers** in Dependencies section
+11. **Use `--format json` and `--jq`** for automation/scripting
+12. **Verify changes** with `item-list` after bulk updates
+
+---
 
 ### Troubleshooting
 
-**Cannot set field**: Ensure field name exactly matches project configuration (case-sensitive, spaces quoted)
+**Permission denied**: 
+```powershell
+gh auth status          # Check current scopes
+gh auth refresh -s project   # Add project scope
+```
 
-**Body not rendering**: Use double backticks (` `` `) for inline code in PowerShell strings
+**Cannot set field**: 
+- Get field ID: `gh project field-list 5 --owner ScottyVenable --format json`
+- Get option ID (for single-select): Check field's options in JSON output
+- Ensure field name/type matches (text vs number vs date vs single-select)
 
-**Item not appearing**: Verify project ID (5) and owner (ScottyVenable) are correct
+**Body not rendering**: 
+- Use double backticks (` `` `) for inline code in PowerShell strings
+- Escape special characters in heredoc strings
+- Verify markdown syntax with online parsers
 
-**Permission denied**: Ensure GitHub CLI is authenticated (`gh auth status`)
+**Item not appearing**: 
+- Verify project number (5) and owner (ScottyVenable)
+- Check if item was created as draft vs issue
+- Query with `--format json` to see all item metadata
+
+**Multiple field updates fail**:
+- Update **only one field per `gh project item-edit` call**
+- Use separate commands for each field (Status, Priority, Size, etc.)
+
+**Date format errors**:
+- Use strict `YYYY-MM-DD` format (e.g., `2025-10-24`)
+- No timestamps or alternate formats allowed
+
+---
+
+### Quick Reference Commands
+
+```powershell
+# Authentication & setup
+gh auth status
+gh auth refresh -s project
+
+# Create item
+gh project item-create 5 --owner ScottyVenable --title "[TYPE] Description" --body "Details"
+
+# List items (JSON)
+gh project item-list 5 --owner ScottyVenable --json id,title,updatedAt
+
+# Get item IDs matching pattern
+gh project item-list 5 --owner ScottyVenable --json id,title --jq '.[] | select(.title | contains("FEATURE")) | .id'
+
+# Edit field (one per call)
+gh project item-edit --id <ID> --field-id <FIELD_ID> --project-id 5 --text "value"
+gh project item-edit --id <ID> --field-id <FIELD_ID> --project-id 5 --number 10
+gh project item-edit --id <ID> --field-id <FIELD_ID> --project-id 5 --date "2025-10-24"
+gh project item-edit --id <ID> --field-id <FIELD_ID> --project-id 5 --single-select-option-id <OPTION_ID>
+
+# List fields (get IDs)
+gh project field-list 5 --owner ScottyVenable --format json
+
+# Format output with templates
+gh project item-list 5 --owner ScottyVenable --json title,updatedAt `
+  --template '{{range .}}{{tablerow .title (timeago .updatedAt)}}{{end}}{{tablerender}}'
+
+# Help documentation
+gh help formatting
+gh project item-create --help
+gh project item-edit --help
+```
 
 ## Git Workflow
 - Branch naming: `feature/...`, `bugfix/...`, `refactor/...`, `patch/...`.
@@ -396,3 +570,5 @@ Current code has [issues]. Refactoring will [benefits].
 -  No references to Avalonia/Electron remain outside historical notes.
 
 Keep this file updated as the Tauri stack evolves. Any new platform additions must include tooling prerequisites, documentation updates, and test coverage plans.
+
+This is a living document and must be maintained regularly to ensure accuracy and relevance.
