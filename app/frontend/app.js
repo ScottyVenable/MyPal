@@ -468,17 +468,37 @@ function wireProfileManagement() {
   });
   
   loadPalBtn?.addEventListener('click', async () => {
+    logInfo('PROFILE', 'Load Pal button clicked');
     const profileCards = $('#profile-cards');
+    if (!profileCards) {
+      logError('PROFILE', 'Profile cards container not found');
+      return;
+    }
+    
     if (profileCards.classList.contains('hidden')) {
+      logInfo('PROFILE', 'Showing profile cards - loading profiles');
       // Show profile cards - reload to ensure fresh data
       const data = await loadProfilesList();
+      logDebug('PROFILE', 'Profiles loaded', { 
+        success: !!data,
+        profileCount: data?.profiles?.length || 0,
+        profiles: data?.profiles
+      });
+      
       if (data && data.profiles.length > 0) {
         renderProfileCards(data.profiles);
+        logInfo('PROFILE', 'Profile cards rendered');
         setTimeout(() => {
           profileCards.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }, 100);
+      } else {
+        logWarn('PROFILE', 'No profiles to display');
+        // Show a message if no profiles exist
+        profileCards.innerHTML = '<p class="memory-empty">No profiles found. Create a new Pal to get started!</p>';
+        profileCards.classList.remove('hidden');
       }
     } else {
+      logInfo('PROFILE', 'Hiding profile cards');
       // Hide profile cards
       profileCards.classList.add('hidden');
     }
@@ -1962,11 +1982,22 @@ function wireTabs() {
   }));
 }
 
+// Store chat handler to prevent duplicate listeners
+let chatSubmitHandler = null;
+
 function wireChat() {
   logInfo('UI', 'Wiring chat form event handlers');
   
   const form = $('#chat-form');
-  form.addEventListener('submit', async (e) => {
+  
+  // Remove existing listener if it exists to prevent duplicates
+  if (chatSubmitHandler) {
+    form.removeEventListener('submit', chatSubmitHandler);
+    logDebug('UI', 'Removed existing chat submit handler');
+  }
+  
+  // Define the handler
+  chatSubmitHandler = async (e) => {
     e.preventDefault();
     const chatId = Date.now();
     startTimer(`chat_${chatId}`);
@@ -2232,7 +2263,11 @@ function wireChat() {
         totalTime: totalTime ? `${totalTime.toFixed(2)}ms` : 'unknown'
       });
     }
-  });
+  };
+  
+  // Add the event listener
+  form.addEventListener('submit', chatSubmitHandler);
+  logDebug('UI', 'Chat submit handler registered');
 }
 
 function wireSettings() {
