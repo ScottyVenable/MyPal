@@ -287,6 +287,70 @@ class ProfileManager {
     return null;
   }
 
+  /**
+   * Async version with debouncing for better performance
+   */
+  async saveCurrentProfileDataAsync(filename, data, immediate = false) {
+    if (!this.currentProfile) {
+      return false;
+    }
+
+    const filePath = this.getProfileDataPath(this.currentProfile, filename);
+    try {
+      await this.writeJsonAsync(filePath, data, immediate);
+      return true;
+    } catch (err) {
+      console.error(`Failed to save ${filename} for current profile:`, err);
+      return false;
+    }
+  }
+
+  /**
+   * Helper for async writes with debouncing
+   */
+  async writeJsonAsync(file, data, immediate = false) {
+    // Debounce map for this instance
+    if (!this._pendingWrites) {
+      this._pendingWrites = new Map();
+    }
+
+    const WRITE_DEBOUNCE_MS = 100;
+
+    // Clear any pending write for this file
+    if (this._pendingWrites.has(file)) {
+      clearTimeout(this._pendingWrites.get(file));
+    }
+
+    const doWrite = async () => {
+      try {
+        await fs.promises.writeFile(file, JSON.stringify(data, null, 2), 'utf8');
+        this._pendingWrites.delete(file);
+      } catch (error) {
+        console.error('Error writing file:', file, error);
+        this._pendingWrites.delete(file);
+        throw error;
+      }
+    };
+
+    if (immediate) {
+      return doWrite();
+    }
+
+    // Debounce: schedule write after delay
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(async () => {
+        try {
+          await doWrite();
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      }, WRITE_DEBOUNCE_MS);
+      
+      this._pendingWrites.set(file, timeoutId);
+    });
+  }
+
   saveCurrentProfileData(filename, data) {
     if (!this.currentProfile) {
       return false;
@@ -300,6 +364,22 @@ class ProfileManager {
       console.error(`Failed to save ${filename} for current profile:`, err);
       return false;
     }
+  }
+
+  async updateProfileMetadataAsync(updates, immediate = false) {
+    if (!this.currentProfile) {
+      return false;
+    }
+
+    const metadata = this.getCurrentProfileData('metadata.json');
+    if (!metadata) {
+      return false;
+    }
+
+    Object.assign(metadata, updates);
+    metadata.lastPlayedAt = Date.now();
+
+    return this.saveCurrentProfileDataAsync('metadata.json', metadata, immediate);
   }
 
   updateProfileMetadata(updates) {

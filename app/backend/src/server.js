@@ -267,6 +267,60 @@ function readJson(file, fallback) {
   }
 }
 
+// Debounce map for async file writes
+const pendingWrites = new Map();
+const WRITE_DEBOUNCE_MS = 100; // Wait 100ms to batch writes
+
+/**
+ * Async write with debouncing - batches multiple writes to the same file
+ * @param {string} file - File path to write to
+ * @param {any} data - Data to write (will be JSON.stringify'd)
+ * @param {boolean} immediate - If true, skip debouncing and write immediately
+ */
+async function writeJsonAsync(file, data, immediate = false) {
+  // Clear any pending write for this file
+  if (pendingWrites.has(file)) {
+    clearTimeout(pendingWrites.get(file));
+  }
+
+  const doWrite = async () => {
+    try {
+      // Ensure directory exists before writing
+      const dir = path.dirname(file);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      await fs.promises.writeFile(file, JSON.stringify(data, null, 2), 'utf8');
+      pendingWrites.delete(file);
+    } catch (error) {
+      console.error('Error writing JSON file:', file, error);
+      pendingWrites.delete(file);
+      throw error;
+    }
+  };
+
+  if (immediate) {
+    return doWrite();
+  }
+
+  // Debounce: schedule write after delay
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(async () => {
+      try {
+        await doWrite();
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    }, WRITE_DEBOUNCE_MS);
+    
+    pendingWrites.set(file, timeoutId);
+  });
+}
+
+/**
+ * Legacy sync version (kept for backward compatibility but not recommended)
+ */
 function writeJson(file, data) {
   try {
     // Ensure directory exists before writing
@@ -335,6 +389,30 @@ function loadState() {
   return normalizeProgress({ ...defaultState, ...state });
 }
 
+async function saveStateAsync(state, immediate = false) {
+  // Save to current profile's metadata if active, else to root state.json
+  const currentId = profileManager.getCurrentProfileId?.() || null;
+  if (currentId) {
+    const metadata = profileManager.getCurrentProfileData('metadata.json') || {};
+    metadata.level = state.level;
+    metadata.xp = state.xp;
+    metadata.cp = state.cp;
+    metadata.settings = state.settings;
+    metadata.personality = state.personality;
+    metadata.vocabulary = state.vocabulary;
+    return profileManager.saveCurrentProfileDataAsync('metadata.json', metadata, immediate);
+  } else {
+    return writeJsonAsync(files.state, {
+      level: state.level,
+      xp: state.xp,
+      cp: state.cp,
+      settings: state.settings,
+      personality: state.personality,
+      vocabulary: state.vocabulary,
+    }, immediate);
+  }
+}
+
 function saveState(state) {
   // Save to current profile's metadata if active, else to root state.json
   const currentId = profileManager.getCurrentProfileId?.() || null;
@@ -388,6 +466,57 @@ function getCollections() {
   return { state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork };
 }
 
+/**
+ * Save collections asynchronously with debouncing
+ * Returns a promise that resolves when all writes are scheduled (not necessarily completed)
+ */
+async function saveCollectionsAsync({ state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork }, immediate = false) {
+  const writes = [];
+  
+  // Save state
+  if (state) writes.push(saveStateAsync(state, immediate));
+  
+  // Save global collections
+  if (users) writes.push(writeJsonAsync(files.users, users, immediate));
+  if (sessions) writes.push(writeJsonAsync(files.sessions, sessions, immediate));
+  
+  const currentId = profileManager.getCurrentProfileId?.() || null;
+  if (currentId) {
+    // Save profile-specific data asynchronously
+    if (vocabulary) writes.push(profileManager.saveCurrentProfileDataAsync('vocabulary.json', vocabulary, immediate));
+    if (memories) writes.push(profileManager.saveCurrentProfileDataAsync('memories.json', memories, immediate));
+    if (chatLog) writes.push(profileManager.saveCurrentProfileDataAsync('chat-log.json', chatLog, immediate));
+    if (journal) writes.push(profileManager.saveCurrentProfileDataAsync('journal.json', journal, immediate));
+    if (neuralNetwork) writes.push(profileManager.saveCurrentProfileDataAsync('neural.json', neuralNetwork, immediate));
+    if (concepts) writes.push(profileManager.saveCurrentProfileDataAsync('concepts.json', concepts, immediate));
+    if (facts) writes.push(profileManager.saveCurrentProfileDataAsync('facts.json', facts, immediate));
+    
+    // Update profile metadata
+    writes.push(profileManager.updateProfileMetadataAsync({
+      level: state?.level,
+      xp: state?.xp,
+      messageCount: chatLog?.length || 0,
+      memoryCount: memories?.length || 0
+    }, immediate));
+  } else {
+    // Fallback: persist to root data when no profile is active
+    if (vocabulary) writes.push(writeJsonAsync(files.vocabulary, vocabulary, immediate));
+    if (memories) writes.push(writeJsonAsync(files.memories, memories, immediate));
+    if (chatLog) writes.push(writeJsonAsync(files.chatLog, chatLog, immediate));
+    if (journal) writes.push(writeJsonAsync(files.journal, journal, immediate));
+    if (neuralNetwork) writes.push(writeJsonAsync(files.neuralNetwork, neuralNetwork, immediate));
+    if (concepts) writes.push(writeJsonAsync(files.concepts, concepts, immediate));
+    if (facts) writes.push(writeJsonAsync(files.facts, facts, immediate));
+  }
+  
+  // Don't wait for writes to complete (fire and forget with debouncing)
+  // This makes the function return immediately while writes happen in background
+  Promise.all(writes).catch(err => console.error('[SAVE] Error in background save:', err));
+}
+
+/**
+ * Legacy sync version (kept for backward compatibility)
+ */
 function saveCollections({ state, users, sessions, vocabulary, concepts, facts, memories, chatLog, journal, neuralNetwork }) {
   saveState(state);
   writeJson(files.users, users ?? readJson(files.users, []));
@@ -4893,6 +5022,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.post('/api/chat', async (req, res) => {
+  const startTime = Date.now();
   console.log('[CHAT] Chat request received');
   const { message } = req.body || {};
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
@@ -4900,8 +5030,10 @@ app.post('/api/chat', async (req, res) => {
 
   const collections = getCollections();
   const { state, vocabulary, chatLog, memories, concepts, journal } = collections;
+  console.log(`[PERF] Collections loaded in ${Date.now() - startTime}ms`);
 
   const responseContext = analyzeUserMessage(message);
+  console.log(`[PERF] Message analysis completed in ${Date.now() - startTime}ms`);
 
   // Update personality heuristics from user input
   updatePersonalityFromInteraction(state, message);
@@ -4997,14 +5129,15 @@ app.post('/api/chat', async (req, res) => {
     };
   } else {
     // AI-enhanced or normal response generation
-    console.log('[CHAT] Generating response...');
+    console.log(`[PERF] Starting response generation at ${Date.now() - startTime}ms`);
     try {
       constrained = await generateAIResponse(message, state, vocabulary, responseContext, memories, chatLog);
-      console.log('[SUCCESS] Response generated');
+      console.log(`[PERF] AI response generated in ${Date.now() - startTime}ms`);
     } catch (error) {
       console.error('[ERROR] Failed to generate response:', error);
       // Fallback to simple constraint mode
       constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
+      console.log(`[PERF] Fallback response generated in ${Date.now() - startTime}ms`);
     }
   }
 
@@ -5086,15 +5219,19 @@ app.post('/api/chat', async (req, res) => {
   const palEmotion = determineEmotionalState(constrained, responseContext, state);
   state.currentEmotion = palEmotion;
 
-  // Try to save collections, but don't let save errors prevent response
-  try {
-    saveCollections({ ...collections, chatLog, state, vocabulary, memories, concepts, journal });
-    console.log('[SAVE] Collections saved successfully');
-  } catch (saveError) {
-    console.error('Error saving collections (response will still be sent):', saveError);
-  }
+  // Use async saves with debouncing for faster response times
+  // Writes happen in the background without blocking the response
+  const saveStartTime = Date.now();
+  saveCollectionsAsync({ ...collections, chatLog, state, vocabulary, memories, concepts, journal })
+    .then(() => {
+      console.log(`[PERF] Collections saved asynchronously in ${Date.now() - saveStartTime}ms`);
+    })
+    .catch(saveError => {
+      console.error('Error saving collections (response was already sent):', saveError);
+    });
 
-  console.log('[CHAT] Sending response to client');
+  const totalTime = Date.now() - startTime;
+  console.log(`[PERF] ✓ Total chat processing time: ${totalTime}ms (save queued in background)`);
   res.json({
     reply: palMsg.text,
     kind: palMsg.kind,
