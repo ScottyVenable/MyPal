@@ -993,7 +993,7 @@ async function sendChat(message) {
   const timeout = setTimeout(() => {
     logWarn('API', `Chat request timeout triggered`, { requestId });
     controller.abort();
-  }, 60000); // 60 second timeout (increased from 30s for AI processing)
+  }, 300000); // 300 second (5 minute) timeout for AI processing and file I/O
   
   try {
     logDebug('API', `Making chat API request`, { requestId, endpoint: '/chat' });
@@ -1035,7 +1035,7 @@ async function sendChat(message) {
     
     if (err.name === 'AbortError') {
       logError('API', `Chat request aborted (timeout)`, { requestId });
-      throw new Error('Request timed out after 60 seconds');
+      throw new Error('Request timed out after 5 minutes');
     }
     
     logError('API', `Chat request failed`, { 
