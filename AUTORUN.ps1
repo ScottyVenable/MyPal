@@ -309,9 +309,50 @@ function Start-BackendServer {
         [string]$Directory
     )
 
-    Write-Host "Starting MyPal backend..." -ForegroundColor Yellow
-    $backendProcess = Start-Process -FilePath "npm" -ArgumentList @("run", "dev") -WorkingDirectory $Directory -WindowStyle Hidden -PassThru
-    Start-Sleep -Seconds 1
+    Write-Host "Starting MyPal backend in separate window..." -ForegroundColor Yellow
+    
+    # Start backend in a new PowerShell window that stays open
+    # Use -NoExit to keep window open even if npm crashes
+    $backendProcess = Start-Process -FilePath "powershell.exe" `
+        -ArgumentList @("-NoExit", "-Command", "cd '$Directory'; Write-Host 'Starting MyPal Backend Server...' -ForegroundColor Cyan; npm run dev") `
+        -PassThru
+    
+    Write-Host "Backend window opened (PID: $($backendProcess.Id))" -ForegroundColor Gray
+    
+    # Wait for process to initialize
+    Start-Sleep -Seconds 3
+    
+    # Check if the process is still running
+    if ($backendProcess.HasExited) {
+        Write-Error "Backend process exited immediately. Check the backend window for errors."
+        throw "Backend failed to start"
+    }
+    
+    # Give the server more time to bind to the port and initialize
+    Start-Sleep -Seconds 3
+    
+    # Test if the backend is responding
+    $maxAttempts = 5
+    $attempt = 0
+    $success = $false
+    
+    while ($attempt -lt $maxAttempts -and -not $success) {
+        $attempt++
+        Write-Host "Checking backend health (attempt $attempt/$maxAttempts)..." -ForegroundColor Gray
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:3001/api/health" -Method GET -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+            Write-Host "Backend started successfully on http://localhost:3001" -ForegroundColor Green
+            $success = $true
+        } catch {
+            if ($attempt -lt $maxAttempts) {
+                Write-Host "Backend not responding yet, waiting..." -ForegroundColor DarkGray
+                Start-Sleep -Seconds 2
+            } else {
+                Write-Warning "Backend process started but not responding to health checks. Check the backend window for errors."
+            }
+        }
+    }
+    
     return $backendProcess
 }
 
@@ -542,6 +583,7 @@ try {
 
 Write-Host ""
 Write-Host "Launching MyPal Tauri desktop (Press Ctrl+C to stop)..." -ForegroundColor Yellow
+Write-Host "Backend is running in a separate window - close it manually or it will stop when Tauri exits" -ForegroundColor DarkGray
 Write-Host ""
 
 Push-Location $tauriDir
@@ -550,11 +592,24 @@ try {
 } finally {
     Pop-Location
     if ($backendProcess -and -not $backendProcess.HasExited) {
-        Write-Host "Stopping backend..." -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "Stopping backend server..." -ForegroundColor Yellow
         try {
+            # Get all child processes of the PowerShell window (including npm and node)
+            $childProcesses = Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $backendProcess.Id }
+            foreach ($child in $childProcesses) {
+                Write-Host "  Stopping child process: $($child.Name) (PID: $($child.ProcessId))" -ForegroundColor DarkGray
+                Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+            
+            # Stop the main PowerShell window
             Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
+            Write-Host "Backend stopped" -ForegroundColor Green
         } catch {
-            Write-Verbose "Backend process already stopped."
+            Write-Verbose "Backend process already stopped or could not be terminated: $_"
         }
+    } else {
+        Write-Host ""
+        Write-Host "Backend process has already exited" -ForegroundColor DarkGray
     }
 }
