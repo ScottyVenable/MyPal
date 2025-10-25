@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import ForceGraph3D from '3d-force-graph';
+
 const API_BASE = 'http://localhost:3001/api';
 let backendHealthy = false;
 let authToken = localStorage.getItem('mypal_token') || null;

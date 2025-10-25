@@ -5240,6 +5240,12 @@ if (fs.existsSync(FRONTEND_DIR)) {
   app.use(express.static(FRONTEND_DIR));
 }
 
+// Serve media assets (fonts, images, etc.)
+const MEDIA_DIR = path.join(__dirname, '..', '..', 'media');
+if (fs.existsSync(MEDIA_DIR)) {
+  app.use('/media', express.static(MEDIA_DIR));
+}
+
 // Models directory and listing endpoint (scaffolding)
 const MODELS_DIR = process.env.MYPAL_MODELS_DIR || process.env.MODELS_DIR ? path.resolve(process.env.MYPAL_MODELS_DIR || process.env.MODELS_DIR) : path.join(__dirname, '..', 'models');
 if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });

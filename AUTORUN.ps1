@@ -12,10 +12,6 @@
     Skip checking and installing npm dependencies. Useful for faster restarts
     when you know dependencies are already installed.
 
-.PARAMETER NoServerConsole
-    Prevent the server console window from auto-opening. The console can still
-    be opened manually via the system tray menu.
-
 .PARAMETER LogTimeFormat
     Set the time format for log directory naming. Options:
     - '12hour' (default): hh-mm-ss_AM/PM format (e.g., 02-30-45_PM)
@@ -36,10 +32,6 @@
     Quick launch without checking dependencies.
 
 .EXAMPLE
-    .\autorun.ps1 -NoServerConsole
-    Launch without auto-opening the server console window.
-
-.EXAMPLE
     .\autorun.ps1 -LogTimeFormat 24hour
     Launch with 24-hour time format for log directories.
 
@@ -47,14 +39,10 @@
     .\autorun.ps1 -LogTimeFormat custom -CustomLogFormat 'HHmmss-fff'
     Launch with custom millisecond-precision time format.
 
-.EXAMPLE
-    .\autorun.ps1 -SkipInstall -NoServerConsole
-    Quick launch with no console window.
 #>
 
 param(
     [switch]$SkipInstall,
-    [switch]$NoServerConsole,
     [ValidateSet('12hour', '24hour', 'timestamp', 'custom')]
     [string]$LogTimeFormat = '12hour',
     [string]$CustomLogFormat = '',
@@ -145,36 +133,6 @@ function Remove-EmptyLogDirectories {
     } else {
         Write-Host "No empty log directories found" -ForegroundColor DarkGray
     }
-}
-
-function Start-LogConsole {
-    param(
-        [string]$LogFile,
-        [string]$WorkingDirectory
-    )
-
-    if (-not (Test-Path $LogFile)) {
-        New-Item -ItemType File -Path $LogFile -Force | Out-Null
-    }
-
-    $commandScript = @"
-& {
-    param([string]`$logPath, [string]`$rootDir)
-    try { Set-Location `$rootDir } catch {}
-    Clear-Host
-    if (`$Host.Name -eq 'ConsoleHost') {
-        try { `$host.UI.RawUI.WindowTitle = "MyPal Live Log" } catch {}
-    }
-    Write-Host '=== MyPal Live Log ===' -ForegroundColor Cyan
-    Write-Host -ForegroundColor DarkGray "Watching: `$logPath"
-    Write-Host -ForegroundColor DarkGray 'Press Ctrl+C to close this window.'
-    Write-Host ''
-    Get-Content -Path `$logPath -Wait -Tail 200
-} -logPath '$LogFile' -rootDir '$WorkingDirectory'
-"@
-
-    Start-Process -FilePath "powershell.exe" `
-        -ArgumentList "-NoExit", "-Command", $commandScript | Out-Null
 }
 
 function Initialize-NpmDependencies {
@@ -389,12 +347,6 @@ $timeFolder = Get-Date -Format $timeFormat
 $sessionLogsDir = Join-Path $baseLogsDir (Join-Path $dateFolder $timeFolder)
 $env:MYPAL_LOGS_DIR = $sessionLogsDir
 
-# Optional: Skip auto-opening server console
-if ($NoServerConsole) {
-    $env:MYPAL_NO_SERVER_CONSOLE = '1'
-    Write-Host "Server console will not auto-open (NoServerConsole flag used)." -ForegroundColor Yellow
-}
-
 # Ensure directories exist
 @($env:MYPAL_DATA_DIR, $env:MYPAL_LOGS_DIR, $env:MYPAL_MODELS_DIR) | ForEach-Object {
     if (-not (Test-Path $_)) {
@@ -415,15 +367,14 @@ Write-Host "    Starting MyPal with Tauri Desktop    " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Features:" -ForegroundColor Yellow
-Write-Host "  - Server Console: Auto-opens to show real-time logs" -ForegroundColor White
-Write-Host "  - Tauri Shell: Lightweight WebView with native menus" -ForegroundColor White
-Write-Host "  - Background Mode: Keep server running when window closes" -ForegroundColor White
+Write-Host "  - Unified backend + Tauri startup" -ForegroundColor White
+Write-Host "  - Timestamped log directories per session" -ForegroundColor White
+Write-Host "  - Optional pre-launch maintenance commands" -ForegroundColor White
 Write-Host ""
 Write-Host "Data Directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
 Write-Host "Logs Directory: $env:MYPAL_LOGS_DIR" -ForegroundColor Gray
 Write-Host "Log Format: $LogTimeFormat" -ForegroundColor Gray
 Write-Host ""
-Write-Host "Tip: Run '.\autorun.ps1 -NoServerConsole' to skip the console window" -ForegroundColor DarkGray
 Write-Host "Tip: Run '.\autorun.ps1 -SkipInstall' for faster restarts" -ForegroundColor DarkGray
 Write-Host "Tip: Run '.\autorun.ps1 -LogTimeFormat 24hour' for 24-hour log naming" -ForegroundColor DarkGray
 Write-Host ""
@@ -576,13 +527,8 @@ Write-Host "  Logs: $env:MYPAL_LOGS_DIR" -ForegroundColor White
 if ($env:PORT) {
     Write-Host "  Port: $env:PORT" -ForegroundColor White
 }
-$shouldOpenLogConsole = -not $NoServerConsole
 $consoleLogFile = Join-Path $env:MYPAL_LOGS_DIR "console.log"
-if ($shouldOpenLogConsole) {
-    Write-Host "  Live log console: enabled" -ForegroundColor White
-} else {
-    Write-Host "  Live log console: disabled (-NoServerConsole flag supplied)" -ForegroundColor DarkGray
-}
+Write-Host "  Console log file: $consoleLogFile" -ForegroundColor White
 
 Write-Host ""
 Write-Host "Starting services..." -ForegroundColor Cyan
@@ -592,12 +538,6 @@ try {
 } catch {
     Write-Error "Failed to start backend: $_"
     exit 1
-}
-
-if ($shouldOpenLogConsole) {
-    Start-Sleep -Milliseconds 500
-    Write-Host "Opening live log console window..." -ForegroundColor Cyan
-    Start-LogConsole -LogFile $consoleLogFile -WorkingDirectory $scriptRoot
 }
 
 Write-Host ""

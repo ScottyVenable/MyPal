@@ -3,14 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' tauri:; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 ws://localhost:3001 tauri:; img-src 'self' data: tauri: asset: https:; font-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' tauri:; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 http://127.0.0.1:3001 ws://localhost:3001 ws://127.0.0.1:3001 tauri:; img-src 'self' data: tauri: asset: https:; font-src 'self' data:;" />
   <title>Pal — Evolving AI Companion</title>
   <link rel="icon" href="../media/images/icon.ico" type="image/x-icon" />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="services/perf.js"></script>
-  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "3d-force-graph": "https://cdn.jsdelivr.net/npm/3d-force-graph@1.73.3/+esm"
+    }
+  }
+  </script>
   <script type="module" src="app.js" defer></script>
 </head>
 <body>

@@ -6,7 +6,6 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "devUrl": "tauri://localhost",
     "frontendDist": "../../../frontend"
   },
   "app": {
@@ -17,7 +16,8 @@
         "width": 1280,
         "height": 800,
         "resizable": true,
-        "decorations": true
+        "decorations": true,
+        "devtools": true
       }
     ],
     "security": {
@@ -29,7 +29,10 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "appimage", "dmg"],
-    "icon": []
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
   },
   "plugins": {
     "shell": {
