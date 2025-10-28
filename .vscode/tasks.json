@@ -1,0 +1,148 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start MyPal Backend",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "dev"],
+			"options": {
+				"cwd": "${workspaceFolder}/app/backend",
+				"env": {
+					"MYPAL_DATA_DIR": "${workspaceFolder}/dev-data",
+					"MYPAL_LOGS_DIR": "${workspaceFolder}/dev-logs",
+					"MYPAL_MODELS_DIR": "${workspaceFolder}/app/backend/models",
+					"NODE_ENV": "development",
+					"PORT": "3001"
+				}
+			},
+			"isBackground": true,
+			"problemMatcher": {
+				"pattern": {
+					"regexp": "^([^\\s].*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+					"file": 1,
+					"line": 2,
+					"column": 3,
+					"severity": 4,
+					"message": 5
+				},
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": ".",
+					"endsPattern": "MyPal backend listening on"
+				}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": false,
+				"group": "backend"
+			}
+		},
+		{
+			"label": "Start Tauri Dev",
+			"type": "shell",
+			"command": "npm",
+			"args": ["run", "dev"],
+			"options": {
+				"cwd": "${workspaceFolder}/app/desktop/tauri-app",
+				"env": {
+					"MYPAL_DATA_DIR": "${workspaceFolder}/dev-data",
+					"MYPAL_LOGS_DIR": "${workspaceFolder}/dev-logs",
+					"MYPAL_MODELS_DIR": "${workspaceFolder}/app/backend/models",
+					"NODE_ENV": "development",
+					"RUST_BACKTRACE": "1"
+				}
+			},
+			"isBackground": true,
+			"dependsOn": ["Start MyPal Backend"],
+			"problemMatcher": {
+				"pattern": {
+					"regexp": "^([^\\s].*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+					"file": 1,
+					"line": 2,
+					"column": 3,
+					"severity": 4,
+					"message": 5
+				},
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": ".",
+					"endsPattern": "(Finished|compiled successfully)"
+				}
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": false,
+				"group": "tauri"
+			}
+		},
+		{
+			"label": "build",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"build",
+				"${workspaceFolder}/app/desktop/MyPal.Desktop/MyPal.Desktop.csproj",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			],
+			"problemMatcher": "$msCompile",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "publish",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"publish",
+				"${workspaceFolder}/app/desktop/MyPal.Desktop/MyPal.Desktop.csproj",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			],
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "watch",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"watch",
+				"run",
+				"--project",
+				"${workspaceFolder}/app/desktop/MyPal.Desktop/MyPal.Desktop.csproj"
+			],
+			"problemMatcher": "$msCompile",
+			"isBackground": true
+		},
+		{
+			"label": "clean",
+			"command": "dotnet",
+			"type": "process",
+			"args": [
+				"clean",
+				"${workspaceFolder}/app/desktop/MyPal.Desktop/MyPal.Desktop.csproj",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			],
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"type": "dotnet",
+			"task": "watch MyPal.Desktop",
+			"file": "C:\\Users\\scott\\OneDrive\\Desktop\\Coding\\AI Projects\\MyPal\\app\\desktop\\MyPal.Desktop\\MyPal.Desktop.csproj",
+			"problemMatcher": [],
+			"label": "dotnet: watch MyPal.Desktop"
+		}
+	]
+}

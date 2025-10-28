@@ -1,14 +1,22 @@
 {
     "version": "0.2.0",
     "configurations": [
-        
+        {
+            "name": "Launch MyPal (Backend + Tauri)",
+            "type": "node",
+            "request": "launch",
+            "preLaunchTask": "Start Tauri Dev",
+            "skipFiles": ["<node_internals>/**"],
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen"
+        },
         {
             "name": "Launch MyPal Tauri (Dev)",
             "type": "node",
             "request": "launch",
             "cwd": "${workspaceFolder}/app/desktop/tauri-app",
             "runtimeExecutable": "npm",
-            "runtimeArgs": ["run", "tauri", "dev"],
+            "runtimeArgs": ["run", "dev"],
             "skipFiles": ["<node_internals>/**"],
             "env": {
                 "MYPAL_DATA_DIR": "${workspaceFolder}/dev-data",
@@ -33,11 +41,16 @@
                 "MYPAL_LOGS_DIR": "${workspaceFolder}/dev-logs",
                 "MYPAL_MODELS_DIR": "${workspaceFolder}/app/backend/models",
                 "NODE_ENV": "development",
-                "PORT": "31337"
+                "PORT": "3001"
             },
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "outputCapture": "std"
+            "outputCapture": "std",
+            "serverReadyAction": {
+                "pattern": "MyPal backend listening on (https?://[^\\s]+)",
+                "uriFormat": "%s",
+                "action": "debugWithChrome"
+            }
         },
         {
             "name": "Attach to MyPal Backend",
