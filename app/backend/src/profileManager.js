@@ -182,7 +182,7 @@ class ProfileManager {
     });
 
     return {
-      profiles,
+      profiles: profiles.sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0)),
       lastUsedId: index.lastUsedId,
       maxProfiles: 3
     };
@@ -276,13 +276,33 @@ class ProfileManager {
     }
 
     const filePath = this.getProfileDataPath(this.currentProfile, filename);
+    
+    // Check if there's a pending write for this file - if so, wait for it
+    if (this._pendingWrites && this._pendingWrites.has(filePath)) {
+      // Synchronous read during pending write - cancel the pending write and read immediately
+      clearTimeout(this._pendingWrites.get(filePath));
+      this._pendingWrites.delete(filePath);
+    }
+    
     try {
       if (fs.existsSync(filePath)) {
         const data = fs.readFileSync(filePath, 'utf8');
+        // Validate JSON is complete before parsing
+        if (!data || data.trim() === '') {
+          console.warn(`[PROFILE] Empty file detected: ${filename}, will be recreated on next save`);
+          return null;
+        }
         return JSON.parse(data);
       }
     } catch (err) {
-      console.error(`Failed to load ${filename} for current profile:`, err);
+      // Only log parse errors at warn level - file corruption is recoverable
+      if (err instanceof SyntaxError) {
+        console.warn(`[PROFILE] JSON parse error in ${filename} (file may be mid-write, will retry):`, err.message);
+      } else {
+        console.error(`[PROFILE] Failed to load ${filename} for current profile:`, err);
+      }
+      // If JSON parse fails, file might be corrupted - return null and let it be recreated
+      return null;
     }
     return null;
   }
@@ -306,7 +326,7 @@ class ProfileManager {
   }
 
   /**
-   * Helper for async writes with debouncing
+   * Helper for async writes with debouncing and atomic writes
    */
   async writeJsonAsync(file, data, immediate = false) {
     // Debounce map for this instance
@@ -323,11 +343,31 @@ class ProfileManager {
 
     const doWrite = async () => {
       try {
-        await fs.promises.writeFile(file, JSON.stringify(data, null, 2), 'utf8');
+        // Atomic write: write to temp file, then rename
+        const tempFile = `${file}.tmp`;
+        const jsonString = JSON.stringify(data, null, 2);
+        
+        // Write to temp file
+        await fs.promises.writeFile(tempFile, jsonString, 'utf8');
+        
+        // Atomic rename (replaces original file)
+        await fs.promises.rename(tempFile, file);
+        
         this._pendingWrites.delete(file);
       } catch (error) {
         console.error('Error writing file:', file, error);
         this._pendingWrites.delete(file);
+        
+        // Clean up temp file if it exists
+        try {
+          const tempFile = `${file}.tmp`;
+          if (fs.existsSync(tempFile)) {
+            await fs.promises.unlink(tempFile);
+          }
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+        
         throw error;
       }
     };
@@ -358,10 +398,30 @@ class ProfileManager {
 
     const filePath = this.getProfileDataPath(this.currentProfile, filename);
     try {
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+      // Atomic write: write to temp file, then rename
+      const tempFile = `${filePath}.tmp`;
+      const jsonString = JSON.stringify(data, null, 2);
+      
+      // Write to temp file
+      fs.writeFileSync(tempFile, jsonString, 'utf8');
+      
+      // Atomic rename (replaces original file)
+      fs.renameSync(tempFile, filePath);
+      
       return true;
     } catch (err) {
       console.error(`Failed to save ${filename} for current profile:`, err);
+      
+      // Clean up temp file if it exists
+      try {
+        const tempFile = `${filePath}.tmp`;
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+        }
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+      
       return false;
     }
   }
