@@ -1153,7 +1153,7 @@ const neuralPatterns = {
  */
 function activateNeuralPattern(taskType, neuralNetwork) {
   const pattern = neuralPatterns[taskType];
-  if (!pattern) return;
+  if (!pattern) return null;
 
   console.log(`[NEURAL] Activating neural pattern: ${taskType}`);
 
@@ -1169,7 +1169,19 @@ function activateNeuralPattern(taskType, neuralNetwork) {
     }
   }
 
-  if (targetNeurons.length === 0) return;
+  const neuronCount = targetNeurons.length;
+
+  if (neuronCount === 0) {
+    return {
+      task: taskType,
+      pattern: pattern.pattern,
+      regions: pattern.regions,
+      neuronsFired: 0,
+      sampleNeuronIds: [],
+    };
+  }
+
+  const sampleNeuronIds = targetNeurons.slice(0, 5).map((neuron) => neuron.id);
 
   // Trigger based on pattern
   if (pattern.pattern === 'burst' || pattern.pattern === 'sustained') {
@@ -1201,6 +1213,14 @@ function activateNeuralPattern(taskType, neuralNetwork) {
       neuralNetwork.triggerNeuron(neuron.id, 0.8);
     }
   }
+
+  return {
+    task: taskType,
+    pattern: pattern.pattern,
+    regions: pattern.regions,
+    neuronsFired: neuronCount,
+    sampleNeuronIds,
+  };
 }
 
 // ========================================
@@ -4389,9 +4409,10 @@ function buildThoughtEntry({ state, userText, responseContext, responsePlan, imp
  * AI-Enhanced Response Generation
  * Uses external LLM when enabled, falls back to local-only mode
  */
-async function generateAIResponse(input, state, vocabulary, context, memories = [], chatLog = []) {
+async function generateAIResponse(input, state, vocabulary, context, memories = [], chatLog = [], extras = {}) {
   const settings = state.settings || {};
   const provider = settings.apiProvider || 'local';
+  const { concepts = [], facts = [] } = extras;
   
   // If local mode or no model configured, use original constraint system
   if (provider === 'local') {
@@ -4418,8 +4439,6 @@ async function generateAIResponse(input, state, vocabulary, context, memories = 
     }
 
     // Build developmentally-appropriate prompt
-    const concepts = getCollections().concepts || [];
-    const facts = getCollections().facts || [];
     const promptBuilder = new PromptBuilder(state, vocabulary, concepts, facts, memories);
     
     // Get recent chat history (limit based on level)
@@ -5029,7 +5048,7 @@ app.post('/api/chat', async (req, res) => {
   console.log('[CHAT] User message:', message);
 
   const collections = getCollections();
-  const { state, vocabulary, chatLog, memories, concepts, journal } = collections;
+  const { state, vocabulary, chatLog, memories, concepts, facts, journal } = collections;
   console.log(`[PERF] Collections loaded in ${Date.now() - startTime}ms`);
 
   const responseContext = analyzeUserMessage(message);
@@ -5097,25 +5116,30 @@ app.post('/api/chat', async (req, res) => {
   // ===== NEURAL ACTIVATION =====
   // Get neural network and activate patterns during cognitive processing
   const neuralNetwork = getNeuralNetwork(collections);
+  const neuralActivations = [];
+  const recordActivation = (task) => {
+    const activation = activateNeuralPattern(task, neuralNetwork);
+    if (activation) neuralActivations.push(activation);
+  };
   
   // 1. Receive message (sensory input fires)
-  activateNeuralPattern('receive-message', neuralNetwork);
+  recordActivation('receive-message');
   
   // 2. Process language (language center + association cortex)
-  activateNeuralPattern('process-language', neuralNetwork);
+  recordActivation('process-language');
   
   // 3. Emotional processing if needed
   if (responseContext.sentiment && responseContext.sentiment !== 'neutral') {
-    activateNeuralPattern('emotional-response', neuralNetwork);
+    recordActivation('emotional-response');
   }
   
   // 4. Memory recall if relevant memories exist
   if (memories.length > 0) {
-    activateNeuralPattern('memory-recall', neuralNetwork);
+    recordActivation('memory-recall');
   }
   
   // 5. Decision making
-  activateNeuralPattern('decision-making', neuralNetwork);
+  recordActivation('decision-making');
 
   // Generate response: Use curiosity question if triggered, otherwise AI/normal response
   let constrained;
@@ -5131,7 +5155,15 @@ app.post('/api/chat', async (req, res) => {
     // AI-enhanced or normal response generation
     console.log(`[PERF] Starting response generation at ${Date.now() - startTime}ms`);
     try {
-      constrained = await generateAIResponse(message, state, vocabulary, responseContext, memories, chatLog);
+      constrained = await generateAIResponse(
+        message,
+        state,
+        vocabulary,
+        responseContext,
+        memories,
+        chatLog,
+        { concepts, facts }
+      );
       console.log(`[PERF] AI response generated in ${Date.now() - startTime}ms`);
     } catch (error) {
       console.error('[ERROR] Failed to generate response:', error);
@@ -5162,10 +5194,10 @@ app.post('/api/chat', async (req, res) => {
   learnVocabulary(vocabulary, palWords, 'pal', constrained.output);
 
   // 6. Generate response (language center + motor output)
-  activateNeuralPattern('generate-response', neuralNetwork);
+  recordActivation('generate-response');
   
   // 7. Learning (after generating response)
-  activateNeuralPattern('learning', neuralNetwork);
+  recordActivation('learning');
   
   // Update neural network metrics and save
   neuralNetwork.updateMetrics();
@@ -5231,7 +5263,25 @@ app.post('/api/chat', async (req, res) => {
     });
 
   const totalTime = Date.now() - startTime;
-  console.log(`[PERF] ✓ Total chat processing time: ${totalTime}ms (save queued in background)`);
+  const activationSummary = neuralActivations.map((a) => a.task).join(' -> ') || 'none';
+  console.log(
+    `[PERF] Total chat processing time: ${totalTime}ms (save queued in background)`,
+    {
+      activationSummary,
+      userMessageLength: message.length,
+      replyLength: palMsg.text.length,
+    }
+  );
+  logTelemetry(!!state.settings?.telemetry, {
+    type: 'chat',
+    level: state.level,
+    processingTimeMs: totalTime,
+    xpGained: gained,
+    neuralActivations: activationSummary,
+  });
+  logAccess(
+    `[CHAT] user=${message.length}chars reply=${palMsg.text.length}chars time=${totalTime}ms level=${state.level}`
+  );
   res.json({
     reply: palMsg.text,
     kind: palMsg.kind,
@@ -5246,6 +5296,8 @@ app.post('/api/chat', async (req, res) => {
     },
     thoughtId: thought.id,
     emotion: palEmotion,
+    processingTimeMs: totalTime,
+    neuralActivations,
   });
   console.log('[SUCCESS] Response sent successfully');
 });

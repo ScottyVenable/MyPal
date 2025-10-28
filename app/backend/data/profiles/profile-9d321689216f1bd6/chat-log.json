@@ -1,0 +1,28 @@
+[
+  {
+    "id": "MZLru7W7pqhZgI6LKoKOS",
+    "role": "user",
+    "text": "hi",
+    "ts": 1761369511438
+  },
+  {
+    "id": "KwIx3CdSg5NS8GaPd_vPw",
+    "role": "pal",
+    "text": "mm",
+    "kind": "single_word",
+    "ts": 1761369511439
+  },
+  {
+    "id": "qz76lOOwzgSAWK6QzXkTa",
+    "role": "user",
+    "text": "How are you",
+    "ts": 1761369516994
+  },
+  {
+    "id": "cSYe1NzXvjlQPiZYern2M",
+    "role": "pal",
+    "text": "...hi?",
+    "kind": "single_word",
+    "ts": 1761369516994
+  }
+]

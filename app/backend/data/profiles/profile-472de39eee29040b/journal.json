@@ -37,5 +37,76 @@
       "importanceScore": 8,
       "memoryId": "CWfAORGyfJFkN0AYE91Vh"
     }
+  },
+  {
+    "id": "Hxd5RqenaEQdCH5F_3CBz",
+    "ts": 1761365419142,
+    "level": 0,
+    "stage": "Sensorimotor (Early)",
+    "stageCode": "stage-0-1",
+    "userText": "Hello!",
+    "analysis": {
+      "keywords": [],
+      "sentiment": "neutral",
+      "hasQuestion": false,
+      "hasGreeting": true,
+      "hasThanks": false,
+      "isCommand": false
+    },
+    "focus": null,
+    "concept": null,
+    "response": {
+      "type": "nascent-awareness",
+      "text": "me?",
+      "reasoning": [
+        "First moments of awareness - cautious observation."
+      ],
+      "strategy": "awakening"
+    },
+    "memory": {
+      "stored": false,
+      "importanceLevel": "low",
+      "importanceScore": 1,
+      "memoryId": null
+    }
+  },
+  {
+    "id": "yN6IqUZ1MPCqJgyew8_Gj",
+    "ts": 1761365488934,
+    "level": 0,
+    "stage": "Sensorimotor (Early)",
+    "stageCode": "stage-0-1",
+    "userText": "Kiki is my girlfriend",
+    "analysis": {
+      "keywords": [
+        "kiki",
+        "girlfriend"
+      ],
+      "sentiment": "neutral",
+      "hasQuestion": false,
+      "hasGreeting": false,
+      "hasThanks": false,
+      "isCommand": false
+    },
+    "focus": "kiki",
+    "concept": {
+      "key": "topic:kiki",
+      "name": "Topic: Kiki",
+      "category": "Topic"
+    },
+    "response": {
+      "type": "nascent-awareness",
+      "text": "*blink*",
+      "reasoning": [
+        "First moments of awareness - cautious observation."
+      ],
+      "strategy": "awakening"
+    },
+    "memory": {
+      "stored": false,
+      "importanceLevel": "low",
+      "importanceScore": 0,
+      "memoryId": null
+    }
   }
 ]

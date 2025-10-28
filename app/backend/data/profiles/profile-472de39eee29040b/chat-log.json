@@ -11,5 +11,31 @@
     "text": "mm",
     "kind": "nascent-awareness",
     "ts": 1761065577596
+  },
+  {
+    "id": "Ewhakhv5-4pnlAufEP3MH",
+    "role": "user",
+    "text": "Hello!",
+    "ts": 1761365419138
+  },
+  {
+    "id": "E-zmsuOBkliEpHpB79bNt",
+    "role": "pal",
+    "text": "me?",
+    "kind": "single_word",
+    "ts": 1761365419138
+  },
+  {
+    "id": "pjBt8aErqjJjpI9co0oEz",
+    "role": "user",
+    "text": "Kiki is my girlfriend",
+    "ts": 1761365488929
+  },
+  {
+    "id": "4ZFEnbtU7CDS4GPcY95fG",
+    "role": "pal",
+    "text": "*blink*",
+    "kind": "single_word",
+    "ts": 1761365488929
   }
 ]

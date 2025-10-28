@@ -1,11 +1,11 @@
 {
-  "id": "472de39eee29040b",
-  "name": "DevPal",
-  "createdAt": 1761131695875,
-  "lastPlayedAt": 1761365548918,
+  "id": "2a63ebec657c03f9",
+  "name": "Kita",
+  "createdAt": 1761369011379,
+  "lastPlayedAt": 1761369181649,
   "level": 0,
-  "xp": 30,
-  "messageCount": 6,
+  "xp": 20,
+  "messageCount": 4,
   "memoryCount": 1,
   "version": "1.0.0",
   "cp": 0,
@@ -17,18 +17,11 @@
   "personality": {
     "curious": 11,
     "logical": 10,
-    "social": 12,
+    "social": 11,
     "agreeable": 10,
     "cautious": 10
   },
   "vocabulary": [
-    "hello",
-    "kiki",
-    "girlfriend",
-    "mm",
-    "pal",
-    "how",
-    "are",
-    "you"
+    "hello"
   ]
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' tauri:; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 http://127.0.0.1:3001 ws://localhost:3001 ws://127.0.0.1:3001 tauri:; img-src 'self' data: tauri: asset: https:; font-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' tauri:; script-src 'self' https://cdn.jsdelivr.net https://unpkg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:3001 http://127.0.0.1:3001 ws://localhost:3001 ws://127.0.0.1:3001 https://cdn.jsdelivr.net tauri:; img-src 'self' data: tauri: asset: https:; font-src 'self' data: http://localhost:3001;" />
   <title>Pal — Evolving AI Companion</title>
   <link rel="icon" href="../media/images/icon.ico" type="image/x-icon" />
   <link rel="stylesheet" href="styles.css" />
@@ -33,6 +33,7 @@
         <button id="continue-btn" class="btn-primary btn-large" type="button">
           Continue with <span id="continue-name">My Pal</span>
         </button>
+        <div id="continue-meta" class="continue-meta hidden"></div>
       </div>
       
       <div class="profile-actions">
@@ -130,7 +131,7 @@
             </div>
             <div class="insight-body">
               <div class="emotion-display" id="emotion-display">
-                <div class="emotion-icon" id="emotion-icon">dY~S</div>
+                <div class="emotion-icon" id="emotion-icon">😊</div>
                 <div class="emotion-details">
                   <div class="emotion-mood" id="emotion-mood">Pal is calm</div>
                   <div class="emotion-bar">

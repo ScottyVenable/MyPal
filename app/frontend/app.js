@@ -22,6 +22,13 @@ let neuralNodeIndex = new Map();
 let neuralLinkIndex = new Map();
 let neuralGraphResizeObserver = null;
 let neuralGraphRefreshRaf = null;
+const neuralActivityFeed = [];
+const neuralActivityMap = new Map();
+const neuralActivityByNeuron = new Map();
+const neuralActivityIdSet = new Set();
+let neuralReplayQueue = [];
+let neuralReplayActive = false;
+const MAX_ACTIVITY_ENTRIES = 30;
 
 // ==============================================
 // COMPREHENSIVE LOGGING SYSTEM
@@ -112,6 +119,27 @@ const logDebug = (category, message, data) => log(LOG_LEVELS.DEBUG, category, me
 const logInfo = (category, message, data) => log(LOG_LEVELS.INFO, category, message, data);
 const logWarn = (category, message, data) => log(LOG_LEVELS.WARN, category, message, data);
 const logError = (category, message, data) => log(LOG_LEVELS.ERROR, category, message, data);
+
+function summarizeNeuralActivations(activations) {
+  if (!Array.isArray(activations) || activations.length === 0) return '';
+  return activations
+    .map((entry) => (entry && typeof entry === 'object' ? entry.task : null))
+    .filter(Boolean)
+    .join(' -> ');
+}
+
+function buildPalMeta(response, { prefix } = {}) {
+  const parts = [];
+  if (prefix) parts.push(prefix);
+  if (response?.kind) parts.push(`Mode: ${response.kind}`);
+  const neuralSummary = summarizeNeuralActivations(response?.neuralActivations);
+  if (neuralSummary) parts.push(`Neural: ${neuralSummary}`);
+  if (typeof response?.processingTimeMs === 'number') {
+    const rounded = Math.max(0, Math.round(response.processingTimeMs));
+    parts.push(`Processed in ${rounded}ms`);
+  }
+  return parts.length ? parts.join(' | ') : undefined;
+}
 
 // Performance timing helpers
 const perfTimers = new Map();
@@ -230,13 +258,19 @@ async function createProfile(name) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name })
     });
+
+    const payload = await res.json().catch(() => null);
     
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || 'Failed to create profile');
+    if (!payload) {
+      throw new Error('Unexpected response from server');
     }
     
-    return await res.json();
+    if (!res.ok || payload.success === false) {
+      const message = payload?.error || 'Failed to create profile';
+      throw new Error(message);
+    }
+    
+    return payload?.profile ?? payload;
   } catch (err) {
     console.error('Error creating profile:', err);
     throw err;
@@ -256,10 +290,18 @@ async function loadProfile(profileId) {
       status: res.status,
       ok: res.ok
     });
-    
-    if (!res.ok) throw new Error('Failed to load profile');
-    
-    const profile = await res.json();
+
+    const payload = await res.json().catch(() => null);
+    if (!payload) {
+      throw new Error('Unexpected response from server');
+    }
+
+    if (!res.ok || payload.success === false) {
+      const message = payload?.error || 'Failed to load profile';
+      throw new Error(message);
+    }
+
+    const profile = payload?.profile ?? payload;
     currentProfileId = profileId;
     localStorage.setItem('mypal_current_profile', profileId);
     
@@ -308,43 +350,87 @@ function hideProfileMenu() {
   $('#main-app').classList.remove('hidden');
 }
 
-function renderProfileCards(profiles) {
+function describeLastPlayed(timestamp, { includeTime = false } = {}) {
+  if (!timestamp) return 'Never';
+  try {
+    const playedAt = new Date(timestamp);
+    const diffMs = Date.now() - playedAt.getTime();
+    const oneDay = 24 * 60 * 60 * 1000;
+    if (diffMs < oneDay) {
+      return includeTime ? `Today at ${playedAt.toLocaleTimeString()}` : 'Today';
+    }
+    if (diffMs < oneDay * 2) {
+      return includeTime ? `Yesterday at ${playedAt.toLocaleTimeString()}` : 'Yesterday';
+    }
+    return includeTime ? playedAt.toLocaleString() : playedAt.toLocaleDateString();
+  } catch {
+    return 'Unknown';
+  }
+}
+
+function renderProfileCards(profiles = [], options = {}) {
   const container = $('#profile-cards');
   if (!container) return;
-  
+  const { lastUsedId = null } = options;
+
+  const triggerCreateFlow = () => $('#new-pal-btn')?.click();
+
   container.innerHTML = '';
-  
+  container.classList.remove('hidden');
+
   if (!profiles || profiles.length === 0) {
-    container.classList.add('hidden');
+    container.innerHTML = `
+      <div class="profile-empty-card">
+        <h3>No Pals Yet</h3>
+        <p>Create a new Pal to begin your journey.</p>
+        <button type="button" class="btn-primary btn-inline" id="profile-empty-create">Create Pal</button>
+      </div>
+    `;
+    container.querySelector('#profile-empty-create')?.addEventListener('click', triggerCreateFlow);
     return;
   }
-  
-  container.classList.remove('hidden');
-  
-  profiles.forEach(profile => {
+
+  const sortedProfiles = [...profiles].sort(
+    (a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0)
+  );
+  const recentProfiles = sortedProfiles.slice(0, Math.min(sortedProfiles.length, 3));
+  const remainingProfiles = sortedProfiles.slice(recentProfiles.length);
+
+  const fragment = document.createDocumentFragment();
+
+  const createProfileCard = (profile) => {
     const card = document.createElement('div');
     card.className = 'profile-card';
-    
-    const lastPlayed = profile.lastPlayedAt ? new Date(profile.lastPlayedAt).toLocaleDateString() : 'Never';
-    
+    if (profile.id === lastUsedId) {
+      card.classList.add('profile-card-active');
+    }
+
     card.innerHTML = `
       <div class="profile-card-header">
-        <h3 class="profile-card-name">${profile.name}</h3>
-        <button class="profile-card-delete" data-profile-id="${profile.id}" title="Delete profile">🗑️</button>
+        <div class="profile-card-heading">
+          <h3 class="profile-card-name">${profile.name}</h3>
+          <div class="profile-card-meta">Level ${profile.level || 1} • ${profile.xp || 0} XP</div>
+        </div>
+        <button type="button" class="profile-card-delete" data-profile-id="${profile.id}" title="Delete profile">🗑️</button>
       </div>
-      <div class="profile-card-stats">
-        <div class="profile-stat">Level: <span class="profile-stat-value">${profile.level || 0}</span></div>
-        <div class="profile-stat">XP: <span class="profile-stat-value">${profile.xp || 0}</span></div>
-        <div class="profile-stat">Messages: <span class="profile-stat-value">${profile.messageCount || 0}</span></div>
-        <div class="profile-stat">Memories: <span class="profile-stat-value">${profile.memoryCount || 0}</span></div>
+      <div class="profile-card-body">
+        <div class="profile-card-stat">
+          <span class="profile-card-stat-label">Messages</span>
+          <span class="profile-card-stat-value">${profile.messageCount || 0}</span>
+        </div>
+        <div class="profile-card-stat">
+          <span class="profile-card-stat-label">Memories</span>
+          <span class="profile-card-stat-value">${profile.memoryCount || 0}</span>
+        </div>
       </div>
-      <div class="profile-card-footer">Last played: ${lastPlayed}</div>
+      <div class="profile-card-footer">Last played: ${describeLastPlayed(profile.lastPlayedAt)}</div>
     `;
-    
-    // Click card to load profile
+
     card.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('profile-card-delete')) return;
-      
+      if ((e.target instanceof HTMLElement) && e.target.classList.contains('profile-card-delete')) {
+        return;
+      }
+
       try {
         await loadProfile(profile.id);
         hideProfileMenu();
@@ -353,14 +439,13 @@ function renderProfileCards(profiles) {
         alert(`Failed to load profile: ${err.message}`);
       }
     });
-    
-    // Delete button
+
     const deleteBtn = card.querySelector('.profile-card-delete');
-    deleteBtn.addEventListener('click', async (e) => {
+    deleteBtn?.addEventListener('click', async (e) => {
       e.stopPropagation();
-      
+
       if (!confirm(`Delete "${profile.name}"? This cannot be undone.`)) return;
-      
+
       try {
         await deleteProfile(profile.id);
         await initProfileMenu();
@@ -368,9 +453,39 @@ function renderProfileCards(profiles) {
         alert(`Failed to delete profile: ${err.message}`);
       }
     });
-    
-    container.appendChild(card);
-  });
+
+    return card;
+  };
+
+  const buildSection = (title, items) => {
+    if (!items || items.length === 0) return;
+
+    const section = document.createElement('section');
+    section.className = 'profile-section';
+
+    const header = document.createElement('div');
+    header.className = 'profile-section-header';
+    header.innerHTML = `
+      <h2 class="profile-section-title">${title}</h2>
+      <span class="profile-section-count">${items.length}</span>
+    `;
+    section.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'profile-card-grid';
+    items.forEach((profile) => {
+      const card = createProfileCard(profile);
+      if (card) grid.appendChild(card);
+    });
+
+    section.appendChild(grid);
+    fragment.appendChild(section);
+  };
+
+  buildSection('Recently Used', recentProfiles);
+  buildSection(recentProfiles.length ? 'All Pals' : 'Your Pals', remainingProfiles);
+
+  container.appendChild(fragment);
 }
 
 async function initProfileMenu() {
@@ -386,12 +501,18 @@ async function initProfileMenu() {
   const continueSection = $('#continue-section');
   const continueBtn = $('#continue-btn');
   const continueName = $('#continue-name');
+  const continueMeta = $('#continue-meta');
   
   if (lastUsedId && profiles.length > 0) {
     const lastProfile = profiles.find(p => p.id === lastUsedId);
     if (lastProfile) {
       continueSection.classList.remove('hidden');
       continueName.textContent = lastProfile.name;
+      if (continueMeta) {
+        const playedLabel = describeLastPlayed(lastProfile.lastPlayedAt, { includeTime: true });
+        continueMeta.textContent = `Level ${lastProfile.level || 1} • Last played ${playedLabel}`;
+        continueMeta.classList.remove('hidden');
+      }
       
       continueBtn.onclick = async () => {
         try {
@@ -404,9 +525,17 @@ async function initProfileMenu() {
       };
     } else {
       continueSection.classList.add('hidden');
+      if (continueMeta) {
+        continueMeta.textContent = '';
+        continueMeta.classList.add('hidden');
+      }
     }
   } else {
     continueSection.classList.add('hidden');
+    if (continueMeta) {
+      continueMeta.textContent = '';
+      continueMeta.classList.add('hidden');
+    }
   }
   
   // Update New Pal button state
@@ -419,7 +548,7 @@ async function initProfileMenu() {
     newPalBtn.title = '';
   }
   
-  renderProfileCards(profiles);
+  renderProfileCards(profiles, { lastUsedId });
 }
 
 function wireProfileManagement() {
@@ -485,17 +614,12 @@ function wireProfileManagement() {
         profiles: data?.profiles
       });
       
-      if (data && data.profiles.length > 0) {
-        renderProfileCards(data.profiles);
-        logInfo('PROFILE', 'Profile cards rendered');
+      renderProfileCards(data?.profiles || [], { lastUsedId: data?.lastUsedId });
+      logInfo('PROFILE', 'Profile cards rendered');
+      if (data?.profiles?.length) {
         setTimeout(() => {
           profileCards.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }, 100);
-      } else {
-        logWarn('PROFILE', 'No profiles to display');
-        // Show a message if no profiles exist
-        profileCards.innerHTML = '<p class="memory-empty">No profiles found. Create a new Pal to get started!</p>';
-        profileCards.classList.remove('hidden');
       }
     } else {
       logInfo('PROFILE', 'Hiding profile cards');
@@ -800,9 +924,16 @@ function addMessage(role, text, metaText) {
       const indicator = showTyping();
       try {
         const res = await sendChat(lastUserMessage);
-        const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '�?�');
-        const meta = 'Regenerated' + (res?.kind ? ` | Mode: ${res.kind}` : '');
+        const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ? String(res.output) : 'Unable to respond right now.');
+        const meta = buildPalMeta(res, { prefix: 'Regenerated' });
         addMessage('pal', replyText, meta);
+        if (typeof res?.processingTimeMs === 'number') {
+          logInfo('PERFORMANCE', 'Regenerated response received', { processingTimeMs: Math.round(res.processingTimeMs) });
+        }
+        const regenSummary = summarizeNeuralActivations(res?.neuralActivations);
+        if (regenSummary) {
+          logDebug('NEURAL', 'Neural activation sequence received (regeneration)', { neuralSummary: regenSummary });
+        }
         if (res?.emotion) updateEmotionDisplay(res.emotion);
         const wasDirty = multiplierDirty; await refreshStats(); multiplierDirty = wasDirty;
         if (journalLoaded) await loadJournal(true);
@@ -1022,13 +1153,31 @@ async function sendChat(message) {
     }
     
     const data = await res.json();
+    const activationCount = Array.isArray(data?.neuralActivations) ? data.neuralActivations.length : 0;
     logInfo('API', `Chat response parsed successfully`, { 
       requestId,
       hasReply: !!data.reply,
       hasOutput: !!data.output,
-      hasEmotion: !!data.emotion
+      hasEmotion: !!data.emotion,
+      processingTimeMs: typeof data?.processingTimeMs === 'number' ? data.processingTimeMs : null,
+      activationCount
     });
-    
+
+    if (typeof data?.processingTimeMs === 'number') {
+      logInfo('PERFORMANCE', `Backend processed chat request`, { 
+        requestId,
+        processingTimeMs: Math.round(data.processingTimeMs)
+      });
+    }
+
+    const neuralSummary = summarizeNeuralActivations(data?.neuralActivations);
+    if (neuralSummary) {
+      logDebug('NEURAL', `Neural activation sequence received`, { 
+        requestId,
+        neuralSummary
+      });
+    }
+
     return data;
   } catch (err) {
     clearTimeout(timeout);
@@ -1147,6 +1296,323 @@ function connectNeuralSocket() {
   });
 }
 
+function describeIntensityLevel(value = 0) {
+  const intensity = Math.abs(Number(value) || 0);
+  if (intensity >= 1.4) return { label: 'surging', icon: '⚡' };
+  if (intensity >= 0.9) return { label: 'strong', icon: '🔥' };
+  if (intensity >= 0.5) return { label: 'steady', icon: '✨' };
+  if (intensity > 0.15) return { label: 'gentle', icon: '🌟' };
+  return { label: 'baseline', icon: '•' };
+}
+
+function formatTimeAgo(timestamp) {
+  const ts = Number(timestamp) || Date.now();
+  const diff = Date.now() - ts;
+  if (diff < 1500) return 'just now';
+  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  const date = new Date(ts);
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function getNeuronInfo(neuronId) {
+  if (!neuronId) return null;
+  const node = neuralNodeIndex.get(neuronId);
+  if (node) {
+    return {
+      neuronId,
+      regionId: node.regionId,
+      regionName: node.regionName || formatRegionName(node.regionId),
+      label: node.label || neuronId,
+    };
+  }
+  return null;
+}
+
+function getNeuronLabel(neuronId) {
+  if (!neuronId) return 'Unknown neuron';
+  return neuronId.length > 8 ? `…${neuronId.slice(-6)}` : neuronId;
+}
+
+function ensureActivityCapacity() {
+  if (neuralActivityFeed.length <= MAX_ACTIVITY_ENTRIES) return;
+  const excess = neuralActivityFeed.length - MAX_ACTIVITY_ENTRIES;
+  const removed = neuralActivityFeed.splice(0, excess);
+  removed.forEach((entry) => {
+    neuralActivityMap.delete(entry.id);
+    neuralActivityIdSet.delete(entry.id);
+  });
+  // Prune neuron map to remove stale references
+  neuralActivityByNeuron.forEach((list, neuronId) => {
+    const filtered = list.filter((activity) => neuralActivityMap.has(activity.id));
+    if (filtered.length) {
+      neuralActivityByNeuron.set(neuronId, filtered);
+    } else {
+      neuralActivityByNeuron.delete(neuronId);
+    }
+  });
+}
+
+function buildActivitySummary(entry) {
+  if (!entry) return '';
+  if (entry.type === 'neuron-fire') {
+    const intensity = describeIntensityLevel(entry.intensity);
+    const neuronLabel = getNeuronLabel(entry.neuronId);
+    const regionName = entry.regionName || formatRegionName(entry.regionId);
+    let summary = `${regionName} neuron ${neuronLabel} fired with ${intensity.label} energy`;
+    if (entry.connections?.length) {
+      const first = entry.connections[0];
+      const count = entry.connections.length;
+      const targetRegion = first.toRegionName || formatRegionName(first.toRegionId);
+      if (count === 1) {
+        summary += `, signaling ${targetRegion} (${getNeuronLabel(first.toNeuronId)})`;
+      } else {
+        summary += `, cascading to ${count} downstream neurons`;
+      }
+    }
+    return `${summary}.`;
+  }
+  if (entry.type === 'connection-signal') {
+    const fromRegion = entry.fromRegionName || 'Source neuron';
+    const toRegion = entry.toRegionName || 'target neuron';
+    const strength = describeIntensityLevel(entry.signal);
+    return `${fromRegion} signaled ${toRegion} with ${strength.label} strength.`;
+  }
+  if (entry.type === 'neural-growth') {
+    const region = entry.regionName || formatRegionName(entry.regionId);
+    return `${region} grew ${entry.newNeurons} new neurons after reaching level ${entry.level}.`;
+  }
+  return '';
+}
+
+function addNeuralActivityEntry(event, options = {}) {
+  if (!event || !event.type) return null;
+  const timestamp = event.timestamp || Date.now();
+
+  if (event.type === 'neuron-fire') {
+    const activityId = `fire-${event.neuronId}-${timestamp}`;
+    if (neuralActivityIdSet.has(activityId)) {
+      return neuralActivityMap.get(activityId) || null;
+    }
+
+    const nodeInfo = getNeuronInfo(event.neuronId);
+    const regionName = event.regionName || nodeInfo?.regionName || formatRegionName(event.regionId);
+    const entry = {
+      id: activityId,
+      type: 'neuron-fire',
+      neuronId: event.neuronId,
+      regionId: event.regionId,
+      regionName,
+      intensity: event.intensity ?? 0,
+      timestamp,
+      connections: [],
+      timeline: [{
+        type: 'neuron-fire',
+        neuronId: event.neuronId,
+        intensity: event.intensity ?? 0,
+        timestamp,
+      }],
+    };
+
+    const intensityMeta = describeIntensityLevel(entry.intensity);
+    entry.intensityLabel = intensityMeta.label;
+    entry.intensityIcon = intensityMeta.icon;
+    entry.summary = buildActivitySummary(entry);
+    entry.timeLabel = formatTimeAgo(timestamp);
+
+    neuralActivityFeed.push(entry);
+    neuralActivityMap.set(entry.id, entry);
+    neuralActivityIdSet.add(entry.id);
+
+    if (entry.neuronId) {
+      const list = neuralActivityByNeuron.get(entry.neuronId) || [];
+      list.push(entry);
+      while (list.length && (timestamp - list[0].timestamp) > 6000) {
+        list.shift();
+      }
+      // Keep only recent entries per neuron (last 5)
+      while (list.length > 5) list.shift();
+      neuralActivityByNeuron.set(entry.neuronId, list);
+    }
+
+    ensureActivityCapacity();
+    return entry;
+  }
+
+  if (event.type === 'connection-signal') {
+    const sourceList = neuralActivityByNeuron.get(event.fromNeuronId);
+    let parentEntry = null;
+    if (sourceList && sourceList.length) {
+      parentEntry = [...sourceList].reverse().find((item) => (timestamp - item.timestamp) <= 4000);
+    }
+
+    const targetInfo = getNeuronInfo(event.toNeuronId);
+    const connectionDetails = {
+      type: 'connection',
+      fromNeuronId: event.fromNeuronId,
+      toNeuronId: event.toNeuronId,
+      toRegionId: targetInfo?.regionId,
+      toRegionName: targetInfo?.regionName || formatRegionName(targetInfo?.regionId),
+      signal: event.signal ?? 0,
+      latency: event.latency || 180,
+      timestamp,
+    };
+
+    if (parentEntry) {
+      parentEntry.connections.push(connectionDetails);
+      parentEntry.timeline.push(connectionDetails);
+      parentEntry.summary = buildActivitySummary(parentEntry);
+      parentEntry.lastUpdated = timestamp;
+      return parentEntry;
+    }
+
+    // Standalone connection entry if no parent neuron fire found
+    const fromInfo = getNeuronInfo(event.fromNeuronId);
+    const activityId = `signal-${event.fromNeuronId}-${event.toNeuronId}-${timestamp}`;
+    if (neuralActivityIdSet.has(activityId)) {
+      return neuralActivityMap.get(activityId) || null;
+    }
+
+    const entry = {
+      id: activityId,
+      type: 'connection-signal',
+      timestamp,
+      fromNeuronId: event.fromNeuronId,
+      toNeuronId: event.toNeuronId,
+      fromRegionName: fromInfo?.regionName || formatRegionName(fromInfo?.regionId),
+      toRegionName: targetInfo?.regionName || formatRegionName(targetInfo?.regionId),
+      signal: event.signal ?? 0,
+      connections: [connectionDetails],
+      timeline: [connectionDetails],
+    };
+    entry.summary = buildActivitySummary(entry);
+    entry.timeLabel = formatTimeAgo(timestamp);
+
+    neuralActivityFeed.push(entry);
+    neuralActivityMap.set(entry.id, entry);
+    neuralActivityIdSet.add(entry.id);
+    ensureActivityCapacity();
+    return entry;
+  }
+
+  if (event.type === 'neural-growth') {
+    const activityId = `growth-${event.regionId}-${timestamp}`;
+    if (neuralActivityIdSet.has(activityId)) return neuralActivityMap.get(activityId) || null;
+
+    const regionName = formatRegionName(event.regionId);
+    const entry = {
+      id: activityId,
+      type: 'neural-growth',
+      regionId: event.regionId,
+      regionName,
+      newNeurons: event.newNeurons || 0,
+      level: event.level || 0,
+      timestamp,
+      timeline: [{ ...event, type: 'neural-growth', timestamp }],
+    };
+    entry.summary = buildActivitySummary(entry);
+    entry.timeLabel = formatTimeAgo(timestamp);
+
+    neuralActivityFeed.push(entry);
+    neuralActivityMap.set(entry.id, entry);
+    neuralActivityIdSet.add(entry.id);
+    ensureActivityCapacity();
+    return entry;
+  }
+
+  return null;
+}
+
+function replayNeuralActivity(activityId) {
+  const entry = neuralActivityMap.get(activityId);
+  if (!entry) return;
+  if (!neuralGraph3D) {
+    logWarn('NEURAL', 'Replay requested but neural graph not ready');
+    return;
+  }
+  neuralReplayQueue.push(entry);
+  if (!neuralReplayActive) {
+    processNeuralReplayQueue();
+  }
+}
+
+function processNeuralReplayQueue() {
+  if (neuralReplayActive) return;
+  const next = neuralReplayQueue.shift();
+  if (!next) return;
+  neuralReplayActive = true;
+
+  runNeuronReplay(next)
+    .catch((err) => logError('NEURAL', 'Replay error', { error: err.message }))
+    .finally(() => {
+      neuralReplayActive = false;
+      if (neuralReplayQueue.length) {
+        processNeuralReplayQueue();
+      }
+    });
+}
+
+function runNeuronReplay(entry) {
+  return new Promise((resolve) => {
+    const baseDuration = 520;
+    const intensity = entry.intensity ?? 0.8;
+    simulateNeuronPulse(entry.neuronId, intensity, baseDuration);
+
+    let delay = Math.max(220, baseDuration * 0.6);
+    if (Array.isArray(entry.connections) && entry.connections.length) {
+      entry.connections.forEach((connection, index) => {
+        const stepDelay = delay + (index * (connection.latency || 160));
+        setTimeout(() => {
+          simulateConnectionPulse(connection.fromNeuronId || entry.neuronId, connection.toNeuronId, connection.signal, (connection.latency || 180) + 220);
+          simulateNeuronPulse(connection.toNeuronId, Math.abs(connection.signal || 0.6), 420);
+        }, stepDelay);
+      });
+      delay += entry.connections.reduce((acc, conn) => acc + (conn.latency || 160), 0);
+    }
+
+    setTimeout(resolve, delay + 560);
+  });
+}
+
+function simulateNeuronPulse(neuronId, intensity = 1, duration = 420) {
+  const node = neuralNodeIndex.get(neuronId);
+  if (!node) return;
+
+  const boost = 1 + Math.min(Math.abs(intensity || 1), 2.6) * 0.35;
+  node.firePulse = true;
+  node.displaySize = node.baseSize * boost;
+  scheduleNeuralGraphRefresh();
+
+  setTimeout(() => {
+    node.firePulse = false;
+    node.displaySize = node.baseSize;
+    scheduleNeuralGraphRefresh();
+  }, duration);
+}
+
+function simulateConnectionPulse(fromNeuronId, toNeuronId, signal = 0.8, decayDelay = 280) {
+  if (!fromNeuronId || !toNeuronId) return;
+  const key = `${fromNeuronId}|${toNeuronId}`;
+  const link = neuralLinkIndex.get(key);
+  if (!link) return;
+
+  const strength = Math.abs(signal || 0.8);
+  link.highlight = true;
+  link.width = Math.max(link.width, 1.1 + strength * 0.6);
+  link.particleCount = Math.max(1, Math.ceil(strength * 4));
+  link.particleSpeed = Math.max(0.004, Math.min(0.02, 0.006 + strength * 0.01));
+  scheduleNeuralGraphRefresh();
+
+  setTimeout(() => {
+    link.particleCount = 0;
+    link.particleSpeed = 0.008;
+    link.highlight = false;
+    link.width = Math.max(0.35, link.weight * 0.9);
+    scheduleNeuralGraphRefresh();
+  }, decayDelay);
+}
+
 function handleNeuralEvent(event) {
   if (!event || !event.type) return;
 
@@ -1159,6 +1625,8 @@ function handleNeuralEvent(event) {
       neuralState.events = neuralState.events.slice(-200);
     }
   }
+
+  addNeuralActivityEntry(event);
 
   if (event.type === 'neuron-fire') {
     const neuronId = event.neuronId;
@@ -2127,14 +2595,27 @@ function wireChat() {
       }
       
       // NOW display the response after UI is ready
-      const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
-      const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
+      const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ? String(res.output) : 'Unable to respond right now.');
+      const meta = buildPalMeta(res);
       addMessage('pal', replyText, meta);
       logInfo('CHAT', `Pal message added to main chat`, { 
         chatId,
         responseLength: replyText.length,
-        meta
+        meta,
+        processingTimeMs: typeof res?.processingTimeMs === 'number' ? res.processingTimeMs : null
       });
+
+      if (typeof res?.processingTimeMs === 'number') {
+        logInfo('PERFORMANCE', `Chat response rendered`, { 
+          chatId,
+          processingTimeMs: Math.round(res.processingTimeMs)
+        });
+      }
+
+      const neuralSummary = summarizeNeuralActivations(res?.neuralActivations);
+      if (neuralSummary) {
+        logDebug('NEURAL', `Neural activation sequence applied`, { chatId, neuralSummary });
+      }
       
       // If floating chat is open, sync the response there too
       if (floatingChatOpen) {
@@ -3001,6 +3482,14 @@ function renderNeuralNetwork(networkData) {
 
   neuralState = data;
 
+  neuralActivityFeed.length = 0;
+  neuralActivityMap.clear();
+  neuralActivityIdSet.clear();
+  neuralActivityByNeuron.clear();
+  neuralReplayQueue = [];
+  neuralReplayActive = false;
+  updateNeuralEvents();
+
   const nodes = [];
   const links = [];
   neuralNodeIndex = new Map();
@@ -3066,6 +3555,12 @@ function renderNeuralNetwork(networkData) {
   }
 
   neuralGraphData = { nodes, links };
+
+  if (Array.isArray(data.events) && data.events.length) {
+    const recentEvents = data.events.slice(-MAX_ACTIVITY_ENTRIES);
+    recentEvents.forEach((evt) => addNeuralActivityEntry(evt, { silent: true }));
+    updateNeuralEvents();
+  }
 
   if (!neuralGraph3D) {
     container.innerHTML = '';
@@ -3374,40 +3869,108 @@ function updateNeuralStats() {
 
 // Update neural events list
 function updateNeuralEvents() {
-  if (!neuralState || !neuralState.events) return;
-  
   const eventList = $('#neural-event-list');
   if (!eventList) return;
-  
+
   eventList.innerHTML = '';
-  
-  const events = neuralState.events.slice(-20).reverse(); // Show last 20, newest first
-  
-  if (events.length === 0) {
-    eventList.innerHTML = '<div class="event-item">No recent activity</div>';
+
+  if (!neuralActivityFeed.length) {
+    eventList.innerHTML = '<div class="event-empty">No recent neural activity.</div>';
     return;
   }
-  
-  events.forEach(event => {
-    const item = document.createElement('div');
-    item.classList.add('event-item');
-    
-    if (event.type === 'neuron-fire') {
-      item.classList.add('firing');
-      const time = new Date(event.timestamp).toLocaleTimeString();
-      item.innerHTML = `
-        <div><strong>${formatRegionName(event.regionId)}</strong> fired</div>
-        <div class="event-time">${time}</div>
+
+  const recentEntries = neuralActivityFeed.slice(-10).reverse();
+  recentEntries.forEach((entry) => {
+    const wrapper = document.createElement('div');
+    wrapper.classList.add('event-item');
+    wrapper.dataset.activityId = entry.id;
+
+    if (entry.type === 'neuron-fire') wrapper.classList.add('event-type-fire');
+    if (entry.type === 'connection-signal') wrapper.classList.add('event-type-signal');
+    if (entry.type === 'neural-growth') wrapper.classList.add('event-type-growth');
+
+    const timeLabel = formatTimeAgo(entry.timestamp);
+    const typeLabel = entry.type === 'neuron-fire' ? 'Neuron Fire'
+      : entry.type === 'connection-signal' ? 'Signal'
+      : entry.type === 'neural-growth' ? 'Growth'
+      : 'Event';
+
+    const intensityBadge = entry.type === 'neuron-fire'
+      ? `<span class="event-badge intensity">${entry.intensityIcon || '•'} ${entry.intensityLabel || 'baseline'}</span>`
+      : '';
+
+    const metaChips = [];
+    if (entry.regionName) {
+      metaChips.push(`<span class="event-chip region">Region: ${entry.regionName}</span>`);
+    }
+    if (entry.type === 'neuron-fire') {
+      metaChips.push(`<span class="event-chip strength">Intensity: ${(entry.intensity ?? 0).toFixed(2)}</span>`);
+    }
+    if (entry.type === 'connection-signal') {
+      const strength = describeIntensityLevel(entry.signal);
+      metaChips.push(`<span class="event-chip strength">${strength.icon} ${strength.label}</span>`);
+    }
+    if (entry.connections?.length) {
+      metaChips.push(`<span class="event-chip cascade">${entry.connections.length} downstream</span>`);
+    }
+    if (entry.type === 'neural-growth') {
+      metaChips.push(`<span class="event-chip growth">+${entry.newNeurons || 0} neurons</span>`);
+      metaChips.push(`<span class="event-chip level">Level ${entry.level || 0}</span>`);
+    }
+
+    let connectionsHtml = '';
+    if (entry.connections?.length) {
+      const preview = entry.connections.slice(0, 4).map((conn) => {
+        const strength = describeIntensityLevel(conn.signal);
+        const targetRegion = conn.toRegionName || formatRegionName(conn.toRegionId);
+        return `<span class="connection-chip">→ ${targetRegion} <small>${strength.label}</small></span>`;
+      }).join('');
+      const remaining = entry.connections.length - 4;
+      connectionsHtml = `
+        <div class="event-connections">
+          ${preview}
+          ${remaining > 0 ? `<span class="connection-chip more">+${remaining} more</span>` : ''}
+        </div>
       `;
     }
-    
-    eventList.appendChild(item);
+
+    const canReplay = entry.type === 'neuron-fire' || entry.type === 'connection-signal';
+    const actionsHtml = canReplay
+      ? `<div class="event-actions"><button type="button" class="event-replay" data-activity-id="${entry.id}">Replay</button></div>`
+      : '';
+
+    wrapper.innerHTML = `
+      <div class="event-header">
+        <div class="event-title">
+          <span class="event-type">${typeLabel}</span>
+          <span class="event-summary">${entry.summary || 'Activity detected.'}</span>
+        </div>
+        <div class="event-time">${timeLabel}</div>
+      </div>
+      <div class="event-body">
+        ${intensityBadge}
+        ${metaChips.length ? `<div class="event-meta">${metaChips.join('')}</div>` : ''}
+        ${connectionsHtml}
+      </div>
+      ${actionsHtml}
+    `;
+
+    const replayBtn = wrapper.querySelector('.event-replay');
+    if (replayBtn) {
+      replayBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = replayBtn.dataset.activityId;
+        replayNeuralActivity(id);
+      });
+    }
+
+    eventList.appendChild(wrapper);
   });
 }
 
 // Format region ID to readable name
 function formatRegionName(regionId) {
-  if (!regionId) return '';
+  if (!regionId) return 'Unknown region';
   return regionId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
@@ -4227,11 +4790,22 @@ function setupFloatingChat() {
         floatingInput.placeholder = 'Type a message...';
         
         // NOW display the response
-        const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ?? '…');
-        const meta = res?.kind ? `Mode: ${res.kind}` : undefined;
+        const replyText = typeof res?.reply === 'string' ? res.reply : (res?.output ? String(res.output) : 'Unable to respond right now.');
+        const meta = buildPalMeta(res);
         
         addMessage('pal', replyText, meta);
         addFloatingMessage('pal', replyText, meta);
+
+        if (typeof res?.processingTimeMs === 'number') {
+          logInfo('PERFORMANCE', `Floating chat response rendered`, { 
+            processingTimeMs: Math.round(res.processingTimeMs)
+          });
+        }
+
+        const floatingSummary = summarizeNeuralActivations(res?.neuralActivations);
+        if (floatingSummary) {
+          logDebug('NEURAL', 'Neural activation sequence applied (floating)', { neuralSummary: floatingSummary });
+        }
         
         // Update emotion displays
         if (res?.emotion) {

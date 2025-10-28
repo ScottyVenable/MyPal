@@ -1,0 +1,25 @@
+{
+  "id": "9d321689216f1bd6",
+  "name": "Kierra",
+  "createdAt": 1761369496470,
+  "lastPlayedAt": 1761369615257,
+  "level": 0,
+  "xp": 20,
+  "messageCount": 4,
+  "memoryCount": 1,
+  "version": "1.0.0",
+  "cp": 0,
+  "settings": {
+    "xpMultiplier": 1,
+    "apiProvider": "local",
+    "apiKeyMask": null
+  },
+  "personality": {
+    "curious": 10,
+    "logical": 10,
+    "social": 11,
+    "agreeable": 10,
+    "cautious": 10
+  },
+  "vocabulary": []
+}

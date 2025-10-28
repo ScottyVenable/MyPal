@@ -1,0 +1,66 @@
+[
+  {
+    "id": "6zeOr-uQ4ZaflRiUBabV3",
+    "ts": 1761369100852,
+    "level": 0,
+    "stage": "Sensorimotor (Early)",
+    "stageCode": "stage-0-1",
+    "userText": "Hello",
+    "analysis": {
+      "keywords": [],
+      "sentiment": "neutral",
+      "hasQuestion": false,
+      "hasGreeting": true,
+      "hasThanks": false,
+      "isCommand": false
+    },
+    "focus": null,
+    "concept": null,
+    "response": {
+      "type": "nascent-awareness",
+      "text": "...hi?",
+      "reasoning": [
+        "First moments of awareness - cautious observation."
+      ],
+      "strategy": "awakening"
+    },
+    "memory": {
+      "stored": true,
+      "importanceLevel": "high",
+      "importanceScore": 6,
+      "memoryId": "TtdzvaYp3LSqBuDUnjt42"
+    }
+  },
+  {
+    "id": "9WbhZc4icdoZ6U4NkVBr-",
+    "ts": 1761369115983,
+    "level": 0,
+    "stage": "Sensorimotor (Early)",
+    "stageCode": "stage-0-1",
+    "userText": "How are you?",
+    "analysis": {
+      "keywords": [],
+      "sentiment": "neutral",
+      "hasQuestion": true,
+      "hasGreeting": false,
+      "hasThanks": false,
+      "isCommand": false
+    },
+    "focus": null,
+    "concept": null,
+    "response": {
+      "type": "nascent-awareness",
+      "text": "...hi?",
+      "reasoning": [
+        "First moments of awareness - cautious observation."
+      ],
+      "strategy": "awakening"
+    },
+    "memory": {
+      "stored": false,
+      "importanceLevel": "low",
+      "importanceScore": 1,
+      "memoryId": null
+    }
+  }
+]

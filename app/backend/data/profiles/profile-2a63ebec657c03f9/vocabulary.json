@@ -1,0 +1,15 @@
+[
+  {
+    "id": "bpcGlAaNkM-WdldL_O420",
+    "word": "hello",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761369100824,
+    "contexts": [
+      "Hello"
+    ]
+  }
+]

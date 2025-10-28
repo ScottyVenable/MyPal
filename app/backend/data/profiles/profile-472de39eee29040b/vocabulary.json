@@ -2,13 +2,14 @@
   {
     "id": "v0Xv_nr7YBGZVuxRE1uOt",
     "word": "hello",
-    "count": 1,
+    "count": 2,
     "knownBy": {
-      "user": 1,
+      "user": 2,
       "pal": 0
     },
-    "lastSeen": 1761065577593,
+    "lastSeen": 1761365419128,
     "contexts": [
+      "Hello!",
       "Hello Pal, how are you?"
     ]
   },
@@ -75,6 +76,32 @@
     "lastSeen": 1761065577596,
     "contexts": [
       "mm"
+    ]
+  },
+  {
+    "id": "ZjAjQFo7AaYZjmZReDrIp",
+    "word": "kiki",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761365488927,
+    "contexts": [
+      "Kiki is my girlfriend"
+    ]
+  },
+  {
+    "id": "T_VfxkjADDK4dGqBPDAoe",
+    "word": "girlfriend",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761365488927,
+    "contexts": [
+      "Kiki is my girlfriend"
     ]
   }
 ]

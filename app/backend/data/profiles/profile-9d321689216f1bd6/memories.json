@@ -1,0 +1,31 @@
+[
+  {
+    "id": "s0Gc_8VW3aoyHT6UnWp4H",
+    "ts": 1761369511441,
+    "userText": "hi",
+    "palText": "mm",
+    "summary": "hi mm",
+    "sentiment": "neutral",
+    "keywords": [],
+    "xp": {
+      "gained": 10,
+      "total": 10,
+      "level": 0
+    },
+    "importance": {
+      "score": 5,
+      "level": "medium",
+      "shouldRemember": true,
+      "reasons": [
+        "First interaction captured"
+      ],
+      "tags": [
+        "first-contact"
+      ]
+    },
+    "tags": [
+      "first-contact"
+    ],
+    "subjectiveNarrative": "Felt new. Something..."
+  }
+]

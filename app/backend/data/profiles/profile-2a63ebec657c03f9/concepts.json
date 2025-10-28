@@ -1,0 +1,32 @@
+[
+  {
+    "id": "UgvKqzbQww47ekHLDGkEG",
+    "key": "topic:hello",
+    "name": "Topic: Hello",
+    "category": "Topic",
+    "createdAt": 1761369100851,
+    "lastSeen": 1761369100851,
+    "totalMentions": 1,
+    "keywords": {
+      "hello": {
+        "count": 1,
+        "lastSeen": 1761369100851
+      }
+    },
+    "sentiment": {
+      "sum": 0,
+      "samples": 1,
+      "average": 0
+    },
+    "importance": {
+      "high": 1,
+      "medium": 0,
+      "low": 0
+    },
+    "importanceScore": 6,
+    "levelRange": {
+      "min": 0,
+      "max": 0
+    }
+  }
+]

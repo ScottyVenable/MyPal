@@ -1,0 +1,36 @@
+[
+  {
+    "id": "TtdzvaYp3LSqBuDUnjt42",
+    "ts": 1761369100850,
+    "userText": "Hello",
+    "palText": "...hi?",
+    "summary": "Hello ...hi?",
+    "sentiment": "neutral",
+    "keywords": [
+      "hello"
+    ],
+    "xp": {
+      "gained": 10,
+      "total": 10,
+      "level": 0
+    },
+    "importance": {
+      "score": 6,
+      "level": "high",
+      "shouldRemember": true,
+      "reasons": [
+        "First interaction captured",
+        "Expressive punctuation detected"
+      ],
+      "tags": [
+        "first-contact",
+        "expressive"
+      ]
+    },
+    "tags": [
+      "first-contact",
+      "expressive"
+    ],
+    "subjectiveNarrative": "Felt new. Hello..."
+  }
+]
