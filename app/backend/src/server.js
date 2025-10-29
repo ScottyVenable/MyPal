@@ -11,6 +11,7 @@ import { WebSocketServer } from 'ws';
 import ProfileManager from './profileManager.js';
 import ModelAdapter from './ai/modelAdapter.js';
 import PromptBuilder from './ai/promptBuilder.js';
+import createSqliteStore from './storage/sqliteStore.js';
 
 dotenv.config();
 
@@ -19,8 +20,9 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = (process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) ? path.resolve(process.env.MYPAL_DATA_DIR || process.env.DATA_DIR) : path.join(__dirname, '..', 'data');
 const LOGS_DIR = (process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) ? path.resolve(process.env.MYPAL_LOGS_DIR || process.env.LOGS_DIR) : path.join(__dirname, '..', '..', '..', 'logs');
 
-// Initialize ProfileManager
-const profileManager = new ProfileManager(DATA_DIR);
+// Initialize storage + ProfileManager
+const sqliteStore = await createSqliteStore(DATA_DIR, console);
+const profileManager = new ProfileManager(DATA_DIR, sqliteStore);
 
 // Ensure data dir exists
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -117,6 +119,13 @@ function closeLogStreams() {
 }
 
 process.once('exit', closeLogStreams);
+process.once('exit', () => {
+  try {
+    sqliteStore?.dispose?.();
+  } catch (err) {
+    console.warn('[SQLITE] Failed to dispose store on exit:', err?.message || err);
+  }
+});
 function logAccess(line) {
   try {
     fs.appendFileSync(accessLogPath, line + '\n');

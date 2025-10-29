@@ -356,6 +356,313 @@ function Start-BackendServer {
     return $backendProcess
 }
 
+function Set-DevelopmentMode {
+    $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "dev-data"
+    $script:BaseLogsDir = Join-Path $scriptRoot "dev-logs"
+    $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
+    $env:MYPAL_FORCE_TELEMETRY = '1'
+    Remove-Item Env:NODE_ENV -ErrorAction SilentlyContinue
+    $script:CurrentModeName = 'Development'
+}
+
+function Set-ProductionMode {
+    $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "data"
+    $script:BaseLogsDir = Join-Path $scriptRoot "logs"
+    $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
+    $env:MYPAL_FORCE_TELEMETRY = '0'
+    $env:NODE_ENV = 'production'
+    $script:CurrentModeName = 'Production'
+}
+
+function Configure-CustomMode {
+    Write-Host "`nCustom Mode - Configure Options" -ForegroundColor Yellow
+    Write-Host ""
+
+    $script:CurrentModeName = 'Custom'
+
+    Write-Host "Current data directory: $($env:MYPAL_DATA_DIR)" -ForegroundColor Gray
+    $customData = Read-Host "Enter custom data directory (press Enter to keep current)"
+    if (-not [string]::IsNullOrWhiteSpace($customData)) {
+        $env:MYPAL_DATA_DIR = $customData
+    }
+
+    Write-Host "Current logs directory: $($script:BaseLogsDir)" -ForegroundColor Gray
+    $customLogs = Read-Host "Enter custom logs directory (press Enter to keep current)"
+    if (-not [string]::IsNullOrWhiteSpace($customLogs)) {
+        $script:BaseLogsDir = $customLogs
+    }
+
+    $currentPort = if ([string]::IsNullOrWhiteSpace($env:PORT)) { '3001 (default)' } else { $env:PORT }
+    Write-Host "Current port: $currentPort" -ForegroundColor Gray
+    $customPort = Read-Host "Enter custom port (press Enter for default)"
+    if (-not [string]::IsNullOrWhiteSpace($customPort)) {
+        $env:PORT = $customPort
+    }
+
+    Write-Host "Enable telemetry? [Y/n]" -ForegroundColor Gray
+    $telemetryChoice = Read-Host
+    if ($telemetryChoice -eq 'n' -or $telemetryChoice -eq 'N') {
+        $env:MYPAL_FORCE_TELEMETRY = '0'
+    } else {
+        $env:MYPAL_FORCE_TELEMETRY = '1'
+    }
+
+    $currentNodeEnv = if ($env:NODE_ENV) { $env:NODE_ENV } else { '(not set)' }
+    Write-Host "Current NODE_ENV: $currentNodeEnv" -ForegroundColor Gray
+    $customNodeEnv = Read-Host "Enter custom NODE_ENV (press Enter to keep current)"
+    if (-not [string]::IsNullOrWhiteSpace($customNodeEnv)) {
+        $env:NODE_ENV = $customNodeEnv
+    }
+
+    if (-not $env:MYPAL_MODELS_DIR) {
+        $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
+    }
+
+    Write-Host "`nCustom configuration applied" -ForegroundColor Green
+}
+
+function Show-ModeSelection {
+    while ($true) {
+        Write-Host ""
+        Write-Host "Select launch mode:" -ForegroundColor Cyan
+        Write-Host "  [1] Development (dev-data, dev-logs)" -ForegroundColor White
+        Write-Host "  [2] Production (data, logs)" -ForegroundColor White
+        Write-Host "  [3] Custom" -ForegroundColor White
+        Write-Host ""
+        $modeChoice = Read-Host "Enter choice [1-3] (press Enter for default)"
+
+        if ([string]::IsNullOrWhiteSpace($modeChoice)) {
+            $modeChoice = '1'
+        }
+
+        switch ($modeChoice) {
+            '2' {
+                Set-ProductionMode
+                Write-Host "`nProduction Mode Selected" -ForegroundColor Green
+                return
+            }
+            '3' {
+                Configure-CustomMode
+                return
+            }
+            '1' {
+                Set-DevelopmentMode
+                Write-Host "`nDevelopment Mode Selected" -ForegroundColor Green
+                return
+            }
+            default {
+                Write-Host "Invalid choice. Please try again." -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
+function Initialize-SessionDirectories {
+    if (-not [string]::IsNullOrWhiteSpace($script:BaseLogsDir)) {
+        Remove-EmptyLogDirectories -RootPath $script:BaseLogsDir
+    }
+
+    $dateFolder = Get-Date -Format "yyyy-MM-dd"
+    $timeFormat = $LogTimeFormats[$LogTimeFormat]
+    if ([string]::IsNullOrWhiteSpace($timeFormat) -and $LogTimeFormat -eq 'custom') {
+        Write-Warning "Custom log format not provided. Falling back to 12hour format."
+        $timeFormat = $LogTimeFormats['12hour']
+    }
+    $timeFolder = Get-Date -Format $timeFormat
+
+    $sessionLogsDir = if ($script:BaseLogsDir) {
+        Join-Path $script:BaseLogsDir (Join-Path $dateFolder $timeFolder)
+    } else {
+        Join-Path $scriptRoot (Join-Path 'logs' (Join-Path $dateFolder $timeFolder))
+    }
+
+    $env:MYPAL_LOGS_DIR = $sessionLogsDir
+
+    foreach ($dir in @($env:MYPAL_DATA_DIR, $env:MYPAL_LOGS_DIR, $env:MYPAL_MODELS_DIR)) {
+        if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path $dir)) {
+            Write-Host "Creating directory: $dir"
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+    }
+
+    $script:SessionLogsDir = $sessionLogsDir
+}
+
+function Show-SettingsMenu {
+    while ($true) {
+        Write-Host ""
+        Write-Host "=============== Settings Menu ===============" -ForegroundColor Yellow
+        Write-Host "Current data directory: $($env:MYPAL_DATA_DIR)" -ForegroundColor Gray
+        $displayLogsDir = if ([string]::IsNullOrWhiteSpace($env:MYPAL_LOGS_DIR)) { $script:BaseLogsDir } else { $env:MYPAL_LOGS_DIR }
+        Write-Host "Current logs directory: $displayLogsDir" -ForegroundColor Gray
+        Write-Host "  [1] Clear data directory" -ForegroundColor White
+        Write-Host "  [2] Clear logs directory" -ForegroundColor White
+        Write-Host "  [3] Rebuild npm dependencies" -ForegroundColor White
+        Write-Host "  [4] Run backend tests" -ForegroundColor White
+        Write-Host "  [5] Return to main menu" -ForegroundColor White
+        Write-Host ""
+        $settingsChoice = Read-Host "Enter choice [1-5]"
+
+        switch ($settingsChoice) {
+            '1' {
+                Write-Host "Clearing data directory..." -ForegroundColor Yellow
+                if (Test-Path $env:MYPAL_DATA_DIR) {
+                    Remove-Item -Path "$($env:MYPAL_DATA_DIR)\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Host "Data directory cleared" -ForegroundColor Green
+                } else {
+                    Write-Host "Data directory not found." -ForegroundColor DarkYellow
+                }
+            }
+            '2' {
+                $logsTarget = if (Test-Path $env:MYPAL_LOGS_DIR) { $env:MYPAL_LOGS_DIR } elseif (Test-Path $script:BaseLogsDir) { $script:BaseLogsDir } else { $null }
+                if ($logsTarget) {
+                    Write-Host "Clearing logs directory ($logsTarget)..." -ForegroundColor Yellow
+                    Remove-Item -Path "$logsTarget\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    Write-Host "Logs directory cleared" -ForegroundColor Green
+                } else {
+                    Write-Host "Logs directory not found." -ForegroundColor DarkYellow
+                }
+            }
+            '3' {
+                Write-Host "Rebuilding npm dependencies..." -ForegroundColor Yellow
+                Push-Location $backendDir
+                try {
+                    Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
+                    npm install
+                } finally {
+                    Pop-Location
+                }
+                Push-Location $tauriDir
+                try {
+                    Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
+                    npm install
+                } finally {
+                    Pop-Location
+                }
+                Write-Host "Dependencies rebuilt" -ForegroundColor Green
+            }
+            '4' {
+                Write-Host "Running backend tests..." -ForegroundColor Yellow
+                Push-Location $backendDir
+                try {
+                    npm test
+                } finally {
+                    Pop-Location
+                }
+            }
+            '5' {
+                return
+            }
+            default {
+                Write-Host "Invalid choice. Please try again." -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
+function Launch-MyPal {
+    Show-ModeSelection
+    Initialize-SessionDirectories
+
+    Write-Host ""
+    $openSettings = Read-Host "Open Settings before launch? [y/N]"
+    if ($openSettings -eq 'y' -or $openSettings -eq 'Y') {
+        Show-SettingsMenu
+        Initialize-SessionDirectories
+    }
+
+    Write-Host ""
+    Write-Host "Final configuration:" -ForegroundColor Cyan
+    Write-Host "  Mode: $script:CurrentModeName" -ForegroundColor White
+    Write-Host "  Data: $($env:MYPAL_DATA_DIR)" -ForegroundColor White
+    Write-Host "  Logs: $($env:MYPAL_LOGS_DIR)" -ForegroundColor White
+    if ($env:PORT) {
+        Write-Host "  Port: $($env:PORT)" -ForegroundColor White
+    }
+    if ($env:NODE_ENV) {
+        Write-Host "  NODE_ENV: $($env:NODE_ENV)" -ForegroundColor White
+    }
+    Write-Host "  Telemetry: $($env:MYPAL_FORCE_TELEMETRY)" -ForegroundColor White
+    $consoleLogFile = Join-Path $env:MYPAL_LOGS_DIR "console.log"
+    Write-Host "  Console log file: $consoleLogFile" -ForegroundColor White
+
+    Write-Host ""
+    Write-Host "Starting services..." -ForegroundColor Cyan
+    $backendProcess = $null
+    try {
+        $backendProcess = Start-BackendServer -Directory $backendDir
+    } catch {
+        Write-Error "Failed to start backend: $_"
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Launching MyPal Tauri desktop (Press Ctrl+C to stop)..." -ForegroundColor Yellow
+    Write-Host "Backend is running in a separate window - close it manually or it will stop when Tauri exits" -ForegroundColor DarkGray
+    Write-Host ""
+
+    Push-Location $tauriDir
+    try {
+        npm run dev
+    } finally {
+        Pop-Location
+        if ($backendProcess -and -not $backendProcess.HasExited) {
+            Write-Host ""
+            Write-Host "Stopping backend server..." -ForegroundColor Yellow
+            try {
+                $childProcesses = Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $backendProcess.Id }
+                foreach ($child in $childProcesses) {
+                    Write-Host "  Stopping child process: $($child.Name) (PID: $($child.ProcessId))" -ForegroundColor DarkGray
+                    Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+                }
+
+                Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
+                Write-Host "Backend stopped" -ForegroundColor Green
+            } catch {
+                Write-Verbose "Backend process already stopped or could not be terminated: $_"
+            }
+        } else {
+            Write-Host ""
+            Write-Host "Backend process has already exited" -ForegroundColor DarkGray
+        }
+    }
+
+    Write-Host ""
+    Write-Host "MyPal session ended. Returning to main menu..." -ForegroundColor Cyan
+}
+
+function Show-MainMenu {
+    while ($true) {
+        Write-Host ""
+        Write-Host "==================== Main Menu ====================" -ForegroundColor Cyan
+        Write-Host "  [1] Start MyPal" -ForegroundColor White
+        Write-Host "  [2] Settings" -ForegroundColor White
+        Write-Host "  [3] Check Requirements" -ForegroundColor White
+        Write-Host "  [4] Exit" -ForegroundColor White
+        Write-Host ""
+        $menuChoice = Read-Host "Enter choice [1-4]"
+
+        switch ($menuChoice) {
+            '1' {
+                Launch-MyPal
+            }
+            '2' {
+                Show-SettingsMenu
+            }
+            '3' {
+                Test-AllRequirements | Out-Null
+            }
+            '4' {
+                Write-Host "Exiting MyPal launcher. Goodbye!" -ForegroundColor Cyan
+                return
+            }
+            default {
+                Write-Host "Invalid choice. Please try again." -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendDir = Join-Path $scriptRoot "app\backend"
 $tauriDir = Join-Path $scriptRoot "app\desktop\tauri-app"
@@ -371,245 +678,31 @@ if ($CheckRequirementsOnly) {
 Initialize-NpmDependencies -Directory $backendDir
 Initialize-NpmDependencies -Directory $tauriDir
 
-# Set up data directories
-$env:MYPAL_DATA_DIR = Join-Path $scriptRoot "dev-data"
-$baseLogsDir = Join-Path $scriptRoot "dev-logs"
-$env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
-$env:MYPAL_FORCE_TELEMETRY = '1'
+Set-DevelopmentMode
+$script:SessionLogsDir = $null
+$env:MYPAL_LOGS_DIR = $script:BaseLogsDir
 
-# Create timestamped log directory: dev-logs/YYYY-MM-DD/HH-MM-SS_AM-PM/
-$dateFolder = Get-Date -Format "yyyy-MM-dd"
-$timeFormat = $LogTimeFormats[$LogTimeFormat]
-if ([string]::IsNullOrWhiteSpace($timeFormat) -and $LogTimeFormat -eq 'custom') {
-    Write-Warning "Custom log format not provided. Falling back to 12hour format."
-    $timeFormat = $LogTimeFormats['12hour']
+if ($script:BaseLogsDir) {
+    Remove-EmptyLogDirectories -RootPath $script:BaseLogsDir
 }
-$timeFolder = Get-Date -Format $timeFormat
-$sessionLogsDir = Join-Path $baseLogsDir (Join-Path $dateFolder $timeFolder)
-$env:MYPAL_LOGS_DIR = $sessionLogsDir
-
-# Ensure directories exist
-@($env:MYPAL_DATA_DIR, $env:MYPAL_LOGS_DIR, $env:MYPAL_MODELS_DIR) | ForEach-Object {
-    if (-not (Test-Path $_)) {
-        Write-Host "Creating directory: $_"
-        New-Item -ItemType Directory -Path $_ -Force | Out-Null
-    }
-}
-
-# Clean up empty log directories
-Write-Host ""
-Remove-EmptyLogDirectories -RootPath $baseLogsDir
-Write-Host ""
 
 Clear-Host
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "    Starting MyPal with Tauri Desktop    " -ForegroundColor Cyan
+Write-Host "    MyPal Desktop Launcher (Tauri)       " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Features:" -ForegroundColor Yellow
 Write-Host "  - Unified backend + Tauri startup" -ForegroundColor White
 Write-Host "  - Timestamped log directories per session" -ForegroundColor White
-Write-Host "  - Optional pre-launch maintenance commands" -ForegroundColor White
+Write-Host "  - Integrated main menu with settings" -ForegroundColor White
 Write-Host ""
-Write-Host "Data Directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
-Write-Host "Logs Directory: $env:MYPAL_LOGS_DIR" -ForegroundColor Gray
+Write-Host "Default Data Directory: $($env:MYPAL_DATA_DIR)" -ForegroundColor Gray
+Write-Host "Default Logs Directory: $script:BaseLogsDir" -ForegroundColor Gray
 Write-Host "Log Format: $LogTimeFormat" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Tip: Run '.\autorun.ps1 -SkipInstall' for faster restarts" -ForegroundColor DarkGray
 Write-Host "Tip: Run '.\autorun.ps1 -LogTimeFormat 24hour' for 24-hour log naming" -ForegroundColor DarkGray
 Write-Host ""
 
-# Interactive mode selection
-Write-Host "Select launch mode:" -ForegroundColor Cyan
-Write-Host "  [1] Development (default - uses dev-data, dev-logs)" -ForegroundColor White
-Write-Host "  [2] Production (uses production data directories)" -ForegroundColor White
-Write-Host "  [3] Custom (configure paths and options)" -ForegroundColor White
-Write-Host ""
-$modeChoice = Read-Host "Enter choice [1-3] (press Enter for default)"
-
-if ([string]::IsNullOrWhiteSpace($modeChoice)) {
-    $modeChoice = "1"
-}
-
-switch ($modeChoice) {
-    "2" {
-        # Production mode
-        Write-Host "`nProduction Mode Selected" -ForegroundColor Green
-        $env:MYPAL_DATA_DIR = Join-Path $scriptRoot "data"
-        $baseLogsDir = Join-Path $scriptRoot "logs"
-        $dateFolder = Get-Date -Format "yyyy-MM-dd"
-        $timeFormat = $LogTimeFormats[$LogTimeFormat]
-        $timeFolder = Get-Date -Format $timeFormat
-        $sessionLogsDir = Join-Path $baseLogsDir (Join-Path $dateFolder $timeFolder)
-        $env:MYPAL_LOGS_DIR = $sessionLogsDir
-        $env:MYPAL_MODELS_DIR = Join-Path $scriptRoot "app\backend\models"
-        $env:MYPAL_FORCE_TELEMETRY = '0'
-        $env:NODE_ENV = 'production'
-    }
-    "3" {
-        # Custom mode
-        Write-Host "`nCustom Mode - Configure Options" -ForegroundColor Yellow
-        Write-Host ""
-        
-        # Data directory
-        Write-Host "Current data directory: $env:MYPAL_DATA_DIR" -ForegroundColor Gray
-        $customData = Read-Host "Enter custom data directory (press Enter to keep current)"
-        if (-not [string]::IsNullOrWhiteSpace($customData)) {
-            $env:MYPAL_DATA_DIR = $customData
-        }
-        
-        # Logs directory
-        Write-Host "Current logs directory: $env:MYPAL_LOGS_DIR" -ForegroundColor Gray
-        $customLogs = Read-Host "Enter custom logs directory (press Enter to keep current)"
-        if (-not [string]::IsNullOrWhiteSpace($customLogs)) {
-            $env:MYPAL_LOGS_DIR = $customLogs
-        }
-        
-        # Port
-        Write-Host "Current port: 3001 (default)" -ForegroundColor Gray
-        $customPort = Read-Host "Enter custom port (press Enter for default)"
-        if (-not [string]::IsNullOrWhiteSpace($customPort)) {
-            $env:PORT = $customPort
-        }
-        
-        # Telemetry
-        Write-Host "Enable telemetry? [Y/n]" -ForegroundColor Gray
-        $telemetryChoice = Read-Host
-        if ($telemetryChoice -eq "n" -or $telemetryChoice -eq "N") {
-            $env:MYPAL_FORCE_TELEMETRY = '0'
-        } else {
-            $env:MYPAL_FORCE_TELEMETRY = '1'
-        }
-        
-        Write-Host "`nCustom configuration applied" -ForegroundColor Green
-    }
-    default {
-        # Development mode (default)
-        Write-Host "`nDevelopment Mode Selected" -ForegroundColor Green
-    }
-}
-
-# Re-ensure directories in case paths changed above
-@($env:MYPAL_DATA_DIR, $env:MYPAL_LOGS_DIR, $env:MYPAL_MODELS_DIR) | ForEach-Object {
-    if (-not (Test-Path $_)) {
-        Write-Host "Creating directory: $_"
-        New-Item -ItemType Directory -Path $_ -Force | Out-Null
-    }
-}
-
-# Ask about running pre-launch commands
-Write-Host ""
-Write-Host "Run pre-launch commands? [y/N]" -ForegroundColor Cyan
-$runCommands = Read-Host
-if ($runCommands -eq "y" -or $runCommands -eq "Y") {
-    Write-Host ""
-    Write-Host "Available commands:" -ForegroundColor Yellow
-    Write-Host "  [1] Clear data directory" -ForegroundColor White
-    Write-Host "  [2] Clear logs directory" -ForegroundColor White
-    Write-Host "  [3] Rebuild node_modules (npm install)" -ForegroundColor White
-    Write-Host "  [4] Run tests" -ForegroundColor White
-    Write-Host "  [5] Skip" -ForegroundColor White
-    Write-Host ""
-    $cmdChoice = Read-Host "Enter choice [1-5]"
-    
-    switch ($cmdChoice) {
-        "1" {
-            Write-Host "Clearing data directory..." -ForegroundColor Yellow
-            if (Test-Path $env:MYPAL_DATA_DIR) {
-                Remove-Item -Path "$env:MYPAL_DATA_DIR\*" -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Host "Data directory cleared" -ForegroundColor Green
-            }
-        }
-        "2" {
-            Write-Host "Clearing logs directory..." -ForegroundColor Yellow
-            if (Test-Path $env:MYPAL_LOGS_DIR) {
-                Remove-Item -Path "$env:MYPAL_LOGS_DIR\*" -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Host "Logs directory cleared" -ForegroundColor Green
-            }
-        }
-        "3" {
-            Write-Host "Rebuilding dependencies..." -ForegroundColor Yellow
-            Push-Location $backendDir
-            try {
-                Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-                npm install
-            } finally {
-                Pop-Location
-            }
-            Push-Location $tauriDir
-            try {
-                Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
-                npm install
-            } finally {
-                Pop-Location
-            }
-            Write-Host "Dependencies rebuilt" -ForegroundColor Green
-        }
-        "4" {
-            Write-Host "Running tests..." -ForegroundColor Yellow
-            Push-Location $backendDir
-            try {
-                npm test
-            } finally {
-                Pop-Location
-            }
-        }
-        default {
-            Write-Host "Skipping pre-launch commands" -ForegroundColor Gray
-        }
-    }
-}
-
-Write-Host ""
-Write-Host "Final configuration:" -ForegroundColor Cyan
-Write-Host "  Data: $env:MYPAL_DATA_DIR" -ForegroundColor White
-Write-Host "  Logs: $env:MYPAL_LOGS_DIR" -ForegroundColor White
-if ($env:PORT) {
-    Write-Host "  Port: $env:PORT" -ForegroundColor White
-}
-$consoleLogFile = Join-Path $env:MYPAL_LOGS_DIR "console.log"
-Write-Host "  Console log file: $consoleLogFile" -ForegroundColor White
-
-Write-Host ""
-Write-Host "Starting services..." -ForegroundColor Cyan
-$backendProcess = $null
-try {
-    $backendProcess = Start-BackendServer -Directory $backendDir
-} catch {
-    Write-Error "Failed to start backend: $_"
-    exit 1
-}
-
-Write-Host ""
-Write-Host "Launching MyPal Tauri desktop (Press Ctrl+C to stop)..." -ForegroundColor Yellow
-Write-Host "Backend is running in a separate window - close it manually or it will stop when Tauri exits" -ForegroundColor DarkGray
-Write-Host ""
-
-Push-Location $tauriDir
-try {
-    npm run dev
-} finally {
-    Pop-Location
-    if ($backendProcess -and -not $backendProcess.HasExited) {
-        Write-Host ""
-        Write-Host "Stopping backend server..." -ForegroundColor Yellow
-        try {
-            # Get all child processes of the PowerShell window (including npm and node)
-            $childProcesses = Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $backendProcess.Id }
-            foreach ($child in $childProcesses) {
-                Write-Host "  Stopping child process: $($child.Name) (PID: $($child.ProcessId))" -ForegroundColor DarkGray
-                Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
-            }
-            
-            # Stop the main PowerShell window
-            Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue
-            Write-Host "Backend stopped" -ForegroundColor Green
-        } catch {
-            Write-Verbose "Backend process already stopped or could not be terminated: $_"
-        }
-    } else {
-        Write-Host ""
-        Write-Host "Backend process has already exited" -ForegroundColor DarkGray
-    }
-}
+Show-MainMenu

@@ -199,6 +199,11 @@ test('profile data files persist chat information and remain readable', async ()
     validate(json);
   }
 
+  const sqlitePath = path.join(dataDir, 'storage', 'mypal.sqlite');
+  assert.ok(fs.existsSync(sqlitePath), 'sqlite mirror should exist alongside JSON files');
+  const sqliteStats = fs.statSync(sqlitePath);
+  assert.ok(sqliteStats.size > 0, 'sqlite mirror should contain data');
+
   // Verify API endpoints can still read the persisted data
   const stats = await fetch(`${API}/stats`).then((r) => r.json());
   assert.equal(typeof stats.level, 'number', 'stats endpoint should read metadata');
@@ -211,4 +216,15 @@ test('profile data files persist chat information and remain readable', async ()
 
   const neural = await fetch(`${API}/neural-network`).then((r) => r.json());
   assert.ok(neural.regions || neural.metrics, 'neural endpoint should respond with data structure');
+
+  const metadataPath = path.join(profileDir, 'metadata.json');
+  const metadataSnapshot = await readJson(metadataPath);
+  fs.unlinkSync(metadataPath);
+  assert.ok(!fs.existsSync(metadataPath), 'metadata.json should be removed to test sqlite hydration');
+
+  const profilesList = await fetch(`${API}/profiles`).then((r) => r.json());
+  const hydratedProfile = profilesList.profiles.find((p) => p.id === profileId);
+  assert.ok(hydratedProfile, 'profiles endpoint should still list the profile');
+  assert.equal(hydratedProfile.name, metadataSnapshot.name, 'hydrated profile should retain original name');
+  assert.ok(fs.existsSync(metadataPath), 'metadata.json should be regenerated from sqlite mirror');
 });

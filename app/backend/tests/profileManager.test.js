@@ -5,19 +5,26 @@ import fs from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 import ProfileManager from '../src/profileManager.js';
+import createSqliteStore from '../src/storage/sqliteStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let tempRoot;
 let profileManager;
+let sqliteStore;
 
-before(() => {
+before(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mypal-pm-unit-test-'));
-  profileManager = new ProfileManager(tempRoot);
+  sqliteStore = await createSqliteStore(tempRoot, console);
+  profileManager = new ProfileManager(tempRoot, sqliteStore);
+  assert.ok(profileManager.kvStore?.isEnabled?.(), 'SQLite store should be enabled for profile manager tests');
 });
 
 after(() => {
+  try {
+    sqliteStore?.dispose?.();
+  } catch {}
   if (tempRoot && fs.existsSync(tempRoot)) {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -200,6 +207,26 @@ describe('ProfileManager Unit Tests', () => {
     }
   });
 
+  test('should recover data from sqlite mirror when JSON file missing', () => {
+    const listResult = profileManager.listProfiles();
+    if (listResult.profiles.length > 0) {
+      const profileId = listResult.profiles[0].id;
+      profileManager.loadProfile(profileId);
+
+      const testData = { via: 'sqlite-mirror', timestamp: Date.now() };
+      profileManager.saveCurrentProfileData('mirror.json', testData);
+
+      const mirrorPath = profileManager.getCurrentProfilePath('mirror.json');
+      assert.ok(fs.existsSync(mirrorPath), 'mirror.json should exist after save');
+      fs.unlinkSync(mirrorPath);
+      assert.ok(!fs.existsSync(mirrorPath), 'mirror.json should be removed for test');
+
+      const recovered = profileManager.getCurrentProfileData('mirror.json');
+      assert.deepEqual(recovered, testData, 'should read data from sqlite mirror');
+      assert.ok(fs.existsSync(mirrorPath), 'mirror.json should be regenerated from sqlite');
+    }
+  });
+
   test('should handle missing data file gracefully', () => {
     const listResult = profileManager.listProfiles();
     if (listResult.profiles.length > 0) {
@@ -257,6 +284,25 @@ describe('ProfileManager Unit Tests', () => {
     }
   });
 
+  test('should hydrate metadata from sqlite when metadata.json missing', () => {
+    const listResult = profileManager.listProfiles();
+    if (listResult.profiles.length > 0) {
+      const profileId = listResult.profiles[0].id;
+      const metadataPath = profileManager.getProfileDataPath(profileId, 'metadata.json');
+      const beforeLevel = JSON.parse(fs.readFileSync(metadataPath, 'utf8')).level;
+      fs.unlinkSync(metadataPath);
+      assert.ok(!fs.existsSync(metadataPath), 'metadata.json should be removed before hydration');
+
+      const refreshed = profileManager.listProfiles();
+      const hydrated = refreshed.profiles.find((p) => p.id === profileId);
+      assert.ok(hydrated, 'profile should still be listed');
+      assert.equal(typeof hydrated.level, 'number', 'hydrated profile should include level');
+      assert.ok(fs.existsSync(metadataPath), 'metadata.json should be restored from sqlite');
+      const restored = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+      assert.equal(restored.level, beforeLevel, 'restored metadata should match stored value');
+    }
+  });
+
   test('should update index when creating profile', () => {
     const beforeCount = profileManager.loadIndex().profiles.length;
     
@@ -291,5 +337,34 @@ describe('ProfileManager Unit Tests', () => {
     
     const afterCount = profileManager.loadIndex().profiles.length;
     assert.equal(afterCount, beforeCount - 1, 'profile count should decrease');
+  });
+
+  test('should purge sqlite entries when deleting a profile', () => {
+    const label = `SQLiteDelete-${Date.now()}`;
+    let createResult = profileManager.createProfile(label);
+    if (!createResult.success) {
+      const listResult = profileManager.listProfiles();
+      profileManager.deleteProfile(listResult.profiles[0].id);
+      createResult = profileManager.createProfile(label);
+      assert.equal(createResult.success, true, 'profile should be created after clearing space');
+    }
+
+    const profileId = createResult.profile.id;
+    const metadataPath = profileManager.getProfileDataPath(profileId, 'metadata.json');
+    profileManager.loadProfile(profileId);
+    profileManager.saveCurrentProfileData('sqlite-delete.json', { value: 1 });
+    assert.ok(profileManager.kvStore?.getByPath(metadataPath), 'metadata should exist in sqlite before deletion');
+
+    profileManager.deleteProfile(profileId);
+    const stored = profileManager.kvStore?.getByPath(metadataPath);
+    assert.equal(stored, undefined, 'sqlite entries should be removed when profile is deleted');
+  });
+
+  test('should write sqlite database file alongside JSON backups', async () => {
+    const storagePath = path.join(tempRoot, 'storage', 'mypal.sqlite');
+    await sqliteStore.flush();
+    assert.ok(fs.existsSync(storagePath), 'sqlite mirror file should exist');
+    const stats = fs.statSync(storagePath);
+    assert.ok(stats.size > 0, 'sqlite mirror file should contain data');
   });
 });

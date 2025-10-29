@@ -23,14 +23,74 @@ function sleepSync(ms) {
 }
 
 class ProfileManager {
-  constructor(baseDataDir) {
+  constructor(baseDataDir, kvStore = null) {
     this.baseDataDir = baseDataDir;
     this.profilesDir = path.join(baseDataDir, 'profiles');
     this.indexPath = path.join(baseDataDir, 'profiles-index.json');
     this.currentProfile = null;
     this._cache = new Map();
+    this.kvStore = kvStore && typeof kvStore.isEnabled === 'function' && kvStore.isEnabled() ? kvStore : null;
     
     this.ensureDirectories();
+  }
+
+  getFromStore(filePath) {
+    if (!this.kvStore) {
+      return undefined;
+    }
+    try {
+      return this.kvStore.getByPath(filePath);
+    } catch (err) {
+      console.warn('[PROFILE] Failed to read from SQLite store:', err?.message || err);
+      return undefined;
+    }
+  }
+
+  setInStore(filePath, data, { immediate = false } = {}) {
+    if (!this.kvStore) {
+      return;
+    }
+    try {
+      this.kvStore.setByPath(filePath, data, { immediate });
+    } catch (err) {
+      console.warn('[PROFILE] Failed to persist to SQLite store:', err?.message || err);
+    }
+  }
+
+  deleteFromStore(filePath, { immediate = false } = {}) {
+    if (!this.kvStore) {
+      return;
+    }
+    try {
+      this.kvStore.deleteByPath(filePath, { immediate });
+    } catch (err) {
+      console.warn('[PROFILE] Failed to delete from SQLite store:', err?.message || err);
+    }
+  }
+
+  deleteProfileFromStore(profileId, { immediate = false } = {}) {
+    if (!this.kvStore) {
+      return;
+    }
+    try {
+      this.kvStore.deleteByPrefix(this.getProfileDir(profileId), { immediate });
+    } catch (err) {
+      console.warn('[PROFILE] Failed to purge profile from SQLite store:', err?.message || err);
+    }
+  }
+
+  ensureBackupFile(filePath, data) {
+    try {
+      if (!fs.existsSync(filePath)) {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(filePath, JSON.stringify(data ?? null, null, 2), 'utf8');
+      }
+    } catch (err) {
+      console.warn('[PROFILE] Failed to regenerate backup file', path.basename(filePath), err?.message || err);
+    }
   }
 
   ensureDirectories() {
@@ -48,9 +108,16 @@ class ProfileManager {
   }
 
   loadIndex() {
+    const stored = this.getFromStore(this.indexPath);
+    if (stored && typeof stored === 'object') {
+      return stored;
+    }
+
     try {
       const data = fs.readFileSync(this.indexPath, 'utf8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      this.setInStore(this.indexPath, parsed, { immediate: true });
+      return parsed;
     } catch (err) {
       console.error('Failed to load profile index:', err);
       return { profiles: [], lastUsedId: null, version: '1.0.0' };
@@ -60,6 +127,7 @@ class ProfileManager {
   saveIndex(index) {
     try {
       fs.writeFileSync(this.indexPath, JSON.stringify(index, null, 2), 'utf8');
+      this.setInStore(this.indexPath, index);
       return true;
     } catch (err) {
       console.error('Failed to save profile index:', err);
@@ -147,6 +215,7 @@ class ProfileManager {
       for (const [filename, data] of Object.entries(initialData)) {
         const filePath = this.getProfileDataPath(id, filename);
         fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+        this.setInStore(filePath, data, { immediate: true });
       }
 
       // Add to index
@@ -187,8 +256,14 @@ class ProfileManager {
     const profiles = index.profiles.map(p => {
       const metadataPath = this.getProfileDataPath(p.id, 'metadata.json');
       try {
-        if (fs.existsSync(metadataPath)) {
-          const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+        let metadata = this.getFromStore(metadataPath);
+        if (metadata === undefined && fs.existsSync(metadataPath)) {
+          metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+          this.setInStore(metadataPath, metadata);
+        }
+        if (metadata) {
+          this.ensureBackupFile(metadataPath, metadata);
+          this.rememberData(metadataPath, metadata);
           return {
             ...p,
             level: metadata.level || 1,
@@ -226,9 +301,16 @@ class ProfileManager {
     // Update last played
     const metadataPath = this.getProfileDataPath(profileId, 'metadata.json');
     try {
-      const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+      let metadata = this.getFromStore(metadataPath);
+      if (metadata === undefined) {
+        metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+        this.setInStore(metadataPath, metadata, { immediate: true });
+      }
+  this.ensureBackupFile(metadataPath, metadata);
+  this.rememberData(metadataPath, metadata);
       metadata.lastPlayedAt = Date.now();
       fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+      this.setInStore(metadataPath, metadata);
       
       // Update index
       index.lastUsedId = profileId;
@@ -267,6 +349,8 @@ class ProfileManager {
         fs.rmSync(profileDir, { recursive: true, force: true });
       }
 
+      this.deleteProfileFromStore(profileId, { immediate: true });
+
       // Remove from index
       index.profiles.splice(profileIndex, 1);
       
@@ -300,6 +384,17 @@ class ProfileManager {
     }
 
     const filePath = this.getProfileDataPath(this.currentProfile, filename);
+
+    try {
+      const stored = this.getFromStore(filePath);
+      if (stored !== undefined) {
+        this.ensureBackupFile(filePath, stored);
+        this.rememberData(filePath, stored);
+        return this.cloneData(stored);
+      }
+    } catch (storeErr) {
+      console.warn(`[PROFILE] Store read failed for ${filename}:`, storeErr?.message || storeErr);
+    }
     
     // Check if there's a pending write for this file - if so, wait for it
     if (this._pendingWrites && this._pendingWrites.has(filePath)) {
@@ -333,9 +428,10 @@ class ProfileManager {
           }
           return null;
         }
-        const parsed = JSON.parse(data);
-        this.rememberData(filePath, parsed);
-  return this.cloneData(parsed);
+    const parsed = JSON.parse(data);
+    this.rememberData(filePath, parsed);
+    this.setInStore(filePath, parsed);
+    return this.cloneData(parsed);
       }
     } catch (err) {
       // Only log parse errors at warn level - file corruption is recoverable
@@ -343,6 +439,7 @@ class ProfileManager {
         console.warn(`[PROFILE] JSON parse error in ${filename} (file may be mid-write, attempting recovery):`, err.message);
         const recovered = this.recoverFromBackup(filePath, filename);
         if (recovered !== null) {
+          this.setInStore(filePath, recovered);
           return recovered;
         }
       } else {
@@ -373,6 +470,8 @@ class ProfileManager {
     const filePath = this.getProfileDataPath(this.currentProfile, filename);
     try {
       await this.writeJsonAsync(filePath, data, immediate);
+      this.setInStore(filePath, data, { immediate });
+      this.ensureBackupFile(filePath, data);
       return true;
     } catch (err) {
       console.error(`Failed to save ${filename} for current profile:`, err);
@@ -406,6 +505,8 @@ class ProfileManager {
         await this.commitTempFile(tempFile, file, jsonString);
 
         this.rememberData(file, data);
+        this.ensureBackupFile(file, data);
+        this.setInStore(file, data);
 
         this._pendingWrites.delete(file);
       } catch (error) {
@@ -674,6 +775,8 @@ class ProfileManager {
       this.commitTempFileSync(tempFile, filePath, jsonString);
 
       this.rememberData(filePath, data);
+      this.ensureBackupFile(filePath, data);
+      this.setInStore(filePath, data);
 
       return true;
     } catch (err) {
