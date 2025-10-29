@@ -11,5 +11,18 @@
     "contexts": [
       "Hello"
     ]
+  },
+  {
+    "id": "zjkyCJjOTEMbxXS7RSG6k",
+    "word": "kita",
+    "count": 1,
+    "knownBy": {
+      "user": 1,
+      "pal": 0
+    },
+    "lastSeen": 1761679704485,
+    "contexts": [
+      "Hi Kita!"
+    ]
   }
 ]

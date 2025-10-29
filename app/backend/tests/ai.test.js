@@ -6,12 +6,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveMessagePlan } from './helpers/message-plan.js';
+
 const PORT = 31344;
 const API = `http://localhost:${PORT}/api`;
 
 let serverProcess;
 let tempRoot;
 let unexpectedExit;
+let aiSequentialMessages = [];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,6 +60,8 @@ before(async () => {
   serverProcess.once('exit', unexpectedExit);
 
   await waitForHealth();
+  aiSequentialMessages = await resolveMessagePlan({ label: 'backend AI chat', defaultCount: 3 });
+  console.info(`[ai.test] Using ${aiSequentialMessages.length} sequential message(s) for AI chat scenarios`);
 });
 
 after(async () => {
@@ -188,10 +193,11 @@ describe('Developmental Stages', () => {
     const currentLevel = stats.level;
 
     // Send chat
+    const testMessage = aiSequentialMessages[0] ?? 'Hello from AI status test';
     const chatRes = await fetch(`${API}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'Hello' }),
+      body: JSON.stringify({ message: testMessage }),
     });
     const chat = await chatRes.json();
     
@@ -207,16 +213,18 @@ describe('Developmental Stages', () => {
 
   test('should track stage progression', async () => {
     // Send multiple chats to gain levels
-    for (let i = 0; i < 3; i++) {
+    const messages = aiSequentialMessages.length > 0 ? aiSequentialMessages : ['Stage progression baseline'];
+    for (const message of messages) {
       await fetch(`${API}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `Message ${i}` }),
+        body: JSON.stringify({ message }),
       });
     }
 
     const stats = await fetch(`${API}/stats`).then(r => r.json());
     assert.ok(stats.level >= 0, 'should have valid level');
+    assert.ok(stats.xp >= 0, 'XP should be non-negative after progression messages');
   });
 });
 
@@ -224,10 +232,12 @@ describe('Vocabulary Learning', () => {
   test('should learn new words from input', async () => {
     const uniqueWord = 'xylophone' + Date.now();
     
+    const vocabMessage = (aiSequentialMessages[1] ?? 'I like unique words like') + ` ${uniqueWord}`;
+
     await fetch(`${API}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `I like the ${uniqueWord}` }),
+      body: JSON.stringify({ message: vocabMessage }),
     });
 
     // Check if word was learned (it may be filtered by stop words)
@@ -241,10 +251,12 @@ describe('Vocabulary Learning', () => {
     const beforeSize = beforeBrain.vocabulary.length;
 
     // Add diverse vocabulary
+    const vocabGrowthMessage = aiSequentialMessages[2] ?? 'Adding diverse scientific tools:';
+
     await fetch(`${API}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: 'telescope microscope kaleidoscope' }),
+      body: JSON.stringify({ message: `${vocabGrowthMessage} telescope microscope kaleidoscope` }),
     });
 
     const afterRes = await fetch(`${API}/brain`);

@@ -62,5 +62,43 @@
       "importanceScore": 1,
       "memoryId": null
     }
+  },
+  {
+    "id": "QpO1KyGWHnYe1VqUKL_-7",
+    "ts": 1761679704499,
+    "level": 0,
+    "stage": "Sensorimotor (Early)",
+    "stageCode": "stage-0-1",
+    "userText": "Hi Kita!",
+    "analysis": {
+      "keywords": [
+        "kita"
+      ],
+      "sentiment": "neutral",
+      "hasQuestion": false,
+      "hasGreeting": true,
+      "hasThanks": false,
+      "isCommand": false
+    },
+    "focus": "kita",
+    "concept": {
+      "key": "topic:kita",
+      "name": "Topic: Kita",
+      "category": "Topic"
+    },
+    "response": {
+      "type": "nascent-awareness",
+      "text": "...hi?",
+      "reasoning": [
+        "First moments of awareness - cautious observation."
+      ],
+      "strategy": "awakening"
+    },
+    "memory": {
+      "stored": false,
+      "importanceLevel": "low",
+      "importanceScore": 1,
+      "memoryId": null
+    }
   }
 ]

@@ -24,5 +24,18 @@
     "text": "...hi?",
     "kind": "single_word",
     "ts": 1761369115974
+  },
+  {
+    "id": "KP2w1nK8GcXmKQksxa08n",
+    "role": "user",
+    "text": "Hi Kita!",
+    "ts": 1761679704490
+  },
+  {
+    "id": "BOhDnpUiuruQYAaGKm1s-",
+    "role": "pal",
+    "text": "...hi?",
+    "kind": "single_word",
+    "ts": 1761679704490
   }
 ]

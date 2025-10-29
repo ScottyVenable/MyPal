@@ -20,6 +20,20 @@
   <script type="module" src="app.js" defer></script>
 </head>
 <body>
+  <!-- Startup Loader Overlay -->
+  <div id="boot-loader" class="boot-loader" role="status" aria-live="polite">
+    <div class="boot-loader-card">
+      <img src="../media/images/logos/v2/logo_v2_transparent.png" alt="MyPal Logo" class="boot-loader-logo" />
+      <h2 id="boot-loader-stage" class="boot-loader-stage">Starting MyPal...</h2>
+      <p id="boot-loader-detail" class="boot-loader-detail">Preparing local systems.</p>
+      <div class="boot-loader-spinner" aria-hidden="true"></div>
+      <p id="boot-loader-error" class="boot-loader-error hidden"></p>
+      <div class="boot-loader-actions">
+        <button id="boot-loader-help" type="button" class="btn-secondary hidden">View troubleshooting</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Profile Selection Menu -->
   <div id="profile-menu" class="profile-menu">
     <div class="profile-menu-content">
@@ -412,7 +426,26 @@
               <button id="regenerate-neural" class="neural-action-btn" type="button">🧠 Regenerate Neural Network</button>
             </div>
             <div class="neural-events">
-              <h4>Recent Activity</h4>
+              <div class="neural-events-header">
+                <h4>Recent Activity</h4>
+                <div class="replay-controls">
+                  <label class="replay-toggle">
+                    <input id="neural-zoom-toggle" type="checkbox" />
+                    <span>Zoom on replay</span>
+                  </label>
+                  <div class="timeline-menu">
+                    <button id="neural-playback-menu" class="timeline-button" type="button">Timeline ▾</button>
+                    <div id="neural-playback-dropdown" class="timeline-dropdown hidden">
+                      <button data-playback="latest" type="button">Play Latest Activity</button>
+                      <button data-playback="last5" type="button">Play Last 5 Firings</button>
+                      <button data-playback="last10" type="button">Play Last 10 Firings</button>
+                      <button data-playback="all" type="button">Play Full Timeline</button>
+                      <div class="dropdown-divider"></div>
+                      <button id="neural-stop-playback" type="button">Stop Playback</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div id="neural-event-list" class="event-list"></div>
             </div>
           </aside>

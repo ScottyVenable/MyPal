@@ -29,6 +29,16 @@ const neuralActivityIdSet = new Set();
 let neuralReplayQueue = [];
 let neuralReplayActive = false;
 const MAX_ACTIVITY_ENTRIES = 30;
+const CHAT_TIMEOUT_MS = 15000;
+const CHAT_MAX_RETRIES = 1;
+const CHAT_RETRY_DELAY_MS = 900;
+const neuralPlaybackState = {
+  autoZoom: false,
+  timelinePlaying: false,
+  stopRequested: false,
+  dropdownListener: null,
+  playbackButton: null,
+};
 
 // ==============================================
 // COMPREHENSIVE LOGGING SYSTEM
@@ -51,7 +61,8 @@ const LOG_CATEGORIES = {
   NEURAL: { text: 'NEURAL', emoji: '🧠' },
   PERFORMANCE: { text: 'PERFORMANCE', emoji: '⚡' },
   STATE: { text: 'STATE', emoji: '📊' },
-  ERROR: { text: 'ERROR', emoji: '❌' }
+  ERROR: { text: 'ERROR', emoji: '❌' },
+  STARTUP: { text: 'STARTUP', emoji: '🚀' }
 };
 
 let logLevel = LOG_LEVELS.DEBUG; // Set to INFO for production
@@ -194,6 +205,87 @@ console.log('%c🎯 MyPal Logging Initialized!', 'color: #66bb6a; font-weight: b
 console.log('%cLogs use clean text for files/telemetry, emojis for console only', 'color: #9ab4ff;');
 console.log('%cUse MyPalLogging.setLevel("DEBUG") to see all logs', 'color: #9ab4ff;');
 console.log('%cAvailable commands: setLevel, getLevel, forceEnableInputs, clearTyping', 'color: #9ab4ff;');
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let bootLoaderRefs = null;
+let bootLoaderHelpShown = false;
+
+function getBootLoaderRefs() {
+  if (!bootLoaderRefs) {
+    bootLoaderRefs = {
+      container: document.getElementById('boot-loader'),
+      stage: document.getElementById('boot-loader-stage'),
+      detail: document.getElementById('boot-loader-detail'),
+      error: document.getElementById('boot-loader-error'),
+      help: document.getElementById('boot-loader-help')
+    };
+  }
+  return bootLoaderRefs;
+}
+
+function setBootLoaderStage(stage) {
+  const refs = getBootLoaderRefs();
+  if (refs.stage && typeof stage === 'string') {
+    refs.stage.textContent = stage;
+  }
+}
+
+function setBootLoaderDetail(detail) {
+  const refs = getBootLoaderRefs();
+  if (refs.detail && typeof detail === 'string') {
+    refs.detail.textContent = detail;
+  }
+}
+
+function setBootLoaderError(message) {
+  const refs = getBootLoaderRefs();
+  if (!refs.error) return;
+  if (message) {
+    refs.error.textContent = message;
+    refs.error.classList.remove('hidden');
+  } else {
+    refs.error.textContent = '';
+    refs.error.classList.add('hidden');
+  }
+}
+
+function toggleBootLoaderHelp(show) {
+  const refs = getBootLoaderRefs();
+  if (!refs.help) return;
+  if (show) {
+    refs.help.classList.remove('hidden');
+    bootLoaderHelpShown = true;
+  } else {
+    refs.help.classList.add('hidden');
+    bootLoaderHelpShown = false;
+  }
+}
+
+function showBootLoader(stage, detail) {
+  const refs = getBootLoaderRefs();
+  if (!refs.container) return;
+  refs.container.classList.remove('hidden');
+  if (document.body) {
+    document.body.classList.add('boot-loading');
+  }
+  if (stage) setBootLoaderStage(stage);
+  if (detail) setBootLoaderDetail(detail);
+  setBootLoaderError('');
+  toggleBootLoaderHelp(false);
+}
+
+function hideBootLoader() {
+  const refs = getBootLoaderRefs();
+  if (!refs.container) return;
+  refs.container.classList.add('hidden');
+  if (document.body) {
+    document.body.classList.remove('boot-loading');
+  }
+  setBootLoaderError('');
+}
 
 // ==============================================
 // PROFILE MANAGEMENT
@@ -721,8 +813,21 @@ window.addEventListener('unhandledrejection', (event) => {
 async function apiFetch(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  return res;
+  const method = (options.method || 'GET').toUpperCase();
+  const url = `${API_BASE}${path}`;
+  const start = performance.now();
+  const meta = { path, method, hasBody: typeof options.body !== 'undefined' };
+  logDebug('API', 'apiFetch start', meta);
+  try {
+    const res = await fetch(url, { ...options, headers });
+    const elapsedMs = Math.round(performance.now() - start);
+    logDebug('API', 'apiFetch response', { ...meta, status: res.status, ok: res.ok, elapsedMs });
+    return res;
+  } catch (err) {
+    const elapsedMs = Math.round(performance.now() - start);
+    logError('API', 'apiFetch network error', { ...meta, elapsedMs, error: err.message, aborted: options?.signal?.aborted === true });
+    throw err;
+  }
 }
 
 const $ = (sel) => document.querySelector(sel);
@@ -1116,18 +1221,22 @@ function forceEnableAllInputs() {
   logInfo('UI', `Emergency enable completed - ${enabledCount} inputs were re-enabled`);
 }
 
-async function sendChat(message) {
+async function sendChat(message, { attempt = 1, originalRequestId = null } = {}) {
   const requestId = Date.now();
-  logDebug('API', `sendChat() called`, { requestId, messageLength: message.length });
-  
+  const parentRequestId = originalRequestId || requestId;
+  const timeoutMs = attempt === 1 ? CHAT_TIMEOUT_MS : Math.max(CHAT_TIMEOUT_MS + 5000, Math.round(CHAT_TIMEOUT_MS * 1.5));
+  logDebug('API', 'sendChat() called', { requestId, parentRequestId, attempt, messageLength: message.length, timeoutMs });
+
   const controller = new AbortController();
+  const startedAt = performance.now();
   const timeout = setTimeout(() => {
-    logWarn('API', `Chat request timeout triggered`, { requestId });
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    logWarn('API', 'Chat request timeout triggered', { requestId, parentRequestId, attempt, timeoutMs, elapsedMs, backendHealthy });
     controller.abort();
-  }, 300000); // 300 second (5 minute) timeout for AI processing and file I/O
+  }, timeoutMs);
   
   try {
-    logDebug('API', `Making chat API request`, { requestId, endpoint: '/chat' });
+    logDebug('API', 'Making chat API request', { requestId, parentRequestId, attempt, endpoint: '/chat' });
     const res = await apiFetch(`/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1135,45 +1244,59 @@ async function sendChat(message) {
       signal: controller.signal
     });
     clearTimeout(timeout);
+    const elapsedMs = Math.round(performance.now() - startedAt);
     
-    logDebug('API', `Chat API response received`, { 
-      requestId, 
+    logDebug('API', 'Chat API response received', { 
+      requestId,
+      parentRequestId,
+      attempt,
       status: res.status,
       ok: res.ok,
-      statusText: res.statusText
+      statusText: res.statusText,
+      elapsedMs
     });
     
     if (!res.ok) {
-      logError('API', `Chat API returned error status`, { 
-        requestId, 
+      logError('API', 'Chat API returned error status', { 
+        requestId,
+        parentRequestId,
+        attempt,
         status: res.status,
         statusText: res.statusText
       });
       throw new Error('Chat failed');
     }
     
+  const contentLengthHeader = typeof res.headers?.get === 'function' ? res.headers.get('content-length') : null;
+  const contentLength = contentLengthHeader ? Number(contentLengthHeader) : null;
     const data = await res.json();
     const activationCount = Array.isArray(data?.neuralActivations) ? data.neuralActivations.length : 0;
-    logInfo('API', `Chat response parsed successfully`, { 
+    logInfo('API', 'Chat response parsed successfully', { 
       requestId,
+      parentRequestId,
+      attempt,
       hasReply: !!data.reply,
       hasOutput: !!data.output,
       hasEmotion: !!data.emotion,
       processingTimeMs: typeof data?.processingTimeMs === 'number' ? data.processingTimeMs : null,
-      activationCount
+      activationCount,
+      elapsedMs,
+      contentLength
     });
 
     if (typeof data?.processingTimeMs === 'number') {
-      logInfo('PERFORMANCE', `Backend processed chat request`, { 
+      logInfo('PERFORMANCE', 'Backend processed chat request', { 
         requestId,
+        parentRequestId,
         processingTimeMs: Math.round(data.processingTimeMs)
       });
     }
 
     const neuralSummary = summarizeNeuralActivations(data?.neuralActivations);
     if (neuralSummary) {
-      logDebug('NEURAL', `Neural activation sequence received`, { 
+      logDebug('NEURAL', 'Neural activation sequence received', { 
         requestId,
+        parentRequestId,
         neuralSummary
       });
     }
@@ -1181,14 +1304,26 @@ async function sendChat(message) {
     return data;
   } catch (err) {
     clearTimeout(timeout);
+    const elapsedMs = Math.round(performance.now() - startedAt);
     
     if (err.name === 'AbortError') {
-      logError('API', `Chat request aborted (timeout)`, { requestId });
-      throw new Error('Request timed out after 5 minutes');
+      logError('API', 'Chat request aborted (timeout)', { requestId, parentRequestId, attempt, timeoutMs, elapsedMs, backendHealthy });
+      const healthAfterTimeout = await checkHealth();
+      logInfo('API', 'Backend health check after timeout', { requestId, parentRequestId, attempt, healthAfterTimeout });
+      if (attempt <= CHAT_MAX_RETRIES) {
+        logWarn('API', 'Retrying chat request after timeout', { requestId, parentRequestId, attempt, nextAttempt: attempt + 1, retryDelayMs: CHAT_RETRY_DELAY_MS * attempt });
+        await wait(CHAT_RETRY_DELAY_MS * attempt);
+        return sendChat(message, { attempt: attempt + 1, originalRequestId: parentRequestId });
+      }
+      const seconds = Math.round(timeoutMs / 1000);
+      throw new Error(`Request timed out after ${seconds} seconds`);
     }
     
-    logError('API', `Chat request failed`, { 
+    logError('API', 'Chat request failed', { 
       requestId,
+      parentRequestId,
+      attempt,
+      elapsedMs,
       error: err.message,
       name: err.name
     });
@@ -1204,6 +1339,8 @@ async function getStats() {
 // --- Neural Visualization Frontend ---
 let neuralSocket = null;
 let neuralState = null;
+let neuralConnected = false;
+const neuralReadyWaiters = new Set();
 
 async function fetchNeuralSnapshot() {
   try {
@@ -1230,28 +1367,88 @@ function onNeuronClickFront(neuronId) {
 let neuralEventBatch = [];
 let neuralEventRafId = null;
 
-function connectNeuralSocket() {
-  if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) {
-    logDebug('WEBSOCKET', 'Neural socket already connected');
-    return;
+function resolveNeuralWaiters() {
+  neuralReadyWaiters.forEach((entry) => {
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.resolve(true);
+  });
+  neuralReadyWaiters.clear();
+}
+
+function rejectNeuralWaiters(error) {
+  const reason = error instanceof Error ? error : new Error(String(error || 'Neural connection unavailable'));
+  neuralReadyWaiters.forEach((entry) => {
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.reject(reason);
+  });
+  neuralReadyWaiters.clear();
+}
+
+function waitForNeuralReady({ timeoutMs = 5000 } = {}) {
+  if (neuralConnected && neuralSocket && neuralSocket.readyState === WebSocket.OPEN) {
+    return Promise.resolve(true);
   }
-  
+  return new Promise((resolve, reject) => {
+    const entry = { resolve, reject };
+    if (timeoutMs > 0) {
+      entry.timer = setTimeout(() => {
+        neuralReadyWaiters.delete(entry);
+        reject(new Error('timeout'));
+      }, timeoutMs);
+    }
+    neuralReadyWaiters.add(entry);
+  });
+}
+
+function connectNeuralSocket(options = {}) {
+  const { skipIfOpen = true } = options;
+  if (neuralSocket && neuralSocket.readyState === WebSocket.OPEN) {
+    if (skipIfOpen) {
+      logDebug('WEBSOCKET', 'Neural socket already connected');
+      neuralConnected = true;
+      resolveNeuralWaiters();
+      return neuralSocket;
+    }
+    try {
+      neuralSocket.close(1000, 'Reinitializing neural stream');
+    } catch {}
+  } else if (neuralSocket && neuralSocket.readyState === WebSocket.CONNECTING && skipIfOpen) {
+    logDebug('WEBSOCKET', 'Neural socket connection in progress');
+    return neuralSocket;
+  }
+
+  if (neuralSocket && neuralSocket.readyState !== WebSocket.CLOSED) {
+    try {
+      neuralSocket.close(1000, 'Restarting neural stream');
+    } catch {}
+  }
+  neuralSocket = null;
+  neuralConnected = false;
+
+  let wsUrl;
   try {
-    // Use localhost:3001 directly since we might be running in Electron with file:// protocol
-    // Use secure WebSocket (wss://) when on HTTPS to prevent mixed content issues
-    const wsUrl = window.location.protocol === 'file:' 
+    wsUrl = window.location.protocol === 'file:' 
       ? 'ws://localhost:3001/neural-stream'
       : (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host.replace(/:\d+$/, ':3001') + '/neural-stream';
-    
-    logInfo('WEBSOCKET', `Connecting to neural stream`, { url: wsUrl });
+  } catch (e) {
+    logError('WEBSOCKET', 'Failed to construct neural stream URL', { error: e.message });
+    rejectNeuralWaiters(e);
+    return null;
+  }
+
+  try {
+    logInfo('WEBSOCKET', 'Connecting to neural stream', { url: wsUrl });
     neuralSocket = new WebSocket(wsUrl);
   } catch (e) {
     logError('WEBSOCKET', 'WebSocket connect error', { error: e.message });
-    return;
+    rejectNeuralWaiters(e);
+    return null;
   }
 
   neuralSocket.addEventListener('open', () => {
+    neuralConnected = true;
     logInfo('WEBSOCKET', 'Neural socket connected successfully');
+    resolveNeuralWaiters();
   });
 
   neuralSocket.addEventListener('message', (ev) => {
@@ -1286,14 +1483,93 @@ function connectNeuralSocket() {
     }
   });
 
-  neuralSocket.addEventListener('close', () => {
-    logWarn('WEBSOCKET', 'Neural socket closed');
+  neuralSocket.addEventListener('close', (event) => {
+    const wasConnected = neuralConnected;
+    neuralConnected = false;
+    if (!wasConnected) {
+      rejectNeuralWaiters(new Error('Neural socket closed before ready'));
+    }
+    logWarn('WEBSOCKET', 'Neural socket closed', { code: event?.code, reason: event?.reason || 'no reason provided' });
     neuralSocket = null;
   });
 
   neuralSocket.addEventListener('error', (e) => {
     logError('WEBSOCKET', 'Neural socket error', { error: e.message || 'Unknown error' });
+    if (!neuralConnected) {
+      rejectNeuralWaiters(new Error(e.message || 'Neural socket error'));
+    }
   });
+
+  return neuralSocket;
+}
+
+async function waitForBackendReady() {
+  let attempt = 0;
+  while (true) {
+    attempt += 1;
+    setBootLoaderStage('Connecting to backend...');
+    setBootLoaderDetail(`Checking health (attempt ${attempt})...`);
+    const healthy = await checkHealth();
+    if (healthy) {
+      backendHealthy = true;
+      logInfo('STARTUP', 'Backend health confirmed', { attempt });
+      setBootLoaderError('');
+      if (bootLoaderHelpShown) {
+        toggleBootLoaderHelp(false);
+      }
+      return true;
+    }
+
+    logWarn('STARTUP', 'Backend health check failed', { attempt });
+    setBootLoaderError('Waiting for backend at http://localhost:3001. Start it with `npm run dev` inside app/backend or run AUTORUN.ps1.');
+    if (!bootLoaderHelpShown && attempt >= 3) {
+      toggleBootLoaderHelp(true);
+    }
+    await wait(Math.min(1500 + attempt * 500, 4000));
+  }
+}
+
+async function waitForNeuralConnection() {
+  let attempt = 0;
+  setBootLoaderError('');
+  while (true) {
+    attempt += 1;
+    setBootLoaderStage('Connecting to neural stream...');
+    setBootLoaderDetail(`Establishing WebSocket (attempt ${attempt})...`);
+    connectNeuralSocket({ skipIfOpen: attempt === 1 });
+
+    try {
+      await waitForNeuralReady({ timeoutMs: 4000 });
+      logInfo('STARTUP', 'Neural stream connected', { attempt });
+      setBootLoaderError('');
+      return true;
+    } catch (err) {
+      logWarn('STARTUP', 'Neural stream connection attempt failed', { attempt, error: err.message });
+      setBootLoaderError('Waiting for neural telemetry. Ensure the backend stays running.');
+      if (!bootLoaderHelpShown) {
+        toggleBootLoaderHelp(true);
+      }
+    }
+
+    await wait(Math.min(1500 + attempt * 500, 5000));
+  }
+}
+
+async function runStartupSequence() {
+  showBootLoader('Starting MyPal...', 'Preparing local systems...');
+  await waitForBackendReady();
+  setBootLoaderStage('Backend online');
+  setBootLoaderDetail('Preparing neural telemetry...');
+  setBootLoaderError('');
+  await wait(300);
+  await waitForNeuralConnection();
+  setBootLoaderStage('All systems ready');
+  setBootLoaderDetail('Loading profile menu...');
+  setBootLoaderError('');
+  await wait(350);
+  hideBootLoader();
+  hideStatusModal();
+  logInfo('STARTUP', 'Startup sequence completed');
 }
 
 function describeIntensityLevel(value = 0) {
@@ -1539,24 +1815,48 @@ function replayNeuralActivity(activityId) {
 
 function processNeuralReplayQueue() {
   if (neuralReplayActive) return;
+  if (neuralPlaybackState.stopRequested) {
+    neuralReplayQueue.length = 0;
+    neuralPlaybackState.timelinePlaying = false;
+    neuralPlaybackState.stopRequested = false;
+    return;
+  }
   const next = neuralReplayQueue.shift();
   if (!next) return;
   neuralReplayActive = true;
 
-  runNeuronReplay(next)
+  const autoZoom = Object.prototype.hasOwnProperty.call(next, 'autoZoom')
+    ? !!next.autoZoom
+    : neuralPlaybackState.autoZoom;
+
+  runNeuronReplay(next, { autoZoom })
     .catch((err) => logError('NEURAL', 'Replay error', { error: err.message }))
     .finally(() => {
       neuralReplayActive = false;
+      if (neuralPlaybackState.stopRequested) {
+        neuralReplayQueue.length = 0;
+        neuralPlaybackState.timelinePlaying = false;
+        neuralPlaybackState.stopRequested = false;
+        return;
+      }
       if (neuralReplayQueue.length) {
         processNeuralReplayQueue();
+      } else if (neuralPlaybackState.timelinePlaying) {
+        neuralPlaybackState.timelinePlaying = false;
+        if (neuralPlaybackState.playbackButton) {
+          neuralPlaybackState.playbackButton.classList.remove('playing');
+          neuralPlaybackState.playbackButton.classList.remove('active');
+        }
+        logInfo('NEURAL', 'Timeline playback completed');
       }
     });
 }
 
-function runNeuronReplay(entry) {
+function runNeuronReplay(entry, options = {}) {
   return new Promise((resolve) => {
     const baseDuration = 520;
     const intensity = entry.intensity ?? 0.8;
+    if (options.autoZoom) autoFocusNeuron(entry.neuronId);
     simulateNeuronPulse(entry.neuronId, intensity, baseDuration);
 
     let delay = Math.max(220, baseDuration * 0.6);
@@ -1564,6 +1864,9 @@ function runNeuronReplay(entry) {
       entry.connections.forEach((connection, index) => {
         const stepDelay = delay + (index * (connection.latency || 160));
         setTimeout(() => {
+          if (options.autoZoom && connection.toNeuronId) {
+            autoFocusNeuron(connection.toNeuronId, { distance: 240, duration: 800 });
+          }
           simulateConnectionPulse(connection.fromNeuronId || entry.neuronId, connection.toNeuronId, connection.signal, (connection.latency || 180) + 220);
           simulateNeuronPulse(connection.toNeuronId, Math.abs(connection.signal || 0.6), 420);
         }, stepDelay);
@@ -1573,6 +1876,81 @@ function runNeuronReplay(entry) {
 
     setTimeout(resolve, delay + 560);
   });
+}
+
+function collectTimelineEntries(mode = 'latest') {
+  if (!neuralActivityFeed.length) return [];
+  const firings = neuralActivityFeed
+    .filter((entry) => entry.type === 'neuron-fire')
+    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  if (!firings.length) return [];
+  switch (mode) {
+    case 'latest':
+      return [firings[firings.length - 1]];
+    case 'last5':
+      return firings.slice(-5);
+    case 'last10':
+      return firings.slice(-10);
+    case 'all':
+    default:
+      return firings;
+  }
+}
+
+function playNeuralTimeline(mode = 'latest') {
+  const entries = collectTimelineEntries(mode);
+  if (!entries.length) {
+    logWarn('NEURAL', 'No neural firings available for playback', { mode });
+    return;
+  }
+  stopNeuralTimeline({ keepCamera: true });
+  const clones = entries.map((entry) => ({
+    ...entry,
+    autoZoom: neuralPlaybackState.autoZoom,
+    timeline: true,
+  }));
+
+  const beginPlayback = () => {
+    neuralPlaybackState.stopRequested = false;
+    neuralPlaybackState.timelinePlaying = true;
+    if (neuralPlaybackState.playbackButton) {
+      neuralPlaybackState.playbackButton.classList.add('playing');
+    }
+    neuralReplayQueue.push(...clones);
+    if (!neuralReplayActive) {
+      processNeuralReplayQueue();
+    }
+    logInfo('NEURAL', 'Timeline playback started', { mode, count: clones.length });
+  };
+
+  if (neuralReplayActive && neuralPlaybackState.stopRequested) {
+    const waitForStop = () => {
+      if (!neuralReplayActive && !neuralPlaybackState.stopRequested) {
+        beginPlayback();
+      } else {
+        setTimeout(waitForStop, 120);
+      }
+    };
+    waitForStop();
+  } else {
+    beginPlayback();
+  }
+}
+
+function stopNeuralTimeline({ keepCamera = false } = {}) {
+  if (!neuralPlaybackState.timelinePlaying && !neuralReplayQueue.length && !neuralReplayActive) return;
+  neuralReplayQueue.length = 0;
+  neuralPlaybackState.stopRequested = neuralReplayActive;
+  neuralPlaybackState.timelinePlaying = false;
+  const dropdown = $('#neural-playback-dropdown');
+  if (dropdown) dropdown.classList.add('hidden');
+  if (neuralPlaybackState.playbackButton) {
+    neuralPlaybackState.playbackButton.classList.remove('playing');
+    neuralPlaybackState.playbackButton.classList.remove('active');
+  }
+  if (!keepCamera) {
+    logInfo('NEURAL', 'Timeline playback stopped');
+  }
 }
 
 function simulateNeuronPulse(neuronId, intensity = 1, duration = 420) {
@@ -2686,9 +3064,9 @@ function wireChat() {
       } else if (e.message?.includes('fetch') || e.message?.includes('network')) {
         errorMsg = 'Network error. Please check your connection.';
         logWarn('API', `Network error detected`, { chatId, error: e.message });
-      } else if (e.message?.includes('timeout')) {
-        errorMsg = 'Response timed out. Please try again.';
-        logWarn('API', `Request timeout`, { chatId });
+      } else if (e.message?.toLowerCase().includes('request timed out')) {
+        errorMsg = `${e.message}. Please try again.`;
+        logWarn('API', 'Request timeout', { chatId, error: e.message });
       } else if (e.message?.includes('Chat failed')) {
         errorMsg = 'Unable to generate response. Please try again.';
         logWarn('API', `Chat generation failed`, { chatId });
@@ -2841,13 +3219,13 @@ function wireSettings() {
       await refreshStats();
       
       // Show success feedback
-      saveBtn.textContent = '✓ Saved!';
+      saveBtn.textContent = '? Saved!';
       setTimeout(() => {
         saveBtn.textContent = originalText;
       }, 2000);
     } catch (err) {
       console.error('Failed to save settings:', err);
-      saveBtn.textContent = '✗ Failed';
+      saveBtn.textContent = '? Failed';
       setTimeout(() => {
         saveBtn.textContent = originalText;
       }, 2000);
@@ -2906,7 +3284,7 @@ function wireSettings() {
       const authStatus = document.getElementById('auth-status');
       if (authStatus) authStatus.textContent = 'Not logged in';
       
-      resetBtn.textContent = '✓ Reset complete';
+      resetBtn.textContent = '? Reset complete';
       setTimeout(() => {
         resetBtn.textContent = originalText;
         resetBtn.disabled = false;
@@ -2914,7 +3292,7 @@ function wireSettings() {
     } catch (err) {
       console.error('Failed to reset Pal:', err);
       alert('Unable to reset Pal. Please ensure you are logged in if authentication is required.');
-      resetBtn.textContent = '✗ Failed';
+      resetBtn.textContent = '? Failed';
       setTimeout(() => {
         resetBtn.textContent = originalText;
         resetBtn.disabled = false;
@@ -2941,24 +3319,24 @@ function wireSettings() {
 async function init() {
   // Performance monitoring
   if (window.perf) window.perf.mark('init_start');
+
+  const bootRefs = getBootLoaderRefs();
+  bootRefs.help?.addEventListener('click', () => {
+    logInfo('STARTUP', 'Troubleshooting modal opened from loader');
+    showStatusModal();
+  });
   
   // Wire up profile management first
   wireProfileManagement();
-  
-  await checkHealth();
-  
-  if (backendHealthy) {
-    // Always show profile menu on startup - let user choose their profile
-    showProfileMenu();
-    await initProfileMenu();
-    
-    if (window.perf) {
-      window.perf.mark('init_profile_menu_ready');
-      window.perf.measure('Init to Profile Menu', 'init_start', 'init_profile_menu_ready');
-    }
-  } else {
-    showStatusModal();
-    showProfileMenu();
+  await runStartupSequence();
+
+  // Always show profile menu on startup - let user choose their profile
+  showProfileMenu();
+  await initProfileMenu();
+
+  if (window.perf) {
+    window.perf.mark('init_profile_menu_ready');
+    window.perf.measure('Init to Profile Menu', 'init_start', 'init_profile_menu_ready');
   }
   
   wireTabs();
@@ -2972,6 +3350,7 @@ async function init() {
   setupNeuralSearchAndFilters();
   setupBrainSearchAndFilters();
   setupNeuralRegeneration();
+  setupNeuralPlaybackControls();
   setupCollapsibleInfo();
   setupMemorySearch();
   connectNeuralSocket(); // Connect WebSocket for real-time neural events
@@ -3597,9 +3976,18 @@ function renderNeuralNetwork(networkData) {
       });
 
     const controls = neuralGraph3D.controls();
-    controls.autoRotate = false;
-    controls.enableZoom = true;
-    controls.minDistance = 110;
+    if (controls) {
+      controls.autoRotate = false;
+      controls.enableRotate = true;
+      controls.enableZoom = true;
+      controls.enablePan = true;
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.rotateSpeed = 0.35;
+      controls.zoomSpeed = 1.0;
+      controls.panSpeed = 0.6;
+      controls.minDistance = 110;
+    }
 
     const updateSize = () => {
       const { clientWidth, clientHeight } = container;
@@ -3639,6 +4027,28 @@ function formatNeuronTooltip(node) {
     'Click to view details',
     'Right-click or Shift+Click to focus'
   ].join('\n');
+}
+
+function moveCameraToNeuron(nodeObj, { distance = 280, duration = 950 } = {}) {
+  if (!neuralGraph3D || !nodeObj) return;
+  const target = {
+    x: nodeObj.x || 0,
+    y: nodeObj.y || 0,
+    z: nodeObj.z || 0,
+  };
+  const distRatio = 1 + distance / Math.max(1, Math.hypot(target.x, target.y, target.z));
+  neuralGraph3D.cameraPosition(
+    { x: target.x * distRatio, y: target.y * distRatio, z: target.z * distRatio },
+    nodeObj,
+    duration
+  );
+}
+
+function autoFocusNeuron(neuronId, options = {}) {
+  if (!neuronId) return;
+  const nodeObj = neuralNodeIndex.get(neuronId);
+  if (!nodeObj) return;
+  moveCameraToNeuron(nodeObj, options);
 }
 
 function focusOnNeuron(node) {
@@ -4554,6 +4964,69 @@ function setupMemorySearch() {
   }
 }
 
+function setupNeuralPlaybackControls() {
+  const zoomToggle = $('#neural-zoom-toggle');
+  if (zoomToggle) {
+    const saved = localStorage.getItem('mypal_neural_auto_zoom');
+    if (saved !== null) {
+      neuralPlaybackState.autoZoom = saved === '1';
+    }
+    zoomToggle.checked = neuralPlaybackState.autoZoom;
+    zoomToggle.addEventListener('change', (e) => {
+      neuralPlaybackState.autoZoom = !!e.target.checked;
+      localStorage.setItem('mypal_neural_auto_zoom', neuralPlaybackState.autoZoom ? '1' : '0');
+      logInfo('NEURAL', 'Auto-zoom preference updated', { enabled: neuralPlaybackState.autoZoom });
+    });
+  }
+
+  const menuButton = $('#neural-playback-menu');
+  const dropdown = $('#neural-playback-dropdown');
+  const stopButton = $('#neural-stop-playback');
+
+  if (menuButton && dropdown) {
+    neuralPlaybackState.playbackButton = menuButton;
+    const toggleDropdown = (forceHide = false) => {
+      if (forceHide) {
+        dropdown.classList.add('hidden');
+        menuButton.classList.remove('active');
+        return;
+      }
+      dropdown.classList.toggle('hidden');
+      menuButton.classList.toggle('active', !dropdown.classList.contains('hidden'));
+    };
+
+    menuButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDropdown();
+    });
+
+    dropdown.querySelectorAll('button[data-playback]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.playback || 'latest';
+        toggleDropdown(true);
+        playNeuralTimeline(mode);
+      });
+    });
+
+    stopButton?.addEventListener('click', () => {
+      toggleDropdown(true);
+      stopNeuralTimeline();
+    });
+
+    if (!neuralPlaybackState.dropdownListener) {
+      neuralPlaybackState.dropdownListener = (event) => {
+        if (dropdown.classList.contains('hidden')) return;
+        const target = event.target;
+        if (!dropdown.contains(target) && target !== menuButton) {
+          dropdown.classList.add('hidden');
+          menuButton.classList.remove('active');
+        }
+      };
+      document.addEventListener('click', neuralPlaybackState.dropdownListener);
+    }
+  }
+}
+
 // ==============================================
 // NEURAL NETWORK REGENERATION
 // ==============================================
@@ -5085,3 +5558,4 @@ switchTab = function(name) {
 init().then(() => {
   setupFloatingChat();
 });
+

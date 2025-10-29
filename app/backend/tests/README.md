@@ -4,7 +4,7 @@ This directory contains comprehensive tests for the MyPal backend server, coveri
 
 ## Overview
 
-- **Total Tests**: 119+ tests across 8 test files
+- **Total Tests**: 120+ tests across 9 test files
 - **Test Types**: Unit tests + Integration tests
 - **Test Runner**: Node.js native test runner (`node --test`)
 - **Pass Rate**: 100%
@@ -136,119 +136,56 @@ Tests neural network simulation and brain statistics.
 **Run:** `node --test tests/neural.test.js`
 
 #### `ai.test.js` (10 tests)
-Tests AI configuration and learning systems.
+Exercises AI configuration and developmental behaviour.
 
 **Endpoints Tested:**
-- `GET /api/ai/status` - Get AI status
 - `GET /api/ai/models` - List available models
 - `POST /api/ai/configure` - Configure AI provider
-- `GET /api/models` - List models
-- `GET /api/plugins` - List plugins
-- `POST /api/plugins/:name/toggle` - Toggle plugin
-
-**Coverage:**
-- AI provider status
-- Model listing
-- Provider configuration (local, ollama, openai, etc.)
-- Invalid provider rejection
-- Ollama integration
-- Developmental stage responses (sensorimotor to formal operational)
-- Vocabulary learning from input
-- Stage progression tracking
-- Prompt builder validation
-- Model adapter validation
-
-**Run:** `node --test tests/ai.test.js`
-
-#### `misc.test.js` (12 tests)
-Tests data management, telemetry, and utility features.
-
-**Endpoints Tested:**
-- `GET /api/export` - Export all data
-- `POST /api/telemetry` - Log telemetry data
-- `POST /api/feedback` - Submit feedback
-- `POST /api/reinforce` - Reinforce patterns
 - `POST /api/reset` - Reset all data
 - `POST /api/report` - Generate report
 
 **Coverage:**
-- Full data export (state, memories, logs, network, etc.)
-- Export metadata (timestamp, version)
-- Valid JSON structure
-- Empty data handling
-- Telemetry acceptance (info, warn, error, debug)
-- Positive/negative feedback
-- Pattern reinforcement
-- Reset with confirmation requirement
-- Data clearing verification
+- Provider selection and validation (local, ollama, openai, etc.)
+- Rejecting invalid provider payloads
+- Developmental stage transitions driven by sequential chats
+- Vocabulary learning from chat input
+- Reporting export structure and metadata integrity
 
-**Run:** `node --test tests/misc.test.js`
+**Run:** `node --test tests/ai.test.js`
 
-#### `chat.test.js` (2 tests - legacy)
-Original tests for basic chat functionality.
+#### `chat.test.js` (2 tests)
+Validates basic health checks and sequential chat flows.
+
+**Coverage:**
+- Backend health guard responding with `{ ok: true }`
+- Sequential chat requests using the shared message plan helper
+- XP, level, memory growth, and reply structure across the chat sequence
+- Follow-up verification of memories and journal endpoints
+
+**Highlights:**
+- Reads `MYPAL_TEST_MESSAGES` (or prompts interactively) to decide how many chats to send
+- Logs a per-message summary including reply kind and XP delta for easier debugging
 
 **Run:** `node --test tests/chat.test.js`
 
-## Running Tests
+### Configurable Chat Message Counts
 
-### Run All Tests
-```bash
-cd app/backend
-npm test
-```
+- **Environment variable**: set `MYPAL_TEST_MESSAGES` to a number (e.g. `5`) or JSON array of strings to customise the chat messages used during integration tests that send chats.
+- **Interactive prompt**: when running tests in an interactive terminal without the env var, you will be prompted for the desired number of messages. Press Enter to accept the default (2).
+- `tests/helpers/message-plan.js` resolves the plan once per run and caches it for `chat.test.js`, `ai.test.js`, and `data-persistence.test.js`.
+- The shared helper keeps sequential behaviour consistent across suites and prints helpful logging so you can reproduce failures.
 
-### Run Specific Test File
-```bash
-cd app/backend
-node --test tests/profileManager.test.js
-node --test tests/profiles.test.js
-# ... etc
-```
+#### `data-persistence.test.js` (1 test)
+Verifies that all profile-scoped data files are written to disk and remain readable through their respective APIs.
 
-### Run Multiple Test Files
-```bash
-cd app/backend
-node --test tests/profileManager.test.js tests/auth.test.js
-```
+**Highlights:**
+- Creates a dedicated profile within a temporary data directory.
+- Sends configurable chat messages (via the shared message-plan helper) to drive persistence.
+- Reads each JSON file (`metadata`, `chat-log`, `memories`, `journal`, `concepts`, `facts`, `neural`, `vocabulary`, `settings`) directly from disk and validates structure.
+- Confirms API endpoints (`/stats`, `/memories`, `/journal`, `/neural-network`) reflect the persisted content.
 
-## Test Architecture
+**Run:** `node --test tests/data-persistence.test.js`
 
-### Integration Test Setup
-Each integration test file follows this pattern:
-
-1. **Before Hook**: 
-   - Creates temporary data directory
-   - Spawns Express server on unique port
-   - Waits for server health check
-   - Sets up error handlers
-
-2. **Tests**: 
-   - Make real HTTP requests using `fetch`
-   - Validate request/response cycle
-   - Assert on response structure and data
-
-3. **After Hook**: 
-   - Gracefully shuts down server
-   - Cleans up temporary directories
-   - Removes all test data
-
-### Port Allocation
-- `profileManager.test.js`: No server (unit tests)
-- `chat.test.js`: Port 31337
-- `profiles.test.js`: Port 31338
-- `stats.test.js`: Port 31339
-- `memories.test.js`: Port 31340
-- `auth.test.js`: Port 31341
-- `neural.test.js`: Port 31342
-- `ai.test.js`: Port 31344
-- `misc.test.js`: Port 31343
-
-### Test Isolation
-- Each test suite runs independently
-- Temporary data directories prevent pollution
-- Server instances are isolated by port
-- No shared state between test files
-- Complete cleanup after each suite
 
 ## Writing New Tests
 

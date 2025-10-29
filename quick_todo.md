@@ -2,25 +2,33 @@
 Just a few notes to keep track of tasks and ideas, quick todo notes. 
 **DO NOT DELETE**
 
-## 🔧 Completed Tasks (Oct 24, 2025)
-- ✅ **Fixed npm command invocation** - AUTORUN.ps1 now properly calls npm commands
-- ✅ **Migrated Tauri config to v2** - Updated tauri.conf.json to Tauri 2.0 format
-- ✅ **Tests passing** - Backend tests run successfully (2/2 passing)
-- ✅ **Tauri-backend integration** - Enhanced CSP and CORS for proper communication
-- ✅ **Empty log cleanup** - AUTORUN.ps1 automatically removes empty log directories
-- ✅ **Rust/Tauri setup documentation** - Created comprehensive TAURI_SETUP.md guide
-- ✅ **Launcher scripts** - Created MyPal.bat and MyPal.vbs for easy Windows execution
-- ✅ **Launcher documentation** - Comprehensive LAUNCHER_README.md with shortcuts and EXE conversion
-- ✅ **Requirements system** - Created requirements.json and check-requirements.ps1 with auto-validation
 
-## 📋 Pending Tasks
+## Priority Tasks
+1. Make sure profiles in the `profiles` folder are loaded in the `profiles-index.json` on startup and add a test to the test files to test this.
+2. Make sure all data for a profile is stored in a folder named after the profile's ID inside the `profiles` folder. Do not store any profile data in the root `data` folder except for `profiles-index.json` and other global data files.
+3. Implement a way to export and import profiles (including all their data) to/from a single file (e.g., ZIP or JSON).
+4. Add a feature to allow users to set a default profile that is automatically loaded on app startup.
+5. Implement a profile deletion feature that removes a profile and all its associated data from the filesystem.
+6. Add validation to ensure that profile IDs are unique when creating or importing profiles.
+7. Create a backup and restore feature for profiles to prevent data loss.
+8. Implement a profile renaming feature that updates the profile ID and all associated data accordingly.
+9. Add logging for profile-related operations (creation, deletion, loading) to help with debugging and auditing.
+10. Write comprehensive tests for all profile management functionalities to ensure reliability.
 
-1. ✅ ~~Remove empty log folders when starting autorun.ps1~~ - COMPLETED
-2. ✅ ~~Make an EXE file for autorun (called MyPal.exe) that just opens a cmd window to run the autorun.ps1 file?~~ - COMPLETED (bat/vbs launchers + docs for EXE conversion)
-3. ✅ ~~Test Tauri app launch after configuration fixes~~ - Requires Rust installation (see docs/development/TAURI_SETUP.md)
-4. Update documentation with recent changes (README.md ✅, PROJECT_STRUCTURE.md - in progress)
-5. Remove the cmd window that pops up, since it should be a dev console for Tauri when opening in dev mode.
-6. Resolve the merging conflicts from `Add comprehensive test suite for MyPal backend and frontend (237+ tests) #14` pull and then merge it with mypal-v0.3-alpha when merging conflicts are completed.
-7. Create a branch for `mypal-release`, `mypal-alpha`. Then merge `mypal-v0.3-alpha` into `mypal-alpha` and create a new branch to work on called `mypal-alpha-v0.4`.
-8. Remove "MyPal Live Logger" command window.
-9. Add to the instruction files that emojis are NOT to be used in code, only in chat is it okay but not when creating code.
+## Low Priority Tasks
+1. Create a login system upon first startup and a "Remember Me" feature. For now it will just create a username and password and store it in a local file in the user's data directory.
+2. Implement user roles (e.g., admin, user) with different permissions for accessing certain features.
+3. Add a feature to allow users to change their password.
+4. Add a bare base UI for the profile menu for user to customize profiles.
+5. Implement session management and  timing.
+6. Create a `users` folder to store user data separately from profiles.
+7. Add a field in a profile config file to link it to a specific user.
+8. When users login, only profiles associated with that user should be accessible.
+9. Create an developer login system with elevated permissions for debugging and testing purposes as well as accessing all profiles.
+10. Create a "Pal Creation" menu to customize and create new AI pals with detailed settings and customization options. If a user is a developer, allow a checkbox to make a pal a "developer pal" with access to advanced features.
+11. Implement a feature to allow users to share profiles with other users, possibly through exporting and importing.
+
+### Note for Contributors
+Please ensure that any changes related to profile management are thoroughly tested and documented. Follow best practices for file I/O operations to prevent data corruption, especially when dealing with multiple profiles.
+
+When a task is completed, please mark it off the list to help keep track of progress. Thank you for your contributions!

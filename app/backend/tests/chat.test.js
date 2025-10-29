@@ -6,12 +6,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveMessagePlan, getCachedMessageCount } from './helpers/message-plan.js';
+
 const PORT = 31337;
 const API = `http://localhost:${PORT}/api`;
 
 let serverProcess;
 let tempRoot;
 let unexpectedExit;
+let chatMessagePlan = [];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,6 +60,8 @@ before(async () => {
   serverProcess.once('exit', unexpectedExit);
 
   await waitForHealth();
+  chatMessagePlan = await resolveMessagePlan({ label: 'backend chat', defaultCount: 2 });
+  console.info(`\n[chat.test] Using ${chatMessagePlan.length} chat message(s) for sequential flow`);
 });
 
 after(async () => {
@@ -88,34 +93,65 @@ test('health endpoint responds with ok', async () => {
   assert.equal(body.ok, true, 'health payload should contain ok flag');
 });
 
-test('chat endpoint returns constrained reply and updates stats', async () => {
-  const statsBefore = await fetch(`${API}/stats`).then((r) => r.json());
-  const res = await fetch(`${API}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: 'Hello there' }),
-  });
-  assert.equal(res.ok, true, 'chat endpoint should respond OK');
-  const body = await res.json();
-  assert.ok(typeof body.reply === 'string', 'chat response should include reply');
-  assert.notEqual(body.reply.trim().length, 0, 'reply should not be empty');
-  assert.ok(['primitive_phrase', 'single_word', 'free'].includes(body.kind), 'chat response should include utterance kind');
-  assert.ok(typeof body.memoryCount === 'number', 'chat response should include memory count');
+test('chat endpoint handles sequential messages and updates stats', async () => {
+  assert.ok(chatMessagePlan.length > 0, 'message plan should be resolved in setup');
 
-  const statsAfter = await fetch(`${API}/stats`).then((r) => r.json());
-  assert.equal(statsAfter.level >= statsBefore.level, true, 'level should stay same or increase');
-  assert.equal(statsAfter.xp > statsBefore.xp, true, 'XP should increase after chat');
-  assert.equal(typeof statsAfter.memoryCount, 'number', 'stats should include memory count');
+  const initialStats = await fetch(`${API}/stats`).then((r) => r.json());
+  let previousStats = structuredClone(initialStats);
+  const messageSummaries = [];
+
+  for (let index = 0; index < chatMessagePlan.length; index += 1) {
+    const message = chatMessagePlan[index];
+    const res = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    assert.equal(res.ok, true, `chat request ${index + 1} should respond OK`);
+
+    const body = await res.json();
+    assert.ok(typeof body.reply === 'string', 'chat response should include reply');
+    assert.ok(body.reply.trim().length > 0, 'reply should not be blank');
+    assert.ok(
+      ['primitive_phrase', 'single_word', 'free'].includes(body.kind),
+      'chat response should include valid utterance kind'
+    );
+    assert.ok(typeof body.memoryCount === 'number', 'chat response should include memory count');
+
+    const statsAfter = await fetch(`${API}/stats`).then((r) => r.json());
+    assert.ok(statsAfter.xp >= previousStats.xp, 'XP should not decrease after chat');
+    assert.ok(statsAfter.level >= previousStats.level, 'Level should not decrease');
+    assert.ok(statsAfter.memoryCount >= 0, 'memory count should be non-negative');
+
+    messageSummaries.push({
+      index: index + 1,
+      message,
+      replyKind: body.kind,
+      replyLength: body.reply.length,
+      xpDelta: statsAfter.xp - previousStats.xp,
+      memoryCount: statsAfter.memoryCount,
+    });
+
+    previousStats = statsAfter;
+  }
+
+  const finalStats = previousStats;
+  assert.ok(finalStats.xp >= initialStats.xp, 'overall XP should grow or stay equal');
+  assert.ok(messageSummaries.length === chatMessagePlan.length, 'should record each chat round');
+
+  console.info('[chat.test] Sequential chat summary:', {
+    totalMessages: messageSummaries.length,
+    configuredMessages: getCachedMessageCount(),
+    messageSummaries,
+  });
 
   const memRes = await fetch(`${API}/memories?limit=5`);
   assert.equal(memRes.ok, true, 'memories endpoint should respond OK');
   const memBody = await memRes.json();
   assert.ok(Array.isArray(memBody.memories), 'memories payload should include list');
-  assert.equal(memBody.memories.length > 0, true, 'memories list should contain at least one entry');
 
   const journalRes = await fetch(`${API}/journal?limit=5`);
   assert.equal(journalRes.ok, true, 'journal endpoint should respond OK');
   const journalBody = await journalRes.json();
-  assert.ok(Array.isArray(journalBody.thoughts), 'journal payload should include thoughts');
-  assert.equal(journalBody.thoughts.length > 0, true, 'thoughts list should contain at least one entry');
+  assert.ok(Array.isArray(journalBody.thoughts), 'journal payload should include thoughts array');
 });

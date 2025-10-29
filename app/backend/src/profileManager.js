@@ -2,12 +2,33 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
+const BACKUP_EXTENSIONS = ['.tmp', '.bak'];
+const syncWaitBuffer = typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(4) : null;
+const syncWaitArray = syncWaitBuffer ? new Int32Array(syncWaitBuffer) : null;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function sleepSync(ms) {
+  if (ms <= 0) {
+    return;
+  }
+  if (syncWaitArray && typeof Atomics !== 'undefined' && typeof Atomics.wait === 'function') {
+    Atomics.wait(syncWaitArray, 0, 0, ms);
+    return;
+  }
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    // Busy wait fallback for environments without Atomics.wait
+  }
+}
+
 class ProfileManager {
   constructor(baseDataDir) {
     this.baseDataDir = baseDataDir;
     this.profilesDir = path.join(baseDataDir, 'profiles');
     this.indexPath = path.join(baseDataDir, 'profiles-index.json');
     this.currentProfile = null;
+    this._cache = new Map();
     
     this.ensureDirectories();
   }
@@ -139,6 +160,7 @@ class ProfileManager {
       this.saveIndex(index);
 
       this.currentProfile = id;
+      this._cache.clear();
 
       return { 
         success: true, 
@@ -217,6 +239,7 @@ class ProfileManager {
       this.saveIndex(index);
 
       this.currentProfile = profileId;
+      this._cache.clear();
 
       return {
         success: true,
@@ -257,6 +280,7 @@ class ProfileManager {
       // Clear current if it was this profile
       if (this.currentProfile === profileId) {
         this.currentProfile = null;
+        this._cache.clear();
       }
 
       return { success: true };
@@ -284,25 +308,56 @@ class ProfileManager {
       this._pendingWrites.delete(filePath);
     }
     
+    const serveCached = () => {
+      if (!this._cache.has(filePath)) {
+        return undefined;
+      }
+      console.warn(`[PROFILE] Serving cached ${filename} after read failure`);
+      const cached = this._cache.get(filePath);
+      return this.cloneData(cached);
+    };
+
     try {
       if (fs.existsSync(filePath)) {
         const data = fs.readFileSync(filePath, 'utf8');
         // Validate JSON is complete before parsing
         if (!data || data.trim() === '') {
-          console.warn(`[PROFILE] Empty file detected: ${filename}, will be recreated on next save`);
+          console.warn(`[PROFILE] Empty file detected: ${filename}, attempting recovery`);
+          const recovered = this.recoverFromBackup(filePath, filename);
+          if (recovered !== null) {
+            return recovered;
+          }
+          const cached = serveCached();
+          if (cached !== undefined) {
+            return cached;
+          }
           return null;
         }
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        this.rememberData(filePath, parsed);
+  return this.cloneData(parsed);
       }
     } catch (err) {
       // Only log parse errors at warn level - file corruption is recoverable
       if (err instanceof SyntaxError) {
-        console.warn(`[PROFILE] JSON parse error in ${filename} (file may be mid-write, will retry):`, err.message);
+        console.warn(`[PROFILE] JSON parse error in ${filename} (file may be mid-write, attempting recovery):`, err.message);
+        const recovered = this.recoverFromBackup(filePath, filename);
+        if (recovered !== null) {
+          return recovered;
+        }
       } else {
         console.error(`[PROFILE] Failed to load ${filename} for current profile:`, err);
       }
       // If JSON parse fails, file might be corrupted - return null and let it be recreated
+      const cached = serveCached();
+      if (cached !== undefined) {
+        return cached;
+      }
       return null;
+    }
+    const cached = serveCached();
+    if (cached !== undefined) {
+      return cached;
     }
     return null;
   }
@@ -343,16 +398,15 @@ class ProfileManager {
 
     const doWrite = async () => {
       try {
-        // Atomic write: write to temp file, then rename
+        // Atomic write: write to temp file, then promote
         const tempFile = `${file}.tmp`;
         const jsonString = JSON.stringify(data, null, 2);
-        
-        // Write to temp file
+
         await fs.promises.writeFile(tempFile, jsonString, 'utf8');
-        
-        // Atomic rename (replaces original file)
-        await fs.promises.rename(tempFile, file);
-        
+        await this.commitTempFile(tempFile, file, jsonString);
+
+        this.rememberData(file, data);
+
         this._pendingWrites.delete(file);
       } catch (error) {
         console.error('Error writing file:', file, error);
@@ -391,6 +445,221 @@ class ProfileManager {
     });
   }
 
+  rememberData(filePath, data) {
+    if (!this._cache) {
+      this._cache = new Map();
+    }
+    if (data === undefined) {
+      this._cache.delete(filePath);
+      return;
+    }
+    if (data === null) {
+      this._cache.set(filePath, null);
+      return;
+    }
+    try {
+      const snapshot = JSON.parse(JSON.stringify(data));
+      this._cache.set(filePath, snapshot);
+    } catch (err) {
+      console.warn(`[PROFILE] Failed to snapshot cache for ${path.basename(filePath)}:`, err?.message || err);
+    }
+  }
+
+  cloneData(data) {
+    if (data === null || data === undefined) {
+      return data ?? null;
+    }
+    try {
+      return JSON.parse(JSON.stringify(data));
+    } catch (err) {
+      console.warn('[PROFILE] Failed to clone cached data:', err?.message || err);
+      return data;
+    }
+  }
+
+  recoverFromBackup(filePath, filename) {
+    for (const ext of BACKUP_EXTENSIONS) {
+      const candidate = `${filePath}${ext}`;
+      try {
+        if (!fs.existsSync(candidate)) {
+          continue;
+        }
+        const raw = fs.readFileSync(candidate, 'utf8');
+        if (!raw || raw.trim() === '') {
+          continue;
+        }
+        const parsed = JSON.parse(raw);
+        console.warn(`[PROFILE] Recovered ${filename} from backup ${path.basename(candidate)}`);
+        this.rememberData(filePath, parsed);
+        const restored = this.attemptRestoreFile(filePath, raw);
+        if (restored && ext === '.tmp') {
+          try {
+            fs.unlinkSync(candidate);
+          } catch (cleanupErr) {
+            if (cleanupErr?.code !== 'ENOENT') {
+              console.warn(`[PROFILE] Failed to remove stale backup ${path.basename(candidate)}:`, cleanupErr?.message || cleanupErr);
+            }
+          }
+        }
+        return this.cloneData(parsed);
+      } catch (recoveryErr) {
+        console.error(`[PROFILE] Failed to recover ${filename} from backup ${candidate}:`, recoveryErr);
+      }
+    }
+
+    if (this._cache && this._cache.has(filePath)) {
+      console.warn(`[PROFILE] Falling back to cached ${filename} after recovery attempts failed`);
+      return this.cloneData(this._cache.get(filePath));
+    }
+
+    return null;
+  }
+
+  attemptRestoreFile(filePath, rawContents) {
+    const retryableCodes = new Set(['EPERM', 'EACCES', 'EBUSY', 'EEXIST', 'ENOTEMPTY']);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        fs.writeFileSync(filePath, rawContents, 'utf8');
+        return true;
+      } catch (err) {
+        if (!retryableCodes.has(err.code)) {
+          console.error(`[PROFILE] Unable to restore ${path.basename(filePath)} from backup:`, err);
+          return false;
+        }
+        console.warn(`[PROFILE] Restore retry ${attempt + 1}/5 for ${path.basename(filePath)} due to ${err.code}`);
+        sleepSync(40 * (attempt + 1) * (attempt + 1));
+      }
+    }
+    console.warn(`[PROFILE] Could not restore ${path.basename(filePath)} after repeated attempts; leaving backup file for manual recovery`);
+    return false;
+  }
+
+  async commitTempFile(tempFile, finalFile, contents) {
+    const retryableCodes = new Set(['EPERM', 'EACCES', 'EBUSY', 'EEXIST', 'ENOTEMPTY']);
+    let lastError = null;
+    const maxAttempts = 6;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        await this.safeUnlink(finalFile);
+        await fs.promises.rename(tempFile, finalFile);
+        return;
+      } catch (error) {
+        lastError = error;
+
+        if (!retryableCodes.has(error.code)) {
+          break;
+        }
+
+        const delay = 50 * (attempt + 1) * (attempt + 1);
+        console.warn(`[PROFILE] Rename retry ${attempt + 1}/${maxAttempts} for ${path.basename(finalFile)} due to ${error.code}`);
+        await sleep(delay);
+      }
+    }
+
+    if (lastError) {
+      if (lastError.code && retryableCodes.has(lastError.code)) {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            await fs.promises.writeFile(finalFile, contents, 'utf8');
+            await this.safeUnlink(tempFile);
+            return;
+          } catch (writeErr) {
+            lastError = writeErr;
+            if (!retryableCodes.has(writeErr.code)) {
+              break;
+            }
+            const delay = 75 * (attempt + 1) * (attempt + 1);
+            console.warn(`[PROFILE] Direct write retry ${attempt + 1}/3 for ${path.basename(finalFile)} due to ${writeErr.code}`);
+            await sleep(delay);
+          }
+        }
+      }
+
+      console.warn(`[PROFILE] Preserving temp file ${path.basename(tempFile)} for manual recovery after repeated failures`);
+      throw lastError;
+    }
+  }
+
+  commitTempFileSync(tempFile, finalFile, contents) {
+    const retryableCodes = new Set(['EPERM', 'EACCES', 'EBUSY', 'EEXIST', 'ENOTEMPTY']);
+    let lastError = null;
+    const maxAttempts = 6;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        this.safeUnlinkSync(finalFile);
+        fs.renameSync(tempFile, finalFile);
+        return;
+      } catch (error) {
+        lastError = error;
+
+        if (!retryableCodes.has(error.code)) {
+          break;
+        }
+
+        console.warn(`[PROFILE] (sync) Rename retry ${attempt + 1}/${maxAttempts} for ${path.basename(finalFile)} due to ${error.code}`);
+        sleepSync(50 * (attempt + 1) * (attempt + 1));
+      }
+    }
+
+    if (lastError) {
+      if (lastError.code && retryableCodes.has(lastError.code)) {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            fs.writeFileSync(finalFile, contents, 'utf8');
+            this.cleanupTempFile(tempFile);
+            return;
+          } catch (writeErr) {
+            lastError = writeErr;
+            if (!retryableCodes.has(writeErr.code)) {
+              break;
+            }
+            console.warn(`[PROFILE] (sync) Direct write retry ${attempt + 1}/3 for ${path.basename(finalFile)} due to ${writeErr.code}`);
+            sleepSync(75 * (attempt + 1) * (attempt + 1));
+          }
+        }
+      }
+
+      console.warn(`[PROFILE] Preserving temp file ${path.basename(tempFile)} for manual recovery after repeated failures`);
+      throw lastError;
+    }
+  }
+
+  async safeUnlink(filePath) {
+    try {
+      await fs.promises.unlink(filePath);
+    } catch (err) {
+      if (!err || (err.code !== 'ENOENT' && err.code !== 'EPERM' && err.code !== 'EACCES' && err.code !== 'EBUSY')) {
+        console.warn(`[PROFILE] Failed to remove file ${filePath}:`, err?.message || err);
+      }
+    }
+  }
+
+  safeUnlinkSync(filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      if (!err || (err.code !== 'ENOENT' && err.code !== 'EPERM' && err.code !== 'EACCES' && err.code !== 'EBUSY')) {
+        console.warn(`[PROFILE] Failed to remove file ${filePath}:`, err?.message || err);
+      }
+    }
+  }
+
+  cleanupTempFile(filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') {
+        console.warn(`[PROFILE] Failed to clean up temp file ${filePath}:`, err?.message || err);
+      }
+    }
+  }
+
   saveCurrentProfileData(filename, data) {
     if (!this.currentProfile) {
       return false;
@@ -398,30 +667,18 @@ class ProfileManager {
 
     const filePath = this.getProfileDataPath(this.currentProfile, filename);
     try {
-      // Atomic write: write to temp file, then rename
       const tempFile = `${filePath}.tmp`;
       const jsonString = JSON.stringify(data, null, 2);
-      
-      // Write to temp file
+
       fs.writeFileSync(tempFile, jsonString, 'utf8');
-      
-      // Atomic rename (replaces original file)
-      fs.renameSync(tempFile, filePath);
-      
+      this.commitTempFileSync(tempFile, filePath, jsonString);
+
+      this.rememberData(filePath, data);
+
       return true;
     } catch (err) {
       console.error(`Failed to save ${filename} for current profile:`, err);
-      
-      // Clean up temp file if it exists
-      try {
-        const tempFile = `${filePath}.tmp`;
-        if (fs.existsSync(tempFile)) {
-          fs.unlinkSync(tempFile);
-        }
-      } catch (cleanupError) {
-        // Ignore cleanup errors
-      }
-      
+      this.cleanupTempFile(`${filePath}.tmp`);
       return false;
     }
   }

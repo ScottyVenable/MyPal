@@ -28,5 +28,35 @@
       "min": 0,
       "max": 0
     }
+  },
+  {
+    "id": "n3hGnJZ9VVnvB7rwmKMVe",
+    "key": "topic:kita",
+    "name": "Topic: Kita",
+    "category": "Topic",
+    "createdAt": 1761679704499,
+    "lastSeen": 1761679704499,
+    "totalMentions": 1,
+    "keywords": {
+      "kita": {
+        "count": 1,
+        "lastSeen": 1761679704499
+      }
+    },
+    "sentiment": {
+      "sum": 0,
+      "samples": 1,
+      "average": 0
+    },
+    "importance": {
+      "high": 0,
+      "medium": 0,
+      "low": 1
+    },
+    "importanceScore": 1,
+    "levelRange": {
+      "min": 0,
+      "max": 0
+    }
   }
 ]
