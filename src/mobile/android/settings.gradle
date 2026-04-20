@@ -1,0 +1,10 @@
+rootProject.name = 'MyPal'
+
+// Apply React Native Gradle plugin settings
+apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
+applyNativeModulesSettingsGradle(settings)
+
+include ':app'
+
+// Include React Native project dependency
+includeBuild("../node_modules/@react-native/gradle-plugin")

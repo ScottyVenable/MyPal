@@ -71,13 +71,16 @@ const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: colors.surface,
     borderTopColor: colors.border,
-    borderTopWidth: 1,
-    height: 60,
-    paddingBottom: 6,
-    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    height: 64,
+    paddingBottom: 8,
+    paddingTop: 8,
+    elevation: 0,
+    shadowOpacity: 0,
   },
   tabBarLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });

@@ -70,7 +70,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.surfaceVariant,
+    backgroundColor: colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: colors.primaryGlow,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
@@ -90,7 +92,7 @@ const styles = StyleSheet.create({
   aiBubble: {
     backgroundColor: colors.surface,
     borderBottomLeftRadius: spacing.xs,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   text: {

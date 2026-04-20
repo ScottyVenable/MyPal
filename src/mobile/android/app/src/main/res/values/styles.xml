@@ -1,0 +1,12 @@
+<resources>
+    <!-- Base application theme matching MyPal dark UI -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- Dark purple status bar matching app header -->
+        <item name="android:statusBarColor">#08081A</item>
+        <!-- Dark purple navigation bar matching app footer -->
+        <item name="android:navigationBarColor">#0F0F24</item>
+        <!-- Dark background matching app base color -->
+        <item name="android:windowBackground">#08081A</item>
+    </style>
+</resources>

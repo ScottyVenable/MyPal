@@ -18,7 +18,7 @@ const STATUS_CONFIG: Record<
 > = {
   connected: { color: colors.success, label: 'Connected' },
   disconnected: { color: colors.error, label: 'Disconnected' },
-  connecting: { color: colors.warning, label: 'Connecting...' },
+  connecting: { color: colors.primary, label: 'Connecting...' },
 };
 
 export function ConnectionIndicator({

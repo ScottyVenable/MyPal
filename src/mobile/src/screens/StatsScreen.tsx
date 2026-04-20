@@ -22,7 +22,7 @@ const CHART_WIDTH = SCREEN_WIDTH - spacing.md * 4;
 const chartConfig = {
   backgroundGradientFrom: colors.surface,
   backgroundGradientTo: colors.surface,
-  color: (opacity = 1) => `rgba(108, 92, 231, ${opacity})`,
+  color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,
   labelColor: () => colors.textSecondary,
   barPercentage: 0.6,
   decimalCount: 0,
@@ -254,8 +254,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    borderBottomWidth: 1,
+    paddingVertical: spacing.sm + 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     gap: spacing.sm,
   },
@@ -294,10 +294,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
-    padding: spacing.sm + 2,
+    padding: spacing.sm + 4,
     alignItems: 'center',
     gap: spacing.xs,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   statValue: {
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   chartCard: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   memSummaryRow: {
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
   growthCard: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   growthContent: {

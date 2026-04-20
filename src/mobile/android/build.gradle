@@ -1,0 +1,40 @@
+// Top-level build file for MyPal AI - React Native 0.73
+
+buildscript {
+    ext {
+        buildToolsVersion = "34.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 34
+        targetSdkVersion = 34
+        kotlinVersion = "1.9.0"
+        ndkVersion = "25.1.8937393"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.1.1")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            // React Native local maven repository
+            url(rootProject.file("../node_modules/react-native/android"))
+        }
+        maven {
+            // React Native community modules
+            url(rootProject.file("../node_modules/jsc-android/dist"))
+        }
+    }
+}
+
+// Clean task for the root project
+tasks.register("clean", Delete::class) {
+    delete(rootProject.layout.buildDirectory)
+}

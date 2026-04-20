@@ -1,0 +1,53 @@
+#!/bin/sh
+
+#
+# Gradle wrapper script for MyPal AI
+#
+# This is a placeholder wrapper script. For a full build environment,
+# generate the complete Gradle wrapper by running:
+#   gradle wrapper --gradle-version 8.3
+#
+# Requires: Gradle 8.3, JDK 17+
+#
+
+set -e
+
+echo "============================================"
+echo " MyPal AI - Gradle Wrapper"
+echo "============================================"
+
+# Determine project directory
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
+GRADLE_WRAPPER_JAR="$APP_DIR/gradle/wrapper/gradle-wrapper.jar"
+
+# Check if the wrapper JAR exists
+if [ ! -f "$GRADLE_WRAPPER_JAR" ]; then
+    echo ""
+    echo "ERROR: Gradle wrapper JAR not found."
+    echo ""
+    echo "The gradle-wrapper.jar is not included in version control."
+    echo "To set up the Gradle wrapper, run one of the following:"
+    echo ""
+    echo "  Option 1: Generate with local Gradle installation"
+    echo "    cd $APP_DIR"
+    echo "    gradle wrapper --gradle-version 8.3"
+    echo ""
+    echo "  Option 2: Use Android Studio"
+    echo "    Open the android/ directory in Android Studio."
+    echo "    It will automatically download and configure Gradle."
+    echo ""
+    echo "Required versions:"
+    echo "  - Gradle: 8.3"
+    echo "  - JDK: 17+"
+    echo "  - Android Gradle Plugin: 8.1.1"
+    echo ""
+    exit 1
+fi
+
+# Execute the Gradle wrapper
+exec java \
+    $JAVA_OPTS \
+    $GRADLE_OPTS \
+    -classpath "$GRADLE_WRAPPER_JAR" \
+    org.gradle.wrapper.GradleWrapperMain \
+    "$@"
