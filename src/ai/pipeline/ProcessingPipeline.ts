@@ -409,7 +409,7 @@ export class ProcessingPipeline {
     const stopWords = new Set([
       'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'her',
       'was', 'one', 'our', 'out', 'has', 'his', 'how', 'its', 'may', 'who',
-      'did', 'get', 'has', 'him', 'let', 'say', 'she', 'too', 'use', 'way',
+      'did', 'get', 'him', 'let', 'say', 'she', 'too', 'use', 'way',
       'about', 'been', 'call', 'come', 'each', 'from', 'have', 'into', 'just',
       'know', 'like', 'make', 'many', 'more', 'much', 'only', 'over', 'some',
       'such', 'take', 'than', 'that', 'them', 'then', 'they', 'this', 'very',

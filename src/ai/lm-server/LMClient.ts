@@ -344,10 +344,12 @@ export class LMClient {
     const decoder = new TextDecoder();
     let fullText = '';
     let buffer = '';
+    let done = false;
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { done, value } = await reader.read();
+    while (!done) {
+      const result = await reader.read();
+      done = result.done;
+      const value = result.value;
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });

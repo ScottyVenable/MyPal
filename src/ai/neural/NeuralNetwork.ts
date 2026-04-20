@@ -221,7 +221,7 @@ export class NeuralNetwork {
   private createDefaultConnections(): void {
     const allRegions = Array.from(this.regions.values());
     for (const region of allRegions) {
-      // Intra-region: connect ~30 % of pairs
+      // Intra-region: connect ~30% of pairs
       for (let i = 0; i < region.neurons.length; i++) {
         for (let j = i + 1; j < region.neurons.length; j++) {
           if (Math.random() < 0.3) {
