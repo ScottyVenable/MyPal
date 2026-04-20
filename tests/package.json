@@ -1,0 +1,20 @@
+{
+  "name": "mypal-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "npx playwright test",
+    "test:ai": "npx playwright test --grep @ai",
+    "test:memory": "npx playwright test --grep @memory",
+    "test:neural": "npx playwright test --grep @neural",
+    "test:evolution": "npx playwright test --grep @evolution",
+    "test:ui": "npx playwright test --grep @ui",
+    "test:report": "npx playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.0",
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.3"
+  }
+}
