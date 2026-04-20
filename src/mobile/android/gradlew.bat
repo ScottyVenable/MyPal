@@ -1,51 +1,92 @@
 @rem
-@rem Gradle wrapper script for MyPal AI (Windows)
+@rem Copyright 2015 the original author or authors.
 @rem
-@rem This is a placeholder wrapper script. For a full build environment,
-@rem generate the complete Gradle wrapper by running:
-@rem   gradle wrapper --gradle-version 8.3
+@rem Licensed under the Apache License, Version 2.0 (the "License");
+@rem you may not use this file except in compliance with the License.
+@rem You may obtain a copy of the License at
 @rem
-@rem Requires: Gradle 8.3, JDK 17+
+@rem      https://www.apache.org/licenses/LICENSE-2.0
+@rem
+@rem Unless required by applicable law or agreed to in writing, software
+@rem distributed under the License is distributed on an "AS IS" BASIS,
+@rem WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+@rem See the License for the specific language governing permissions and
+@rem limitations under the License.
 @rem
 
 @if "%DEBUG%"=="" @echo off
+@rem ##########################################################################
+@rem
+@rem  Gradle startup script for Windows
+@rem
+@rem ##########################################################################
+
 @rem Set local scope for the variables with windows NT shell
 if "%OS%"=="Windows_NT" setlocal
 
-set APP_DIR=%~dp0
-set GRADLE_WRAPPER_JAR=%APP_DIR%gradle\wrapper\gradle-wrapper.jar
+set DIRNAME=%~dp0
+if "%DIRNAME%"=="" set DIRNAME=.
+@rem This is normally unused
+set APP_BASE_NAME=%~n0
+set APP_HOME=%DIRNAME%
 
-@rem Check if the wrapper JAR exists
-if not exist "%GRADLE_WRAPPER_JAR%" (
-    echo.
-    echo ============================================
-    echo  MyPal AI - Gradle Wrapper
-    echo ============================================
-    echo.
-    echo ERROR: Gradle wrapper JAR not found.
-    echo.
-    echo The gradle-wrapper.jar is not included in version control.
-    echo To set up the Gradle wrapper, run one of the following:
-    echo.
-    echo   Option 1: Generate with local Gradle installation
-    echo     cd %APP_DIR%
-    echo     gradle wrapper --gradle-version 8.3
-    echo.
-    echo   Option 2: Use Android Studio
-    echo     Open the android/ directory in Android Studio.
-    echo     It will automatically download and configure Gradle.
-    echo.
-    echo Required versions:
-    echo   - Gradle: 8.3
-    echo   - JDK: 17+
-    echo   - Android Gradle Plugin: 8.1.1
-    echo.
-    exit /b 1
-)
+@rem Resolve any "." and ".." in APP_HOME to make it shorter.
+for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
-@rem Execute Gradle wrapper
-java %JAVA_OPTS% %GRADLE_OPTS% -classpath "%GRADLE_WRAPPER_JAR%" org.gradle.wrapper.GradleWrapperMain %*
+@rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
+set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 
-if "%OS%"=="Windows_NT" endlocal
+@rem Find java.exe
+if defined JAVA_HOME goto findJavaFromJavaHome
+
+set JAVA_EXE=java.exe
+%JAVA_EXE% -version >NUL 2>&1
+if %ERRORLEVEL% equ 0 goto execute
+
+echo.
+echo ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+echo.
+echo Please set the JAVA_HOME variable in your environment to match the
+echo location of your Java installation.
+
+goto fail
+
+:findJavaFromJavaHome
+set JAVA_HOME=%JAVA_HOME:"=%
+set JAVA_EXE=%JAVA_HOME%/bin/java.exe
+
+if exist "%JAVA_EXE%" goto execute
+
+echo.
+echo ERROR: JAVA_HOME is set to an invalid directory: %JAVA_HOME%
+echo.
+echo Please set the JAVA_HOME variable in your environment to match the
+echo location of your Java installation.
+
+goto fail
+
+:execute
+@rem Setup the command line
+
+set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
+
+
+@rem Execute Gradle
+"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
 
 :end
+@rem End local scope for the variables with windows NT shell
+if %ERRORLEVEL% equ 0 goto mainEnd
+
+:fail
+rem Set variable GRADLE_EXIT_CONSOLE if you need the _script_ return code instead of
+rem the _cmd.exe /c_ return code!
+set EXIT_CODE=%ERRORLEVEL%
+if %EXIT_CODE% equ 0 set EXIT_CODE=1
+if not ""=="%GRADLE_EXIT_CONSOLE%" exit %EXIT_CODE%
+exit /b %EXIT_CODE%
+
+:mainEnd
+if "%OS%"=="Windows_NT" endlocal
+
+:omega
