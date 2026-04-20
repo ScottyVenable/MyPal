@@ -43,7 +43,7 @@ export function getSentimentLabel(score: number): string {
 }
 
 export function formatXP(xp: number): string {
-  if (xp >= 10000) return `${(xp / 1000).toFixed(1)}k`;
+  if (xp >= 10000) return `${(xp / 1000).toFixed(0)}k`;
   if (xp >= 1000) return `${(xp / 1000).toFixed(1)}k`;
   return xp.toString();
 }

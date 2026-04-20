@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import { Animated } from 'react-native';
 import { Circle, G, Text as SvgText } from 'react-native-svg';
 import { getRegionColor } from '@/utils/helpers';
 
@@ -109,6 +109,3 @@ export function NeuralRegionView({
     </G>
   );
 }
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const styles = StyleSheet.create({});

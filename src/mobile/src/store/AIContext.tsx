@@ -20,8 +20,9 @@ import type {
   Memory,
   NeuralNetworkState,
   EvolutionStage,
-  NeuralEvent,
   NeuralEventCallback,
+  MemorySystemState,
+  EvolutionManagerState,
 } from '@ai/index';
 import { StorageService, STORAGE_KEYS } from '@/services/StorageService';
 
@@ -96,8 +97,8 @@ export function AIProvider({ children }: AIProviderProps): React.JSX.Element {
           ]);
 
         if (savedNeural) nn.deserialize(savedNeural);
-        if (savedMemory) mem.deserialize(savedMemory as ReturnType<MemorySystem['serialize']>);
-        if (savedEvolution) evo.deserialize(savedEvolution as ReturnType<EvolutionManager['serialize']>);
+        if (savedMemory) mem.deserialize(savedMemory as MemorySystemState);
+        if (savedEvolution) evo.deserialize(savedEvolution as EvolutionManagerState);
 
         const config = savedConfig ?? DEFAULT_LM_CONFIG;
         const lm = new LMClient(config);
