@@ -9,6 +9,9 @@ import bcrypt from 'bcryptjs';
 import util from 'util';
 import { WebSocketServer } from 'ws';
 import ProfileManager from './profileManager.js';
+import StorageUtil from './storageUtil.js';
+import ModelAdapter from './ai/modelAdapter.js';
+import PromptBuilder from './ai/promptBuilder.js';
 
 dotenv.config();
 
@@ -177,6 +180,41 @@ for (const entry of CONCEPT_HINT_SETS) {
   }
 }
 
+// Common stop words that should NOT become topics/concepts or be learned as vocabulary
+const STOP_WORDS = new Set([
+  // Articles
+  'a', 'an', 'the',
+  // Pronouns
+  'i', 'me', 'my', 'mine', 'myself', 'you', 'your', 'yours', 'yourself',
+  'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
+  'it', 'its', 'itself', 'we', 'us', 'our', 'ours', 'ourselves',
+  'they', 'them', 'their', 'theirs', 'themselves',
+  // Common verbs (be, have, do forms)
+  'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing',
+  // Prepositions
+  'at', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'to', 'with',
+  'about', 'above', 'across', 'after', 'against', 'along', 'among',
+  'around', 'as', 'before', 'behind', 'below', 'beneath', 'beside',
+  'between', 'beyond', 'during', 'except', 'inside', 'near', 'off',
+  'outside', 'over', 'through', 'toward', 'under', 'until', 'up', 'upon',
+  'within', 'without',
+  // Conjunctions
+  'and', 'but', 'or', 'nor', 'so', 'yet', 'because', 'if', 'when',
+  'where', 'while', 'although', 'though', 'unless', 'since', 'than',
+  // Common adverbs
+  'very', 'too', 'also', 'just', 'still', 'even', 'only', 'quite',
+  'rather', 'really', 'then', 'there', 'here', 'now', 'well',
+  // Question words
+  'what', 'which', 'who', 'whom', 'whose', 'why', 'how',
+  // Other common words
+  'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'will', 'would',
+  'not', "n't", 'no', 'yes', 'this', 'that', 'these', 'those',
+  'some', 'any', 'all', 'both', 'each', 'every', 'either', 'neither',
+  'more', 'most', 'much', 'many', 'few', 'less', 'little', 'other', 'another',
+  'such', 'own', 'same', 'so', 'than', 'too'
+]);
+
 const defaultState = {
   level: 0,
   xp: 0,
@@ -220,14 +258,7 @@ const files = {
 };
 
 function readJson(file, fallback) {
-  try {
-    if (!fs.existsSync(file)) return fallback;
-    const text = fs.readFileSync(file, 'utf8');
-    return JSON.parse(text || 'null') ?? fallback;
-  } catch (e) {
-    console.error('readJson error', file, e);
-    return fallback;
-  }
+  return StorageUtil.readJson(file, fallback);
 }
 
 function writeJson(file, data) {
@@ -237,7 +268,7 @@ function writeJson(file, data) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    return StorageUtil.writeJson(file, data);
   } catch (error) {
     console.error('Error writing JSON file:', file, error);
     throw error; // Re-throw so callers can handle it
@@ -919,11 +950,22 @@ function createInterRegionConnections(regions) {
 function getNeuralNetwork(collections) {
   let { neuralNetwork } = collections;
 
-  if (!neuralNetwork) {
-    // Initialize for the first time
+  // Check if neural network exists AND has regions with neurons
+  const needsInitialization = !neuralNetwork || 
+                              !neuralNetwork.regions || 
+                              neuralNetwork.regions.length === 0 ||
+                              neuralNetwork.regions.every(r => !r.neurons || r.neurons.length === 0);
+
+  if (needsInitialization) {
+    // Initialize or reinitialize neural network
+    console.log('[NEURAL] Initializing neural network for profile...');
     const network = initializeNeuralNetwork(collections.state?.level || 0);
     neuralNetwork = network.toJSON();
     collections.neuralNetwork = neuralNetwork;
+    
+    // Immediately save the newly initialized neural network to ensure profile isolation
+    console.log(`[NEURAL] Saving ${network.metrics.totalNeurons} neurons to profile...`);
+    saveCollections(collections);
   }
 
   // Return as NeuralNetwork instance
@@ -1143,7 +1185,36 @@ function determineEmotionalState(constrained, responseContext, state) {
 }
 
 function tokenizeMessage(text) {
-  return (String(text || '').toLowerCase().match(/[a-z]{2,}/g) || []).slice(0, 40);
+  // Extract words (2+ alphabetic characters)
+  const rawWords = (String(text || '').toLowerCase().match(/\*?[a-z]{2,}\*?/g) || []).slice(0, 40);
+  
+  // Filter out:
+  // 1. Actions (words wrapped in asterisks like *blink* or *smile*)
+  // 2. Stop words (articles, pronouns, common words)
+  // 3. Very short words (unless they're meaningful)
+  const meaningfulWords = rawWords.filter(word => {
+    // Remove asterisks for checking
+    const cleaned = word.replace(/\*/g, '');
+    
+    // Skip if it was wrapped in asterisks (action)
+    if (word.startsWith('*') || word.endsWith('*')) {
+      return false;
+    }
+    
+    // Skip stop words
+    if (STOP_WORDS.has(cleaned)) {
+      return false;
+    }
+    
+    // Skip very short words unless mapped as concepts
+    if (cleaned.length < 3 && !KEYWORD_TO_CONCEPT.get(cleaned)) {
+      return false;
+    }
+    
+    return true;
+  });
+  
+  return meaningfulWords;
 }
 
 /**
@@ -2411,13 +2482,20 @@ function collectPalCorpus(memories = [], chatLog = [], vocabulary = []) {
   // IMPORTANT: Only train on USER messages to avoid learning from Pal's own gibberish
   // This breaks the feedback loop where broken responses become training data
   
-  // Collect user text from memories
-  for (const memory of memories) {
+  // MEMORY OPTIMIZATION: Limit data to prevent heap exhaustion
+  const MAX_MEMORIES = 50;
+  const MAX_CHAT_MESSAGES = 100;
+  const MAX_CONTEXTS_PER_WORD = 3;
+  
+  // Collect user text from memories (last 50 only)
+  const recentMemories = memories.slice(-MAX_MEMORIES);
+  for (const memory of recentMemories) {
     if (memory?.userText) corpus.push(memory.userText);
   }
   
-  // Collect user messages from chat log
-  for (const entry of chatLog) {
+  // Collect user messages from chat log (last 100 only)
+  const recentChat = chatLog.slice(-MAX_CHAT_MESSAGES);
+  for (const entry of recentChat) {
     if (entry?.role === 'user' && entry.text) corpus.push(entry.text);
   }
   
@@ -2435,9 +2513,12 @@ function collectPalCorpus(memories = [], chatLog = [], vocabulary = []) {
   }
   
   // Vocabulary contexts are still included (they might contain user phrases)
+  // LIMITED to prevent memory exhaustion
   for (const vocabEntry of vocabulary) {
     if (!Array.isArray(vocabEntry?.contexts)) continue;
-    for (const ctx of vocabEntry.contexts) {
+    // Limit contexts per word to prevent memory issues
+    const limitedContexts = vocabEntry.contexts.slice(-MAX_CONTEXTS_PER_WORD);
+    for (const ctx of limitedContexts) {
       // Only include contexts that look like user input (simple heuristic)
       if (ctx && ctx.length > 0 && ctx.length < 200) {
         corpus.push(ctx);
@@ -3792,7 +3873,22 @@ function sentimentToScore(sentiment) {
 
 function inferConceptAssignment(word) {
   if (!word) return null;
-  const normalized = word.toLowerCase();
+  
+  // Remove asterisks and check if it's an action (e.g., "*blink*", "*smile*")
+  const isAction = word.startsWith('*') && word.endsWith('*');
+  if (isAction) return null; // Actions should not become concepts
+  
+  const normalized = word.toLowerCase().replace(/[*]/g, '');
+  
+  // Skip stop words
+  if (STOP_WORDS.has(normalized)) return null;
+  
+  // Skip very short words (1-2 characters) unless they're mapped concepts
+  if (normalized.length <= 2 && !KEYWORD_TO_CONCEPT.get(normalized)) return null;
+  
+  // Skip words that are just punctuation or numbers
+  if (/^[^a-z]+$/i.test(normalized)) return null;
+  
   const hint = KEYWORD_TO_CONCEPT.get(normalized);
   if (hint) {
     return {
@@ -3802,6 +3898,10 @@ function inferConceptAssignment(word) {
       keyword: normalized,
     };
   }
+  
+  // Only create topics for meaningful words (4+ characters or mapped)
+  if (normalized.length < 4) return null;
+  
   return {
     key: `topic:${normalized}`,
     name: `Topic: ${capitalize(normalized)}`,
@@ -4150,6 +4250,151 @@ function buildThoughtEntry({ state, userText, responseContext, responsePlan, imp
   };
 }
 
+/**
+ * AI-Enhanced Response Generation
+ * Uses external LLM when enabled, falls back to local-only mode
+ */
+async function generateAIResponse(input, state, vocabulary, context, memories = [], chatLog = []) {
+  const settings = state.settings || {};
+  const provider = settings.apiProvider || 'local';
+  
+  // If local mode or no model configured, use original constraint system
+  if (provider === 'local') {
+    return constrainResponse(input, state, vocabulary, context, memories, chatLog);
+  }
+
+  try {
+    // Get API key from secrets if needed
+    const secrets = readSecrets();
+    const apiKey = provider !== 'ollama' ? secrets[`${provider}Key`] : null;
+
+    // Initialize model adapter
+    const adapter = new ModelAdapter({
+      provider: provider,
+      apiKey: apiKey,
+      model: settings.aiModel || null, // Use user-selected model if specified
+    });
+
+    // Health check for provider
+    const health = await adapter.healthCheck();
+    if (!health.healthy) {
+      console.warn(`[AI] ${provider} not available, falling back to local mode:`, health.error || 'Provider unhealthy');
+      return constrainResponse(input, state, vocabulary, context, memories, chatLog);
+    }
+
+    // Build developmentally-appropriate prompt
+    const concepts = getCollections().concepts || [];
+    const facts = getCollections().facts || [];
+    const promptBuilder = new PromptBuilder(state, vocabulary, concepts, facts, memories);
+    
+    // Get recent chat history (limit based on level)
+    const recentChat = chatLog.slice(-10);
+    const prompt = promptBuilder.buildPrompt(input, recentChat);
+
+    // Get dynamic parameters based on developmental stage
+    const temperature = promptBuilder.getTemperature();
+    const maxTokens = promptBuilder.getMaxTokens();
+    const stop = promptBuilder.getStopSequences();
+
+    console.log(`[AI] Generating response with ${provider} (temp: ${temperature}, tokens: ${maxTokens})`);
+
+    // Generate response
+    const rawResponse = await adapter.generate(prompt, {
+      temperature,
+      maxTokens,
+      stop,
+    });
+
+    // Post-process and validate response
+    const processedResponse = postProcessAIResponse(rawResponse, state, vocabulary);
+
+    console.log('[AI] Response generated successfully');
+
+    return {
+      utterance_type: 'ai_generated',
+      output: processedResponse.text,
+      focus: processedResponse.focus,
+      reasoning: [`AI-generated (${provider})`, ...processedResponse.reasoning],
+      analysis: context,
+      strategy: 'ai-enhanced',
+      provider: provider,
+    };
+
+  } catch (error) {
+    console.error('[AI] Error generating AI response:', error.message);
+    console.log('[AI] Falling back to local-only mode');
+    
+    // Fallback to local mode on error
+    return constrainResponse(input, state, vocabulary, context, memories, chatLog);
+  }
+}
+
+/**
+ * Post-process AI response to ensure it meets developmental constraints
+ */
+function postProcessAIResponse(rawText, state, vocabulary) {
+  let text = rawText.trim();
+  const level = state.level;
+  const reasoning = [];
+
+  // Remove any accidental role markers
+  text = text.replace(/^(You \(Pal\)|Pal|Assistant):\s*/gi, '');
+  text = text.replace(/^(Friend|User|Human):\s*/gi, '');
+
+  // Stage-specific validation and correction
+  if (level <= 1) {
+    // Sensorimotor: Should only be simple sounds
+    const phonemes = ['ba', 'da', 'ga', 'ma', 'pa', 'ka', 'la', 'na', 'ta'];
+    const match = text.match(/[a-z]+/i);
+    if (match && phonemes.includes(match[0].toLowerCase())) {
+      text = match[0].toLowerCase();
+    } else {
+      text = phonemes[Math.floor(Math.random() * phonemes.length)];
+      reasoning.push('Corrected to babble sound');
+    }
+  } else if (level <= 3) {
+    // Early preoperational: Single words only
+    const words = text.split(/\s+/);
+    if (words.length > 1) {
+      // Find a vocabulary word if possible
+      const vocabWord = words.find(w => vocabulary.some(v => v.word.toLowerCase() === w.toLowerCase()));
+      text = vocabWord || words[0];
+      reasoning.push('Reduced to single word');
+    }
+  } else if (level <= 6) {
+    // Preoperational: 2-4 words maximum
+    const words = text.split(/\s+/);
+    if (words.length > 4) {
+      text = words.slice(0, 4).join(' ');
+      reasoning.push('Truncated to 4 words');
+    }
+  } else if (level <= 10) {
+    // Concrete operational: 1-2 sentences
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim());
+    if (sentences.length > 2) {
+      text = sentences.slice(0, 2).join('. ') + '.';
+      reasoning.push('Limited to 2 sentences');
+    }
+  } else {
+    // Formal operational: 2-3 sentences
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim());
+    if (sentences.length > 3) {
+      text = sentences.slice(0, 3).join('. ') + '.';
+      reasoning.push('Limited to 3 sentences');
+    }
+  }
+
+  // Extract focus word (most relevant vocabulary word used)
+  const words = text.toLowerCase().split(/\W+/).filter(Boolean);
+  const focus = words.find(w => vocabulary.some(v => v.word.toLowerCase() === w)) || words[0] || null;
+
+  return {
+    text,
+    focus,
+    reasoning,
+  };
+}
+
 function constrainResponse(input, state, vocabulary, context, memories = [], chatLog = []) {
   const ctx = context || analyzeUserMessage(input);
 
@@ -4395,27 +4640,194 @@ app.get('/api/neural-network', (req, res) => {
 app.post('/api/settings', (req, res) => {
   const { state } = getCollections();
   const { xpMultiplier, apiProvider, apiKey, telemetry, authRequired } = req.body || {};
-  if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
-    state.settings.xpMultiplier = xpMultiplier;
+  
+  // Check if we're in profile mode
+  const currentProfileId = profileManager.getCurrentProfileId();
+  const isProfileMode = !!currentProfileId;
+  
+  if (isProfileMode) {
+    // Load profile-specific settings
+    let profileSettings = profileManager.getCurrentProfileData('settings.json') || {
+      xpMultiplier: 1,
+      apiProvider: 'local',
+      telemetry: false,
+      authRequired: false
+    };
+    
+    // Update settings
+    if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
+      profileSettings.xpMultiplier = xpMultiplier;
+    }
+    if (typeof apiProvider === 'string' && ['local','ollama','openai','azure','gemini'].includes(apiProvider)) {
+      profileSettings.apiProvider = apiProvider;
+    }
+    if (typeof telemetry === 'boolean') {
+      profileSettings.telemetry = telemetry;
+    }
+    if (typeof authRequired === 'boolean') {
+      profileSettings.authRequired = authRequired;
+    }
+    if (typeof apiKey === 'string' && apiKey.length > 0) {
+      const secrets = readSecrets();
+      secrets.apiKey = apiKey;
+      writeSecrets(secrets);
+      // Mask stored in settings for UI only
+      profileSettings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
+    }
+    
+    // Save to profile
+    profileManager.saveCurrentProfileData('settings.json', profileSettings);
+    
+    // Also update state.settings for consistency
+    state.settings = { ...profileSettings };
+    
+    res.json({ settings: profileSettings });
+  } else {
+    // Legacy mode - save to state.json
+    if (typeof xpMultiplier === 'number' && xpMultiplier > 0 && xpMultiplier <= 250) {
+      state.settings.xpMultiplier = xpMultiplier;
+    }
+    if (typeof apiProvider === 'string' && ['local','ollama','openai','azure','gemini'].includes(apiProvider)) {
+      state.settings.apiProvider = apiProvider;
+    }
+    if (typeof telemetry === 'boolean') {
+      state.settings.telemetry = telemetry;
+    }
+    if (typeof authRequired === 'boolean') {
+      state.settings.authRequired = authRequired;
+    }
+    if (typeof apiKey === 'string' && apiKey.length > 0) {
+      const secrets = readSecrets();
+      secrets.apiKey = apiKey;
+      writeSecrets(secrets);
+      // Mask stored in state for UI only
+      state.settings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
+    }
+    saveState(state);
+    res.json({ settings: state.settings });
   }
-  if (typeof apiProvider === 'string' && ['local','openai','azure','gemini'].includes(apiProvider)) {
-    state.settings.apiProvider = apiProvider;
-  }
-  if (typeof telemetry === 'boolean') {
-    state.settings.telemetry = telemetry;
-  }
-  if (typeof authRequired === 'boolean') {
-    state.settings.authRequired = authRequired;
-  }
-  if (typeof apiKey === 'string' && apiKey.length > 0) {
+});
+
+// --- AI Model Management Endpoints ---
+// Get AI provider status and available models
+app.get('/api/ai/status', async (req, res) => {
+  try {
+    const { state } = getCollections();
+    const settings = state.settings || {};
+    const provider = settings.apiProvider || 'local';
+    
+    if (provider === 'local') {
+      return res.json({
+        provider: 'local',
+        status: 'active',
+        message: 'Using local-only response generation',
+      });
+    }
+
+    // Get API key
     const secrets = readSecrets();
-    secrets.apiKey = apiKey;
-    writeSecrets(secrets);
-    // Mask stored in state for UI only
-    state.settings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
+    const apiKey = provider !== 'ollama' ? secrets[`${provider}Key`] : null;
+
+    // Create adapter and check health
+    const adapter = new ModelAdapter({
+      provider: provider,
+      apiKey: apiKey,
+      model: settings.aiModel || null,
+    });
+
+    const health = await adapter.healthCheck();
+    
+    res.json({
+      provider: provider,
+      status: health.healthy ? 'healthy' : 'unavailable',
+      model: settings.aiModel || adapter.model,
+      requiresKey: health.requiresKey,
+      error: health.error || null,
+      models: health.models || [],
+    });
+  } catch (error) {
+    res.status(500).json({
+      provider: 'unknown',
+      status: 'error',
+      error: error.message,
+    });
   }
-  saveState(state);
-  res.json({ settings: state.settings });
+});
+
+// List available models for current provider
+app.get('/api/ai/models', async (req, res) => {
+  try {
+    const { state } = getCollections();
+    const settings = state.settings || {};
+    const provider = settings.apiProvider || 'local';
+    
+    if (provider === 'local') {
+      return res.json({ models: [] });
+    }
+
+    const secrets = readSecrets();
+    const apiKey = provider !== 'ollama' ? secrets[`${provider}Key`] : null;
+
+    const adapter = new ModelAdapter({
+      provider: provider,
+      apiKey: apiKey,
+    });
+
+    const result = await adapter.listModels();
+    
+    res.json({
+      provider: provider,
+      models: result.models || [],
+      error: result.error || null,
+    });
+  } catch (error) {
+    res.status(500).json({
+      provider: 'unknown',
+      models: [],
+      error: error.message,
+    });
+  }
+});
+
+// Update AI provider settings (includes model selection)
+app.post('/api/ai/configure', (req, res) => {
+  try {
+    const { state } = getCollections();
+    const { provider, model, apiKey } = req.body || {};
+    
+    // Validate provider
+    const validProviders = ['local', 'ollama', 'openai', 'azure', 'gemini'];
+    if (provider && !validProviders.includes(provider)) {
+      return res.status(400).json({ error: 'Invalid provider' });
+    }
+
+    // Update settings
+    if (provider) {
+      state.settings.apiProvider = provider;
+    }
+    if (model) {
+      state.settings.aiModel = model;
+    }
+    if (apiKey && apiKey.length > 0) {
+      const secrets = readSecrets();
+      secrets[`${provider}Key`] = apiKey;
+      writeSecrets(secrets);
+      state.settings.apiKeyMask = `${'*'.repeat(Math.max(0, apiKey.length - 4))}${apiKey.slice(-4)}`;
+    }
+
+    saveState(state);
+    
+    res.json({
+      success: true,
+      settings: {
+        apiProvider: state.settings.apiProvider,
+        aiModel: state.settings.aiModel,
+        apiKeyMask: state.settings.apiKeyMask || null,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // --- Auth endpoints
@@ -4459,7 +4871,7 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/chat', (req, res) => {
+app.post('/api/chat', async (req, res) => {
   console.log('[CHAT] Chat request received');
   const { message } = req.body || {};
   if (!message || typeof message !== 'string') return res.status(400).json({ error: 'message required' });
@@ -4552,7 +4964,7 @@ app.post('/api/chat', (req, res) => {
   // 5. Decision making
   activateNeuralPattern('decision-making', neuralNetwork);
 
-  // Generate response: Use curiosity question if triggered, otherwise normal response
+  // Generate response: Use curiosity question if triggered, otherwise AI/normal response
   let constrained;
   if (curiosity && state.level >= 4) {
     // Pal asks "Why?" due to curiosity
@@ -4563,10 +4975,16 @@ app.post('/api/chat', (req, res) => {
       reasoning: [`Asking about ${curiosity.concept} (curiosity score: ${curiosity.curiosityScore.toFixed(2)})`],
     };
   } else {
-    // Normal response generation
-    console.log('[CHAT] Generating normal response...');
-    constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
-    console.log('[SUCCESS] Response generated');
+    // AI-enhanced or normal response generation
+    console.log('[CHAT] Generating response...');
+    try {
+      constrained = await generateAIResponse(message, state, vocabulary, responseContext, memories, chatLog);
+      console.log('[SUCCESS] Response generated');
+    } catch (error) {
+      console.error('[ERROR] Failed to generate response:', error);
+      // Fallback to simple constraint mode
+      constrained = constrainResponse(message, state, vocabulary, responseContext, memories, chatLog);
+    }
   }
 
   // XP: standard typed user response
@@ -4844,6 +5262,7 @@ app.post('/api/plugins/:name/toggle', (req, res) => {
 // Brain graph: derive simple co-occurrence network from chat log
 app.get('/api/brain', (req, res) => {
   const { chatLog, concepts = [] } = getCollections();
+  console.log(`[BRAIN] Processing knowledge graph - chatLog length: ${chatLog.length}, concepts: ${concepts.length}`);
   const maxMsgs = 300; // cap for performance
   const logs = chatLog.slice(-maxMsgs);
   const freq = new Map();
@@ -4876,6 +5295,7 @@ app.get('/api/brain', (req, res) => {
     .slice(0, 50)
     .map(([w]) => w);
   const wordSet = new Set(topWords);
+  console.log(`[BRAIN] Found ${freq.size} unique words, selected top ${topWords.length} for graph`);
 
   const nodes = topWords.map((w) => ({ id: w, label: w, value: freq.get(w) || 1, group: 'language' }));
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
@@ -4886,8 +5306,10 @@ app.get('/api/brain', (req, res) => {
       links.push({ from: a, to: b, value: weight });
     }
   }
+  console.log(`[BRAIN] Generated ${nodes.length} nodes and ${links.length} links for knowledge graph`);
 
   const conceptSummaries = [];
+  let conceptNodesAdded = 0;
   for (const concept of concepts) {
     if (!concept || !concept.totalMentions) continue;
     const sentimentAvg = concept.sentiment?.average ?? 0;
@@ -4902,6 +5324,7 @@ app.get('/api/brain', (req, res) => {
       sentiment: sentimentLabel,
     };
     nodeMap.set(conceptNode.id, conceptNode);
+    conceptNodesAdded++;
 
     const keywordEntries = Object.entries(concept.keywords || {})
       .sort((a, b) => (b[1]?.count || 0) - (a[1]?.count || 0))
@@ -4927,8 +5350,12 @@ app.get('/api/brain', (req, res) => {
       lastSeen: concept.lastSeen,
     });
   }
+  console.log(`[BRAIN] Added ${conceptNodesAdded} concept nodes to graph`);
 
-  res.json({ nodes: Array.from(nodeMap.values()), links, concepts: conceptSummaries });
+  const finalNodes = Array.from(nodeMap.values());
+  const finalLinks = links;
+  console.log(`[BRAIN] Returning ${finalNodes.length} total nodes and ${finalLinks.length} total links`);
+  res.json({ nodes: finalNodes, links: finalLinks, concepts: conceptSummaries });
 });
 
 app.get('/api/memories', (req, res) => {
@@ -4970,9 +5397,19 @@ app.post('/api/neural/regenerate', async (req, res) => {
   };
 
   try {
+    // Ensure a profile is loaded - don't regenerate neural network without one
+    const currentProfileId = profileManager.getCurrentProfileId();
+    if (!currentProfileId) {
+      throw new Error('No profile loaded. Please load or create a profile first.');
+    }
+    
     const collections = getCollections();
     const { memories, chatLog, vocabulary, state } = collections;
     const level = state.level || 0;
+
+    // Validate that we're working with profile-specific data
+    console.log(`[NEURAL REGENERATE] Starting regeneration for profile: ${currentProfileId}`);
+    console.log(`[NEURAL REGENERATE] Using ${memories.length} memories, ${chatLog.length} messages, ${vocabulary.length} words`);
 
     sendProgress(0, 'Starting neural network regeneration...', 'init');
     
@@ -5115,6 +5552,10 @@ app.post('/api/neural/regenerate', async (req, res) => {
     collections.neuralNetwork = neural.toJSON();
     saveCollections(collections);
     currentStep++;
+    
+    // Verify save to correct profile
+    console.log(`[NEURAL REGENERATE] Neural network saved to profile: ${currentProfileId}`);
+    console.log(`[NEURAL REGENERATE] Total neurons: ${neural.metrics.totalNeurons}, Regions: ${neural.regions.length}`);
 
     // Complete
     const totalTime = Math.ceil((Date.now() - startTime) / 1000);

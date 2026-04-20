@@ -1,0 +1,244 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:MyPal.Desktop.ViewModels"
+             mc:Ignorable="d"
+             x:Class="MyPal.Desktop.Views.ProfileSelectionView"
+             x:DataType="vm:ProfileSelectionViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="ListBox#ProfileList">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="ListBox#ProfileList > ListBoxItem">
+            <Setter Property="Margin" Value="12"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Focusable" Value="False"/>
+        </Style>
+        <Style Selector="ListBox#ProfileList > ListBoxItem:selected">
+            <Setter Property="Focusable" Value="True"/>
+        </Style>
+        <Style Selector="ListBox#ProfileList Border.profile-card">
+            <Setter Property="Width" Value="320"/>
+            <Setter Property="Height" Value="200"/>
+            <Setter Property="CornerRadius" Value="24"/>
+            <Setter Property="Background" Value="#401e2139"/>
+            <Setter Property="BorderBrush" Value="#552e3451"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="Padding" Value="24"/>
+            <Setter Property="BoxShadow" Value="0 16 48 0 #0a0e2733"/>
+        </Style>
+        <Style Selector="ListBox#ProfileList > ListBoxItem:pointerover Border.profile-card">
+            <Setter Property="BorderBrush" Value="#7b68ee88"/>
+            <Setter Property="BoxShadow" Value="0 20 60 0 #7b68ee55"/>
+        </Style>
+        <Style Selector="ListBox#ProfileList > ListBoxItem:selected Border.profile-card">
+            <Setter Property="BorderBrush" Value="#7b68eecc"/>
+            <Setter Property="BoxShadow" Value="0 24 72 0 #7b68ee66"/>
+            <Setter Property="Background" Value="#551e2139"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#0a0e27" Offset="0"/>
+                <GradientStop Color="#12162e" Offset="1"/>
+            </LinearGradientBrush>
+        </Grid.Background>
+
+        <Border Margin="48"
+                Padding="40"
+                CornerRadius="32"
+                Background="#3312162e"
+                BorderBrush="#332e3451"
+                BorderThickness="1.5">
+            <Grid RowDefinitions="Auto,*,Auto" ColumnDefinitions="*">
+                <DockPanel Grid.Row="0" LastChildFill="False">
+                    <StackPanel Orientation="Vertical" DockPanel.Dock="Left" Spacing="6">
+                        <TextBlock Text="MyPal"
+                                   FontSize="48"
+                                   FontWeight="200"
+                                   Foreground="{StaticResource Brush.Text.Primary}"
+                                   LetterSpacing="1.5"/>
+                        <TextBlock Text="Select your Pal"
+                                   FontSize="24"
+                                   FontWeight="300"
+                                   Foreground="{StaticResource Brush.Text.Secondary}"
+                                   Margin="0,4,0,0"/>
+                        <TextBlock Text="{Binding HeaderSubtitle}"
+                                   FontSize="13"
+                                   Foreground="{StaticResource Brush.Text.Tertiary}"
+                                   Margin="0,6,0,0"/>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal"
+                                DockPanel.Dock="Right"
+                                Spacing="12"
+                                VerticalAlignment="Bottom">
+                        <Button Content="Refresh"
+                                Command="{Binding RefreshCommand}"
+                                IsEnabled="{Binding IsLoading, Converter={StaticResource BooleanNegationConverter}}"
+                                Classes="accent"
+                                Padding="24,14"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <Grid Grid.Row="1" ColumnDefinitions="2*,Auto,1.4*"
+                      Margin="0,32,0,24">
+                    <ScrollViewer Grid.Column="0"
+                                  Grid.ColumnSpan="1"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <ListBox x:Name="ProfileList"
+                                 ItemsSource="{Binding Profiles}"
+                                 SelectedItem="{Binding SelectedProfile}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel ItemWidth="320"
+                                               MinWidth="320"
+                                               Orientation="Horizontal"
+                                               VerticalAlignment="Top"/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="vm:ProfileCardViewModel">
+                                    <Border Classes="profile-card">
+                                        <Grid>
+                                            <Border Background="{StaticResource Brush.Glass.Glow}"
+                                                    CornerRadius="24"
+                                                    Opacity="0.65"/>
+                                            <StackPanel Spacing="12">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontSize="20"
+                                                               FontWeight="400"
+                                                               Foreground="{StaticResource Brush.Text.Primary}"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="16">
+                                                    <StackPanel>
+                                                        <TextBlock Text="LEVEL"
+                                                                   FontSize="11"
+                                                                   FontWeight="500"
+                                                                   TextWrapping="NoWrap"
+                                                                   Foreground="#8b92c1"
+                                                                   TextAlignment="Left"/>
+                                                        <TextBlock Text="{Binding Level}"
+                                                                   FontSize="18"
+                                                                   FontWeight="600"
+                                                                   Foreground="#b8a4ff"/>
+                                                    </StackPanel>
+                                                    <StackPanel>
+                                                        <TextBlock Text="XP"
+                                                                   FontSize="11"
+                                                                   FontWeight="500"
+                                                                   Foreground="#8b92c1"/>
+                                                        <TextBlock Text="{Binding Xp}"
+                                                                   FontSize="18"
+                                                                   FontWeight="600"
+                                                                   Foreground="#66e3ff"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <StackPanel>
+                                                    <TextBlock Text="Activity"
+                                                               FontSize="11"
+                                                               FontWeight="500"
+                                                               Foreground="#8b92c1"/>
+                                                    <TextBlock Text="{Binding LastPlayedDescription}"
+                                                               FontSize="13"
+                                                               Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </ScrollViewer>
+
+                    <Border Grid.Column="1"
+                            Width="32"
+                            Background="Transparent"/>
+
+                    <Border Grid.Column="2"
+                            Padding="28"
+                            CornerRadius="24"
+                            Background="#331e2139"
+                            BorderBrush="#442e3451"
+                            BorderThickness="1.5"
+                            BoxShadow="0 18 56 0 #0a0e2744">
+                        <StackPanel Spacing="18">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Create New Pal"
+                                           FontSize="20"
+                                           FontWeight="400"
+                                           Foreground="{StaticResource Brush.Text.Primary}"/>
+                                <TextBlock Text="Give your Pal a unique identity."
+                                           FontSize="13"
+                                           Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                            </StackPanel>
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="PAL NAME"
+                                           FontSize="12"
+                                           FontWeight="500"
+                                           Foreground="#8b92c1"
+                                           LetterSpacing="0.8"/>
+                                <Border CornerRadius="16"
+                                        Background="#221e2139"
+                                        BorderBrush="#442e3451"
+                                        BorderThickness="1.5"
+                                        Padding="4">
+                                    <TextBox Text="{Binding NewProfileName, UpdateSourceTrigger=PropertyChanged}"
+                                             BorderThickness="0"
+                                             FontSize="16"
+                                             Watermark="Enter a memorable name..."
+                                             Background="Transparent"/>
+                                </Border>
+                            </StackPanel>
+                            <StackPanel Spacing="12">
+                                <Button Content="Create and begin"
+                                        Command="{Binding CreateProfileCommand}"
+                                        Classes="accent"
+                                        Padding="24,14"/>
+                                <TextBlock Text="Maximum 3 profiles • Names up to 30 characters"
+                                           FontSize="12"
+                                           Foreground="{StaticResource Brush.Text.Tertiary}"/>
+                            </StackPanel>
+                            <StackPanel Spacing="12">
+                                <Button Content="Load selected Pal"
+                                        Command="{Binding LoadSelectedCommand}"
+                                        Classes="outline"
+                                        Padding="24,14"/>
+                                <Button Content="Use last Pal"
+                                        Command="{Binding LoadLastUsedCommand}"
+                                        IsVisible="{Binding HasLastUsedProfile}"
+                                        Classes="ghost"
+                                        Padding="24,14"/>
+                            </StackPanel>
+                            <Border Background="#33111624"
+                                    CornerRadius="16"
+                                    Padding="16"
+                                    IsVisible="{Binding HasError}">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Something went wrong"
+                                               FontWeight="500"
+                                               Foreground="#ff7777"/>
+                                    <TextBlock Text="{Binding ErrorMessage}"
+                                               TextWrapping="Wrap"
+                                               Foreground="#ff9c9c"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <ProgressBar Grid.Row="2"
+                             Height="4"
+                             IsIndeterminate="True"
+                             IsVisible="{Binding IsLoading}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

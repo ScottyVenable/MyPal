@@ -1,17 +1,26 @@
 # Quick TODO
 Add these to the main todo list when available.
 
-## Bugs
-- Neurons in the Neural Activity Monitor still populate on New Pals. Each pal should have it's own neuron data file to access.
-- Fix the "Save Changes" button in the Settings menu not working.
-- Cannot open a Pal from the main menu after exiting an active Pal session.
-- upon entering the journal menu, thoughts do not automatically load until switching tabs.
-- Graphs across the application are not rendering.
+## Bugs - COMPLETED v0.2.1-alpha ✅
+- ~~Neurons in the Neural Activity Monitor still populate on New Pals~~ - FIXED: Profile-specific neural.json isolation
+- ~~Fix the "Save Changes" button in the Settings menu not working~~ - FIXED: Profile-specific settings persistence
+- ~~Cannot open a Pal from the main menu after exiting an active Pal session~~ - FIXED: Card visibility on profile switch
+- ~~upon entering the journal menu, thoughts do not automatically load until switching tabs~~ - FIXED: Auto-load thoughts tab
+- ~~Graphs across the application are not rendering~~ - FIXED: Empty state handling for charts
+- ~~Stop words (like "Are") and actions (like "*Blink*") becoming topics~~ - FIXED: Comprehensive stop words filter (100+ words)
+- ~~Neural regeneration pulling data from other profiles~~ - FIXED: Profile validation with logging
+- ~~Chat timeout after 30 seconds~~ - FIXED: Increased to 60 seconds
 
-## UI and UX
+## Bugs - In Progress 🔧
+- Knowledge graph showing "Nodes: 0 | Links: 0" when data exists - DEBUGGING: Added comprehensive logging
+
+## UI and UX - Completed ✅
+- ~~Reintroduce the web physics effects for draggable elements in the Knowledge Base graph view~~ - FIXED: Interactive physics restored with gentle forces
+
+## UI and UX - Todo
 - Upon creating a new Pal, have a welcome message or tutorial pop up to guide new users through initial steps. Animations or tooltips could enhance user engagement.
 - Custom cursor styles.
-- Reintroduce the web physics effects for draggable elements in the Knowledge Base graph view and implement an option to disable it for performance reasons.
+- Implement an option to disable physics for performance reasons in Knowledge Base graph.
 - Optimize the Knowledge Base UI design for better usability and aesthetics.
 - Optimize the program for 1920x1080 resolution screens or similar aspect ratios.
 - Stats window needs a redesign for better clarity and usability on desktop platforms with aspect ratios like 16:9.
@@ -22,6 +31,8 @@ Add these to the main todo list when available.
 - Create a "Help" tab at the top to consolidate all help-related resources, FAQs, and tutorials for easy access. There should be sections for education on psychology, neurology, and developmental concepts used in MyPal.
 - 
 
+## Debug
+- When starting the server, create a new log named as the date of the server start for easier log management (instead of all in the same file)
 
 ## Features
 - Complete categorization in the journal feature for Thoughts, Ideas, Personality, People, and Interests.
@@ -34,3 +45,7 @@ Add these to the main todo list when available.
 This needs to be integrated with the existing communication modes and should be selectable by the user. We need to determine, do all Pals have hands? What form does the Pal take? Humanoid? Animal-like? Robot-like?
 - Implement a "mood ring" feature that visually represents the Pal's current emotional state using colors or icons. This could be displayed next to the Pal's name or avatar and would change dynamically based on the Pal's interactions and experiences. Can also be displayed in the Brain menu next to Emotion.
 - Develop a system when certain features unlock like emotions, facial expressions, and body language as the Pal "develops" over time or reaches certain milestones. This could be tied to the Pal's age, experiences, or achievements within the app?
+
+
+## MASSIVE CHANGE
+- Overhaul to switch from an HTML frontend to using Avalonia for cross-platform desktop application support and better performance. This will involve rewriting the UI components and ensuring compatibility with existing backend services. Make sure that the backend will fit right into a new Avalonia based frontend system.

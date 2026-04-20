@@ -1,0 +1,17 @@
+{
+  "profiles": {
+    "MyPal.Desktop (Debug)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    },
+    "MyPal Autorun Script": {
+      "commandName": "Executable",
+      "executablePath": "powershell.exe",
+      "commandLineArgs": "-NoExit -ExecutionPolicy Bypass -File \"..\\..\\..\\autorun.ps1\"",
+      "workingDirectory": "..\\..\\.."
+    }
+  }
+}

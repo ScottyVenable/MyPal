@@ -10,6 +10,15 @@ let multiplierDirty = false;
 let lastUserMessage = '';
 let typingEl = null;
 let currentProfileId = null;
+let brainGraph3D = null;
+let brainGraphData = { nodes: [], links: [] };
+let brainGraphResizeObserver = null;
+let neuralGraph3D = null;
+let neuralGraphData = { nodes: [], links: [] };
+let neuralNodeIndex = new Map();
+let neuralLinkIndex = new Map();
+let neuralGraphResizeObserver = null;
+let neuralGraphRefreshRaf = null;
 
 // ==============================================
 // COMPREHENSIVE LOGGING SYSTEM
@@ -627,6 +636,20 @@ function updateEmotionDisplay(emotion) {
   if (emotion.mood) {
     fill.classList.add(emotion.mood);
   }
+
+  const summary = $('#emotion-summary');
+  if (summary) {
+    let intensityValue = typeof emotion.intensity === 'number' ? emotion.intensity : 0.5;
+    intensityValue = Math.max(0, Math.min(1, intensityValue));
+    const intensityPercent = Math.round(intensityValue * 100);
+    const tone = emotion.description || emotion.mood || 'centered';
+    let energyText = '';
+    if (typeof emotion.energy === 'number') {
+      const energyPercent = Math.round(Math.max(0, Math.min(1, emotion.energy)) * 100);
+      energyText = ` · Energy ${energyPercent}%`;
+    }
+    summary.textContent = `Feeling ${tone} at ${intensityPercent}% intensity${energyText}`;
+  }
 }
 
 function switchTab(name) {
@@ -947,7 +970,7 @@ async function sendChat(message) {
   const timeout = setTimeout(() => {
     logWarn('API', `Chat request timeout triggered`, { requestId });
     controller.abort();
-  }, 30000); // 30 second timeout
+  }, 60000); // 60 second timeout (increased from 30s for AI processing)
   
   try {
     logDebug('API', `Making chat API request`, { requestId, endpoint: '/chat' });
@@ -989,7 +1012,7 @@ async function sendChat(message) {
     
     if (err.name === 'AbortError') {
       logError('API', `Chat request aborted (timeout)`, { requestId });
-      throw new Error('Request timed out after 30 seconds');
+      throw new Error('Request timed out after 60 seconds');
     }
     
     logError('API', `Chat request failed`, { 
@@ -1103,51 +1126,96 @@ function connectNeuralSocket() {
 
 function handleNeuralEvent(event) {
   if (!event || !event.type) return;
-  
+
+  if (neuralState) {
+    if (!Array.isArray(neuralState.events)) {
+      neuralState.events = [];
+    }
+    neuralState.events.push(event);
+    if (neuralState.events.length > 200) {
+      neuralState.events = neuralState.events.slice(-200);
+    }
+  }
+
   if (event.type === 'neuron-fire') {
     const neuronId = event.neuronId;
-    // Extract region ID from neuron ID (format: region-xxx-neuron-yyy)
-    const regionMatch = neuronId.match(/^(.+?)-neuron-\d+$/);
-    const regionId = regionMatch ? regionMatch[1] : null;
-    
-    if (regionId) {
-      // Find all neurons in this region and flash them
-      const regionGroup = document.querySelector(`g[data-region='${regionId}']`);
-      if (regionGroup) {
-        const neurons = regionGroup.querySelectorAll('.neuron-node');
-        neurons.forEach(neuron => {
-          const origR = neuron.getAttribute('r') || '3';
-          const origOpacity = neuron.getAttribute('opacity') || '0.6';
-          neuron.setAttribute('r', parseFloat(origR) * 1.5);
-          neuron.setAttribute('opacity', '1');
-          setTimeout(() => {
-            neuron.setAttribute('r', origR);
-            neuron.setAttribute('opacity', origOpacity);
-          }, 300);
-        });
-        
-        // Also pulse the region background
-        const rect = regionGroup.querySelector('rect');
-        if (rect) {
-          const origOpacity = rect.getAttribute('opacity') || '0.1';
-          rect.setAttribute('opacity', '0.3');
-          setTimeout(() => {
-            rect.setAttribute('opacity', origOpacity);
-          }, 300);
-        }
-      }
+    const node = neuralNodeIndex.get(neuronId);
+    if (!node) return;
+
+    node.firePulse = true;
+    node.displaySize = node.baseSize * 1.35;
+    if (node.sourceNeuron) {
+      node.sourceNeuron.currentActivation = event.intensity ?? node.sourceNeuron.currentActivation;
     }
+    scheduleNeuralGraphRefresh();
+
+    if (neuralState?.metrics) {
+      neuralState.metrics.totalFirings = (neuralState.metrics.totalFirings || 0) + 1;
+      neuralState.metrics.mostRecentFiring = {
+        neuronId,
+        intensity: event.intensity || 0,
+        timestamp: event.timestamp || Date.now()
+      };
+    }
+
+    if (Array.isArray(node.sourceNeuron?.connections)) {
+      node.sourceNeuron.connections.forEach((connection) => {
+        const key = `${node.id}|${connection.targetNeuronId}`;
+        const link = neuralLinkIndex.get(key);
+        if (!link) return;
+        link.highlight = true;
+        link.width = Math.max(link.width, 1.4);
+        link.particleCount = Math.max(2, Math.ceil((event.intensity || 1) * 3));
+        link.particleSpeed = 0.012;
+        scheduleNeuralGraphRefresh();
+
+        setTimeout(() => {
+          link.highlight = false;
+          link.width = Math.max(0.35, link.weight * 0.9);
+          link.particleCount = 0;
+          link.particleSpeed = 0.008;
+          scheduleNeuralGraphRefresh();
+        }, connection.latency ? connection.latency * 1.5 : 240);
+      });
+    }
+
+    setTimeout(() => {
+      node.firePulse = false;
+      node.displaySize = node.baseSize;
+      scheduleNeuralGraphRefresh();
+    }, 420);
+  } else if (event.type === 'connection-signal') {
+    const key = `${event.fromNeuronId}|${event.toNeuronId}`;
+    const link = neuralLinkIndex.get(key);
+    if (!link) return;
+
+    const strength = Math.abs(event.signal || 0.75);
+    link.particleCount = Math.max(1, Math.ceil(strength * 4));
+    link.particleSpeed = Math.max(0.004, Math.min(0.02, 0.006 + strength * 0.01));
+    link.highlight = true;
+    link.width = Math.max(link.width, 1.2);
+    scheduleNeuralGraphRefresh();
+
+    const decayDelay = (event.latency || 120) * 1.6;
+    setTimeout(() => {
+      link.particleCount = 0;
+      link.particleSpeed = 0.008;
+      link.highlight = false;
+      link.width = Math.max(0.35, link.weight * 0.9);
+      scheduleNeuralGraphRefresh();
+    }, decayDelay);
   } else if (event.type === 'neural-growth') {
-    // Handle neural growth animation
     showNeuralGrowthAnimation(event);
   }
+
+  updateNeuralEvents();
+  updateNeuralStats();
 }
 
 // Show neural growth animation when leveling up
 function showNeuralGrowthAnimation(growthEvent) {
   const { regionId, newNeurons, level } = growthEvent;
-  
-  // Show celebration notification
+
   const celebration = document.createElement('div');
   celebration.className = 'neural-growth-celebration';
   celebration.innerHTML = `
@@ -1174,46 +1242,33 @@ function showNeuralGrowthAnimation(growthEvent) {
     animation: growthCelebration 4s ease-out forwards;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   `;
-  
+
   document.body.appendChild(celebration);
-  
-  // Animate the specific region
-  const regionGroup = document.querySelector(`g[data-region='${regionId}']`);
-  if (regionGroup) {
-    // Pulse the region with growth effect
-    const rect = regionGroup.querySelector('.region-background');
-    if (rect) {
-      rect.style.animation = 'neuralGrowthPulse 2s ease-out';
-      rect.addEventListener('animationend', () => {
-        rect.style.animation = '';
-      });
-    }
-    
-    // Animate new neurons appearing
-    const neurons = regionGroup.querySelectorAll('.neuron-node');
-    const lastNeurons = Array.from(neurons).slice(-newNeurons);
-    
-    lastNeurons.forEach((neuron, index) => {
-      neuron.style.opacity = '0';
-      neuron.style.transform = 'scale(0)';
+
+  const regionNodes = (neuralGraphData?.nodes || []).filter((node) => node.regionId === regionId);
+  regionNodes.forEach((node, index) => {
+    const delay = 400 + index * 80;
+    setTimeout(() => {
+      node.firePulse = true;
+      node.displaySize = node.baseSize * 1.25;
+      scheduleNeuralGraphRefresh();
+
       setTimeout(() => {
-        neuron.style.transition = 'all 0.5s ease-out';
-        neuron.style.opacity = '0.8';
-        neuron.style.transform = 'scale(1)';
-      }, index * 100 + 500);
-    });
-  }
-  
-  // Remove celebration after animation
+        node.firePulse = false;
+        node.displaySize = node.baseSize;
+        scheduleNeuralGraphRefresh();
+      }, 600);
+    }, delay);
+  });
+
   setTimeout(() => {
     if (celebration.parentNode) {
       celebration.parentNode.removeChild(celebration);
     }
   }, 4000);
-  
-  // Refresh neural visualization to show new structure
+
   setTimeout(() => {
-    fetchNeuralSnapshot().then(snapshot => {
+    fetchNeuralSnapshot().then((snapshot) => {
       if (snapshot) renderNeuralNetwork(snapshot);
     });
   }, 2000);
@@ -1419,135 +1474,245 @@ async function fetchChatLog(limit = 200) {
 
 function renderBrain(data) {
   const container = document.getElementById('brain-graph');
-  if (!container || typeof vis === 'undefined' || !vis.Network) return;
   const desc = document.getElementById('brain-description');
+  if (!container) return;
+
   if (!defaultBrainDescription && desc) {
     defaultBrainDescription = desc.textContent || '';
   }
-  
-  // Show loading placeholder
-  container.innerHTML = '<div class="graph-loading"><div class="loading-spinner"></div><p>Loading knowledge graph...</p></div>';
-  
-  const nodes = new vis.DataSet((data.nodes || []).map((n) => ({
-    id: n.id,
-    label: n.label,
-    value: n.value || 1,
-    group: n.group || 'language',
-  })));
-  const edges = new vis.DataSet((data.links || []).map((e) => ({
-    from: e.from,
-    to: e.to,
-    value: e.value || 1,
-  })));
-  const conceptCount = Array.isArray(data.concepts) ? data.concepts.length : 0;
-  updateBrainSummary({ nodeCount: nodes.length, edgeCount: edges.length, conceptCount });
 
-  if (!nodes.length) {
-    container.innerHTML = '<div class="graph-empty">Teach Pal new ideas to grow this graph.</div>';
+  if (typeof ForceGraph3D === 'undefined') {
+    console.warn('[BRAIN] ForceGraph3D unavailable. WebGL not supported.');
     if (desc) {
-      desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
+      desc.textContent = 'Knowledge web visualization requires WebGL support.';
     }
     return;
   }
 
-  // Use setTimeout to allow loading UI to render before heavy computation
-  setTimeout(() => {
-    // Clear container completely to prevent duplicates
-    container.innerHTML = '';
-    
-    const options = {
-      layout: { improvedLayout: true },
-      nodes: {
-        shape: 'dot',
-        scaling: { min: 4, max: 24 },
-        color: {
-          background: '#2a306b',
-          border: '#9ab4ff',
-          highlight: { background: '#3240a8', border: '#dfe3ff' }
-        },
-        font: { color: '#dfe3ff', size: 12 },
-        shadow: {
-          enabled: true,
-          color: 'rgba(0,0,0,0.35)',
-          size: 8,
-          x: 2,
-          y: 2
-        }
-      },
-      edges: {
-        color: { color: '#2a306b', highlight: '#9ab4ff' },
-        smooth: { type: 'continuous', roundness: 0.15 },
-        width: 1
-      },
-      physics: {
-        enabled: true,
-        solver: 'forceAtlas2Based',
-        forceAtlas2Based: {
-          gravitationalConstant: -50,
-          centralGravity: 0.01,
-          springLength: 200,
-          springConstant: 0.04,
-          avoidOverlap: 0.5
-        },
-        maxVelocity: 30,
-        minVelocity: 0.5,
-        timestep: 0.35,
-        stabilization: { 
-          enabled: true,
-          iterations: 200,
-          updateInterval: 50,
-          fit: true 
-        }
-      },
-      interaction: {
-        hover: true,
-        zoomView: true,
-        dragNodes: true,
-        tooltipDelay: 200,
-        hideEdgesOnDrag: true,
-        hideEdgesOnZoom: false
-      },
-      groups: {
-        concept: {
-          shape: 'diamond',
-          color: {
-            background: '#642d91',
-            border: '#d6b7ff',
-            highlight: { background: '#8044b0', border: '#ffffff' }
-          },
-          font: { color: '#f3e9ff' }
-        }
-      }
-    };
-    
-    // Create canvas element for network
-    const canvas = document.createElement('div');
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-    container.appendChild(canvas);
-    
-    const network = new vis.Network(canvas, { nodes, edges }, options);
-    
-    // Freeze physics after stabilization for better performance
-    network.once('stabilizationIterationsDone', () => {
-      network.setOptions({ physics: { enabled: false } });
-      if (window.perf) window.perf.mark('brain_network_stabilized');
-    });
+  const nodesInput = Array.isArray(data.nodes) ? data.nodes : [];
+  const linksInput = Array.isArray(data.links) ? data.links : [];
+  const conceptsInput = Array.isArray(data.concepts) ? data.concepts : [];
 
-    if (desc) {
-      if (conceptCount && data.concepts?.length) {
-        const sorted = [...data.concepts].sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0) || (b.totalMentions || 0) - (a.totalMentions || 0));
-        const top = sorted[0];
-        if (top) {
-          const topKeywords = top.keywords?.slice(0, 3).map((k) => k.word).filter(Boolean);
-          const keywordText = topKeywords && topKeywords.length ? `Keywords: ${topKeywords.join(', ')}` : '';
-          desc.textContent = `Dominant concept: ${top.name} (${top.category}). ${keywordText}`.trim();
-          return;
+  const conceptIndex = new Map(conceptsInput.map((concept) => [concept.id, concept]));
+  const nodes = nodesInput.map((node) => {
+    const concept = conceptIndex.get(node.id);
+    const isConcept = !!concept || node.group === 'concept';
+    const sentimentLabel = concept?.sentiment?.label || 'neutral';
+    const value = node.value || 1;
+    const displaySize = Math.max(3.5, Math.log(value + 1) * 4.5);
+
+    let color = '#6f86ff';
+    if (isConcept) {
+      color = sentimentLabel === 'positive'
+        ? '#66bb6a'
+        : sentimentLabel === 'negative'
+          ? '#ef5350'
+          : '#ffb74d';
+    }
+
+    const tooltipParts = [`${node.label}`];
+    if (isConcept && concept) {
+      tooltipParts.push(`${concept.category}`);
+      tooltipParts.push(`Importance: ${(concept.importanceScore || 0).toFixed(2)}`);
+      tooltipParts.push(`Mentions: ${concept.totalMentions || 0}`);
+    } else {
+      tooltipParts.push(`Frequency score: ${value}`);
+    }
+
+    return {
+      id: node.id,
+      label: node.label,
+      group: isConcept ? 'concept' : (node.group || 'language'),
+      value,
+      concept: concept || null,
+      color,
+      displaySize,
+      tooltip: tooltipParts.join('\n')
+    };
+  });
+
+  const links = linksInput.map((link) => {
+    const weight = link.value || 1;
+    return {
+      source: link.from,
+      target: link.to,
+      weight,
+      width: Math.max(0.4, Math.log(weight + 1)),
+      color: weight >= 4 ? '#8ea6ff' : '#394580',
+      particleCount: weight >= 6 ? 1 : 0,
+      particleSpeed: 0.0015 + Math.min(weight, 8) * 0.0004
+    };
+  });
+
+  brainGraphData = { nodes, links };
+
+  if (!brainGraph3D) {
+    container.innerHTML = '';
+    brainGraph3D = ForceGraph3D()(container);
+    brainGraph3D
+      .showNavInfo(false)
+      .backgroundColor('#0b0f2a')
+      .nodeId('id')
+      .nodeLabel((node) => node.tooltip || node.label)
+      .nodeVal((node) => node.displaySize || 4)
+      .nodeColor((node) => node.color || '#6f86ff')
+      .nodeOpacity(0.92)
+      .linkColor((link) => link.color || '#394580')
+      .linkWidth((link) => link.width || 1)
+      .linkOpacity(0.25)
+      .linkDirectionalParticles((link) => link.particleCount || 0)
+      .linkDirectionalParticleSpeed((link) => link.particleSpeed || 0.002)
+      .linkDirectionalParticleWidth(2)
+      .onNodeClick((node, event) => {
+        handleBrainNodeClick(node, event);
+        // If shift-click, focus camera on this node
+        if (event?.shiftKey) {
+          focusOnBrainNode(node);
         }
+      })
+      .onNodeRightClick((node) => {
+        focusOnBrainNode(node);
+      });
+
+    const controls = brainGraph3D.controls();
+    controls.autoRotate = false;
+    controls.enableZoom = true;
+    controls.minDistance = 120;
+
+    const updateSize = () => {
+      const { clientWidth, clientHeight } = container;
+      brainGraph3D.width(clientWidth);
+      brainGraph3D.height(clientHeight);
+    };
+
+    updateSize();
+    if (typeof ResizeObserver !== 'undefined') {
+      brainGraphResizeObserver = new ResizeObserver(updateSize);
+      brainGraphResizeObserver.observe(container);
+    } else {
+      window.addEventListener('resize', updateSize);
+    }
+
+    brainGraph3D.cameraPosition({ x: 0, y: 0, z: 650 });
+  }
+
+  brainGraph3D.graphData(brainGraphData);
+  brainGraph3D.refresh();
+
+  updateBrainSummary({
+    nodeCount: nodes.length,
+    edgeCount: links.length,
+    conceptCount: conceptsInput.length
+  });
+
+  if (desc) {
+    if (conceptsInput.length) {
+      const sorted = [...conceptsInput].sort((a, b) => (b.importanceScore || 0) - (a.importanceScore || 0) || (b.totalMentions || 0) - (a.totalMentions || 0));
+      const top = sorted[0];
+      if (top) {
+        const topKeywords = top.keywords?.slice(0, 3).map((k) => k.word).filter(Boolean);
+        const keywordText = topKeywords?.length ? `Keywords: ${topKeywords.join(', ')}` : '';
+        desc.textContent = `Dominant concept: ${top.name} (${top.category}). ${keywordText}`.trim();
+      } else {
+        desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
       }
+    } else {
       desc.textContent = defaultBrainDescription || 'Nodes represent the words and concepts Pal hears most often. Links connect words that commonly appear together.';
     }
-  }, 10); // Small delay to let loading UI render
+  }
+}
+
+function handleBrainNodeClick(node) {
+  const desc = document.getElementById('brain-description');
+  if (!desc) return;
+
+  if (node.concept) {
+    const concept = node.concept;
+    const sentimentLabel = concept.sentiment?.label || 'neutral';
+    const importance = (concept.importanceScore || 0).toFixed(2);
+    const topKeywords = concept.keywords?.slice(0, 3).map((k) => `${k.word} (${k.count || 0})`).join(', ');
+    const details = [
+      `${concept.name} — ${concept.category}`,
+      `Sentiment: ${sentimentLabel}`,
+      `Mentions: ${concept.totalMentions || 0}`,
+      `Importance: ${importance}`
+    ];
+    if (topKeywords) {
+      details.push(`Keywords: ${topKeywords}`);
+    }
+    desc.textContent = details.join(' • ');
+  } else {
+    desc.textContent = `High-frequency word: "${node.label}" • Frequency score: ${node.value}`;
+  }
+}
+
+function focusOnBrainNode(node) {
+  if (!brainGraph3D || !brainGraphData) return;
+  
+  // Get node object
+  const nodeObj = brainGraphData.nodes.find(n => n.id === node.id);
+  if (!nodeObj) return;
+  
+  // Reset all node and link styling
+  brainGraphData.nodes.forEach(n => {
+    const originalColor = n.group === 'concept'
+      ? (n.concept?.sentiment?.label === 'positive' ? '#66bb6a'
+        : n.concept?.sentiment?.label === 'negative' ? '#ef5350'
+        : '#ffb74d')
+      : '#6f86ff';
+    n.color = originalColor;
+    n.displaySize = Math.max(3.5, Math.log((n.value || 1) + 1) * 4.5);
+  });
+  
+  brainGraphData.links.forEach(link => {
+    link.color = link.weight >= 4 ? 'rgba(142, 166, 255, 0.3)' : 'rgba(57, 69, 128, 0.25)';
+    link.width = Math.max(0.4, Math.log((link.weight || 1) + 1));
+  });
+  
+  // Highlight the focused node
+  nodeObj.color = '#ffe082';
+  nodeObj.displaySize = (nodeObj.displaySize || 5) * 2.5;
+  
+  // Highlight connected nodes and links
+  const connectedNodeIds = new Set();
+  brainGraphData.links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    
+    if (sourceId === node.id || targetId === node.id) {
+      link.color = 'rgba(255, 224, 130, 0.8)';
+      link.width = (link.width || 1) * 3;
+      
+      // Track connected nodes
+      if (sourceId === node.id) connectedNodeIds.add(targetId);
+      if (targetId === node.id) connectedNodeIds.add(sourceId);
+    }
+  });
+  
+  // Highlight connected nodes
+  brainGraphData.nodes.forEach(n => {
+    if (connectedNodeIds.has(n.id)) {
+      n.color = '#a0c4ff'; // Light blue for connected
+      n.displaySize = (n.displaySize || 5) * 1.4;
+    }
+  });
+  
+  // Update graph
+  brainGraph3D.graphData(brainGraphData);
+  
+  // Camera animation to focus on node
+  const distance = 350;
+  const distRatio = 1 + distance / Math.hypot(nodeObj.x || 0, nodeObj.y || 0, nodeObj.z || 0);
+  
+  brainGraph3D.cameraPosition(
+    {
+      x: (nodeObj.x || 0) * distRatio,
+      y: (nodeObj.y || 0) * distRatio,
+      z: (nodeObj.z || 0) * distRatio
+    },
+    nodeObj, // lookAt
+    1000 // ms transition duration
+  );
 }
 
 function renderMemories(payload) {
@@ -1747,10 +1912,13 @@ async function loadJournal(force = false) {
 async function loadBrainInsights() {
   try {
     const [graph, memories] = await Promise.all([fetchBrain(), fetchMemories()]);
+    console.log('[BRAIN] Loaded graph data:', { nodes: graph.nodes?.length || 0, links: graph.links?.length || 0, concepts: graph.concepts?.length || 0 });
     renderBrain(graph);
     renderMemories(memories);
   } catch (err) {
     console.error('Failed to load brain insights', err);
+    // On error, reset to empty state
+    updateBrainSummary({ nodeCount: 0, edgeCount: 0, conceptCount: 0, memoriesTotal: 0 });
   }
 }
 
@@ -1762,6 +1930,18 @@ function wireTabs() {
     switchTab(tab);
     
     if (tab === 'journal') {
+      // Ensure the thoughts subtab is active by default
+      const thoughtsBtn = document.querySelector('.brain-tab-btn[data-journal-tab="thoughts"]');
+      if (thoughtsBtn && !thoughtsBtn.classList.contains('active')) {
+        thoughtsBtn.classList.add('active');
+      }
+      
+      // Show the thoughts content by default
+      const thoughtsContent = document.getElementById('journal-tab-thoughts');
+      if (thoughtsContent && !thoughtsContent.classList.contains('active')) {
+        thoughtsContent.classList.add('active');
+      }
+      
       await loadJournal(true);
     } else if (tab === 'brain') {
       await loadBrainInsights();
@@ -1791,7 +1971,15 @@ function wireChat() {
     
     const input = $('#chat-input');
     const floatingInput = $('#floating-chat-input');
-    const msg = input.value.trim();
+    const rawValue = input.value;
+    const msg = rawValue.trim();
+    
+    logDebug('CHAT', `Message validation`, { 
+      rawLength: rawValue.length, 
+      trimmedLength: msg.length,
+      rawValue: rawValue.substring(0, 50),
+      isEmpty: !msg
+    });
     
     if (!msg) {
       logDebug('CHAT', 'Empty message submitted - ignoring');
@@ -1840,9 +2028,36 @@ function wireChat() {
       floatingChatOpen: typeof floatingChatOpen !== 'undefined' ? floatingChatOpen : 'undefined'
     });
     
+    // FAILSAFE: Force re-enable inputs after 65 seconds no matter what
+    const failsafeTimeout = setTimeout(() => {
+      logWarn('FAILSAFE', `Force re-enabling inputs after timeout`, { chatId });
+      clearAllTypingIndicators();
+      clearFloatingTypingIndicators();
+      if (input) {
+        input.disabled = false;
+        input.value = '';
+        input.placeholder = 'Type a message...';
+      }
+      if (floatingInput) {
+        floatingInput.disabled = false;
+        floatingInput.value = '';
+        floatingInput.placeholder = 'Type a message...';
+      }
+      addMessage('pal', '⚠️ Something went wrong. Please try again.');
+    }, 65000);
+    
     try {
       logInfo('API', `Sending chat request to backend`, { chatId });
       const res = await sendChat(msg);
+      
+      // Clear failsafe timeout since we got a response
+      clearTimeout(failsafeTimeout);
+      
+      // Validate response
+      if (!res) {
+        throw new Error('Empty response from server');
+      }
+      
       logInfo('API', `Backend response received`, { 
         chatId, 
         hasReply: !!(res?.reply),
@@ -1916,6 +2131,9 @@ function wireChat() {
       logDebug('STATE', `Post-chat cleanup completed`, { chatId });
       
     } catch (e) {
+      // Clear failsafe timeout since we're handling the error
+      clearTimeout(failsafeTimeout);
+      
       logError('CHAT', `Chat request failed`, { 
         chatId,
         error: e.message,
@@ -2125,6 +2343,12 @@ function wireSettings() {
       localStorage.removeItem('mypal_current_profile');
       showProfileMenu();
       await initProfileMenu();
+      
+      // Ensure profile cards are visible when switching profiles
+      const profileCards = $('#profile-cards');
+      if (profileCards) {
+        profileCards.classList.remove('hidden');
+      }
     }
   });
   
@@ -2221,10 +2445,13 @@ async function init() {
   wireTabs();
   wireChat();
   wireChatSearch();
+  setupChatInsightsPanel();
   wireSettings();
   setupBrainSubTabs();
   setupJournalSubTabs();
   setupNeuralRefresh();
+  setupNeuralSearchAndFilters();
+  setupBrainSearchAndFilters();
   setupNeuralRegeneration();
   setupCollapsibleInfo();
   setupMemorySearch();
@@ -2420,6 +2647,59 @@ function wireChatSearch() {
   clear?.addEventListener('click', () => { if (input) input.value = ''; renderSearchResults([]); });
 }
 
+function setupChatInsightsPanel() {
+  const buttons = Array.from(document.querySelectorAll('.insight-view-btn'));
+  const panels = Array.from(document.querySelectorAll('.insight-view'));
+  if (!buttons.length || !panels.length) return;
+
+  const activate = (viewName) => {
+    if (!viewName) return;
+    buttons.forEach((btn) => {
+      const isActive = btn.dataset.insightView === viewName;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', String(isActive));
+      btn.setAttribute('tabindex', isActive ? '0' : '-1');
+    });
+    panels.forEach((panel) => {
+      const matches = panel.dataset.insightContent === viewName;
+      panel.classList.toggle('active', matches);
+      panel.setAttribute('aria-hidden', matches ? 'false' : 'true');
+    });
+  };
+
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => activate(btn.dataset.insightView));
+    btn.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        activate(btn.dataset.insightView);
+      }
+    });
+  });
+
+  const active = buttons.find((btn) => btn.classList.contains('active')) || buttons[0];
+  if (active) {
+    activate(active.dataset.insightView);
+  }
+
+  const brainLink = document.querySelector('.insight-link-btn[data-target-tab="brain"]');
+  if (brainLink) {
+    brainLink.addEventListener('click', () => {
+      try {
+        const brainButton = document.querySelector('nav button[data-tab="brain"]');
+        if (typeof switchTab === 'function') {
+          switchTab('brain');
+        } else {
+          brainButton?.click();
+        }
+        brainButton?.focus();
+      } catch (err) {
+        console.warn('Failed to open brain tab from insight link', err);
+      }
+    });
+  }
+}
+
 // --- Progress dashboard (stats tab) ---
 let xpChartEl = null;
 let convoChartEl = null;
@@ -2427,9 +2707,36 @@ async function renderProgressDashboard() {
   let payload;
   try {
     payload = await fetchMemories(400);
-  } catch { return; }
+  } catch (err) {
+    console.error('Failed to fetch memories for progress dashboard:', err);
+    return;
+  }
+  
   const memories = payload?.memories || [];
-  if (!memories.length) return;
+  
+  // Show empty state messages if no data
+  const xpCanvas = document.getElementById('xpChart');
+  const convoCanvas = document.getElementById('convoChart');
+  
+  if (!memories.length) {
+    // Show empty state for XP chart
+    if (xpCanvas) {
+      const xpContainer = xpCanvas.parentElement;
+      if (xpContainer) {
+        xpContainer.innerHTML = '<p class="graph-empty">Start chatting to track your XP progress!</p>';
+      }
+    }
+    
+    // Show empty state for conversation chart
+    if (convoCanvas) {
+      const convoContainer = convoCanvas.parentElement;
+      if (convoContainer) {
+        convoContainer.innerHTML = '<p class="graph-empty">Conversation data will appear here as you chat.</p>';
+      }
+    }
+    
+    return;
+  }
 
   const byDay = new Map();
   const xpSeries = [];
@@ -2444,7 +2751,7 @@ async function renderProgressDashboard() {
   const convoLabels = Array.from(byDay.keys());
   const convoData = Array.from(byDay.values());
 
-  const xpCtx = document.getElementById('xpChart')?.getContext('2d');
+  const xpCtx = xpCanvas?.getContext('2d');
   if (xpCtx) {
     // Reuse chart instance for better performance
     if (xpChartEl) {
@@ -2496,7 +2803,7 @@ async function renderProgressDashboard() {
       });
     }
   }
-  const convoCtx = document.getElementById('convoChart')?.getContext('2d');
+  const convoCtx = convoCanvas?.getContext('2d');
   if (convoCtx) {
     // Reuse chart instance for better performance
     if (convoChartEl) {
@@ -2637,8 +2944,6 @@ async function refreshNeuralNetwork() {
   }
   
   renderNeuralNetwork(networkData);
-  updateNeuralStats();
-  updateNeuralEvents();
   
   if (btn) {
     btn.disabled = false;
@@ -2646,92 +2951,243 @@ async function refreshNeuralNetwork() {
   }
 }
 
-// Enhanced Neural Network Visualization
 function renderNeuralNetwork(networkData) {
+  const container = document.getElementById('neural-network-graph');
   const data = networkData || neuralState;
-  if (!data || !data.regions) return;
-  
-  const svg = document.getElementById('neural-canvas');
-  if (!svg) return;
-  
-  // Clear existing content
-  svg.innerHTML = '';
-  
-  // Create gradient definitions for firing effects
-  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-  
-  // Pulsing gradient for active neurons
-  const pulseGradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
-  pulseGradient.setAttribute('id', 'pulse-gradient');
-  pulseGradient.innerHTML = `
-    <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.8" />
-    <stop offset="50%" style="stop-color:#64b5f6;stop-opacity:0.6" />
-    <stop offset="100%" style="stop-color:#1976d2;stop-opacity:0.3" />
-    <animateTransform attributeName="gradientTransform" type="scale" 
-      values="1;1.5;1" dur="0.5s" repeatCount="indefinite" />
-  `;
-  defs.appendChild(pulseGradient);
-  svg.appendChild(defs);
-  
-  // Store current data globally for access by other functions
-  neuralState = data;
-  
-  // Create inter-region connections first (so they appear behind regions)
-  if (data.regions && data.regions.length > 1) {
-    renderInterRegionConnections(svg, data.regions);
+  if (!container || !data || !data.regions) return;
+
+  if (typeof ForceGraph3D === 'undefined') {
+    console.warn('[NEURAL] ForceGraph3D unavailable. WebGL not supported.');
+    return;
   }
-  
-  // Create SVG groups for each region
-  data.regions.forEach(region => {
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.classList.add('region-group');
-    g.setAttribute('data-region', region.regionId);
-    g.setAttribute('transform', `translate(${region.position.x}, ${region.position.y})`);
-    
-    // Draw region background with rounded corners and subtle shadow
-    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', 0);
-    rect.setAttribute('y', 0);
-    rect.setAttribute('width', region.size.width);
-    rect.setAttribute('height', region.size.height);
-    rect.setAttribute('fill', region.color);
-    rect.setAttribute('opacity', '0.15');
-    rect.setAttribute('rx', '12');
-    rect.setAttribute('ry', '12');
-    rect.setAttribute('stroke', region.color);
-    rect.setAttribute('stroke-width', '2');
-    rect.setAttribute('stroke-opacity', '0.3');
-    rect.classList.add('region-background');
-    g.appendChild(rect);
-    
-    // Draw region label with better styling
-    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', region.size.width / 2);
-    label.setAttribute('y', -8);
-    label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('fill', '#dfe3ff');
-    label.setAttribute('font-size', '14');
-    label.setAttribute('font-weight', 'bold');
-    label.classList.add('region-label');
-    label.textContent = region.regionName;
-    g.appendChild(label);
-    
-    // Draw individual neurons with better positioning and interaction
-    if (region.neurons && region.neurons.length > 0) {
-      renderNeuronsInRegion(g, region);
-    }
-    
-    // Add region click handler for selection
-    rect.addEventListener('click', () => selectRegion(region));
-    rect.style.cursor = 'pointer';
-    
-    svg.appendChild(g);
+
+  neuralState = data;
+
+  const nodes = [];
+  const links = [];
+  neuralNodeIndex = new Map();
+  neuralLinkIndex = new Map();
+
+  data.regions.forEach((region) => {
+    const neurons = Array.isArray(region.neurons) ? region.neurons : [];
+    neurons.forEach((neuron) => {
+      const baseSize = neuron.type === 'excitatory' ? 11 : 8;
+      const connectionBoost = Math.min(neuron.connections?.length || 0, 12);
+      const displaySize = baseSize + connectionBoost * 0.6;
+      const node = {
+        id: neuron.id,
+        label: neuron.pattern || neuron.id.slice(-8),
+        kind: 'neuron',
+        regionId: region.regionId,
+        regionName: region.regionName,
+        neuronType: neuron.type,
+        connectionCount: neuron.connections?.length || 0,
+        activationThreshold: neuron.activationThreshold || 1,
+        restingPotential: neuron.restingPotential || 0,
+        color: region.color,
+        baseSize: displaySize,
+        displaySize,
+        firePulse: false,
+        sourceNeuron: neuron
+      };
+      nodes.push(node);
+      neuralNodeIndex.set(node.id, node);
+    });
   });
-  
-  // Update stats display
+
+  const knownIds = new Set(neuralNodeIndex.keys());
+  data.regions.forEach((region) => {
+    const neurons = Array.isArray(region.neurons) ? region.neurons : [];
+    neurons.forEach((neuron) => {
+      if (!Array.isArray(neuron.connections)) return;
+      neuron.connections.forEach((connection) => {
+        if (!knownIds.has(connection.targetNeuronId)) return;
+        const key = `${neuron.id}|${connection.targetNeuronId}`;
+        if (neuralLinkIndex.has(key)) return;
+        const weight = connection.weight || 0.5;
+        const link = {
+          source: neuron.id,
+          target: connection.targetNeuronId,
+          weight,
+          latency: connection.latency || 60,
+          color: 'rgba(140, 162, 255, 0.32)',
+          width: Math.max(0.35, weight * 0.9),
+          particleCount: 0,
+          particleSpeed: 0.008,
+          highlight: false
+        };
+        links.push(link);
+        neuralLinkIndex.set(key, link);
+      });
+    });
+  });
+
+  if (!nodes.length) {
+    container.innerHTML = '<div class="graph-empty">Neural network not yet initialized.</div>';
+    return;
+  }
+
+  neuralGraphData = { nodes, links };
+
+  if (!neuralGraph3D) {
+    container.innerHTML = '';
+    neuralGraph3D = ForceGraph3D()(container);
+    neuralGraph3D
+      .showNavInfo(false)
+      .backgroundColor('#070b23')
+      .nodeId('id')
+      .nodeOpacity(0.95)
+      .nodeVal((node) => node.displaySize || 6)
+      .nodeColor((node) => (node.firePulse ? '#ffffff' : node.color))
+      .nodeLabel(formatNeuronTooltip)
+      .linkColor((link) => (link.highlight ? '#ffe082' : link.color))
+      .linkWidth((link) => link.width || 0.5)
+      .linkOpacity(0.2)
+      .linkDirectionalParticles((link) => link.particleCount || 0)
+      .linkDirectionalParticleSpeed((link) => link.particleSpeed || 0.008)
+      .linkDirectionalParticleWidth(3)
+      .onNodeClick((node, event) => {
+        if (node.kind === 'neuron' && node.sourceNeuron) {
+          // Show details modal
+          showNeuronDetails(node.sourceNeuron);
+          
+          // If shift-click, focus camera on this neuron and highlight connections
+          if (event?.shiftKey) {
+            focusOnNeuron(node);
+          }
+        }
+      })
+      .onNodeRightClick((node) => {
+        if (node.kind === 'neuron') {
+          focusOnNeuron(node);
+        }
+      });
+
+    const controls = neuralGraph3D.controls();
+    controls.autoRotate = false;
+    controls.enableZoom = true;
+    controls.minDistance = 110;
+
+    const updateSize = () => {
+      const { clientWidth, clientHeight } = container;
+      neuralGraph3D.width(clientWidth);
+      neuralGraph3D.height(clientHeight);
+    };
+
+    updateSize();
+    if (typeof ResizeObserver !== 'undefined') {
+      neuralGraphResizeObserver = new ResizeObserver(updateSize);
+      neuralGraphResizeObserver.observe(container);
+    } else {
+      window.addEventListener('resize', updateSize);
+    }
+
+    neuralGraph3D.cameraPosition({ x: 0, y: 0, z: 720 });
+  }
+
+  neuralGraph3D.graphData(neuralGraphData);
+  neuralGraph3D.refresh();
+
   updateNeuralStats();
+  updateNeuralEvents();
 }
 
+function formatNeuronTooltip(node) {
+  if (node.kind !== 'neuron') return node.label;
+  const activation = node.sourceNeuron?.currentActivation ?? 0;
+  const threshold = node.activationThreshold ?? 1;
+  return [
+    `Neuron ${node.label}`,
+    `Region: ${node.regionName}`,
+    `Type: ${node.neuronType}`,
+    `Connections: ${node.connectionCount}`,
+    `Activation: ${activation.toFixed(2)} / ${threshold}`,
+    '',
+    'Click to view details',
+    'Right-click or Shift+Click to focus'
+  ].join('\n');
+}
+
+function focusOnNeuron(node) {
+  if (!neuralGraph3D || !neuralGraphData) return;
+  
+  // Get node position
+  const nodeObj = neuralGraphData.nodes.find(n => n.id === node.id);
+  if (!nodeObj) return;
+  
+  // Reset all node and link highlighting
+  neuralGraphData.nodes.forEach(n => {
+    const region = neuralState?.regions?.find(r => r.regionId === n.regionId);
+    n.color = region?.color || '#888888';
+    n.displaySize = n.baseSize || 10;
+  });
+  
+  neuralGraphData.links.forEach(link => {
+    link.highlight = false;
+    link.color = 'rgba(140, 162, 255, 0.15)';
+    link.width = Math.max(0.35, (link.weight || 0.5) * 0.5);
+  });
+  
+  // Highlight the focused neuron
+  nodeObj.color = '#ffe082';
+  nodeObj.displaySize = (nodeObj.baseSize || 10) * 2;
+  
+  // Highlight connected neurons and links
+  const connectedNodeIds = new Set();
+  neuralGraphData.links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    
+    if (sourceId === node.id || targetId === node.id) {
+      link.highlight = true;
+      link.color = 'rgba(255, 224, 130, 0.8)';
+      link.width = (link.weight || 0.5) * 3;
+      
+      // Track connected nodes
+      if (sourceId === node.id) connectedNodeIds.add(targetId);
+      if (targetId === node.id) connectedNodeIds.add(sourceId);
+    }
+  });
+  
+  // Highlight connected neurons
+  neuralGraphData.nodes.forEach(n => {
+    if (connectedNodeIds.has(n.id)) {
+      n.color = '#a0c4ff'; // Light blue for connected
+      n.displaySize = (n.baseSize || 10) * 1.3;
+    }
+  });
+  
+  // Update graph
+  neuralGraph3D.graphData(neuralGraphData);
+  
+  // Camera animation to focus on node
+  const distance = 300;
+  const distRatio = 1 + distance / Math.hypot(nodeObj.x || 0, nodeObj.y || 0, nodeObj.z || 0);
+  
+  neuralGraph3D.cameraPosition(
+    { 
+      x: (nodeObj.x || 0) * distRatio, 
+      y: (nodeObj.y || 0) * distRatio, 
+      z: (nodeObj.z || 0) * distRatio 
+    },
+    nodeObj, // lookAt
+    1000 // ms transition duration
+  );
+}
+
+function scheduleNeuralGraphRefresh() {
+  if (!neuralGraph3D) return;
+  if (neuralGraphRefreshRaf) return;
+  neuralGraphRefreshRaf = requestAnimationFrame(() => {
+    neuralGraphRefreshRaf = null;
+    neuralGraph3D.refresh();
+  });
+}
+
+// LEGACY SVG-BASED FUNCTIONS - No longer used with vis.js visualization
+// Kept for reference only
+
+/*
 // Render neurons within a region with proper clustering
 function renderNeuronsInRegion(regionGroup, region) {
   const neurons = region.neurons || [];
@@ -2863,6 +3319,8 @@ function renderInterRegionConnections(svg, regions) {
     }
   });
 }
+*/
+
 
 // Update neural stats
 function updateNeuralStats() {
@@ -3133,6 +3591,323 @@ function setupNeuralRefresh() {
   const btn = $('#refresh-neural');
   if (btn) {
     btn.addEventListener('click', refreshNeuralNetwork);
+  }
+}
+
+// Wire up neural search and filter controls
+function setupNeuralSearchAndFilters() {
+  const searchInput = $('#neural-search-input');
+  const clearBtn = $('#neural-search-clear');
+  const filterExcitatory = $('#filter-excitatory');
+  const filterInhibitory = $('#filter-inhibitory');
+  const regionFilter = $('#region-filter');
+  
+  // Store original graph data for filtering
+  let originalNodes = [];
+  let originalLinks = [];
+  
+  // Highlight matching neurons on search
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      applyNeuralFilters();
+    });
+  }
+  
+  // Clear search
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (searchInput) {
+        searchInput.value = '';
+        applyNeuralFilters();
+        searchInput.focus();
+      }
+    });
+  }
+  
+  // Filter by neuron type
+  if (filterExcitatory) {
+    filterExcitatory.addEventListener('change', applyNeuralFilters);
+  }
+  if (filterInhibitory) {
+    filterInhibitory.addEventListener('change', applyNeuralFilters);
+  }
+  
+  // Filter by region
+  if (regionFilter) {
+    regionFilter.addEventListener('change', applyNeuralFilters);
+  }
+}
+
+function applyNeuralFilters() {
+  if (!neuralGraph3D || !neuralGraphData) return;
+  
+  const searchInput = $('#neural-search-input');
+  const filterExcitatory = $('#filter-excitatory');
+  const filterInhibitory = $('#filter-inhibitory');
+  const regionFilter = $('#region-filter');
+  
+  const query = searchInput?.value.toLowerCase().trim() || '';
+  const showExcitatory = filterExcitatory?.checked ?? true;
+  const showInhibitory = filterInhibitory?.checked ?? true;
+  const selectedRegion = regionFilter?.value || 'all';
+  
+  // Filter nodes
+  const filteredNodes = neuralGraphData.nodes.filter(node => {
+    // Type filter
+    if (node.neuronType === 'excitatory' && !showExcitatory) return false;
+    if (node.neuronType === 'inhibitory' && !showInhibitory) return false;
+    
+    // Region filter
+    if (selectedRegion !== 'all') {
+      const regionMap = {
+        'sensory': 'Sensory Input',
+        'language': 'Language Center',
+        'association': 'Association Cortex',
+        'frontal': 'Frontal Lobe',
+        'amygdala': 'Amygdala',
+        'memory': 'Memory Systems',
+        'motor': 'Motor Output'
+      };
+      if (node.regionName !== regionMap[selectedRegion]) return false;
+    }
+    
+    return true;
+  });
+  
+  // Create Set of visible node IDs
+  const visibleNodeIds = new Set(filteredNodes.map(n => n.id));
+  
+  // Filter links to only show connections between visible nodes
+  const filteredLinks = neuralGraphData.links.filter(link => {
+    return visibleNodeIds.has(link.source.id || link.source) && 
+           visibleNodeIds.has(link.target.id || link.target);
+  });
+  
+  // Apply search highlighting
+  if (query) {
+    filteredNodes.forEach(node => {
+      const label = node.label?.toLowerCase() || '';
+      const regionName = node.regionName?.toLowerCase() || '';
+      const pattern = node.sourceNeuron?.pattern?.toLowerCase() || '';
+      
+      const matches = label.includes(query) || 
+                     regionName.includes(query) || 
+                     pattern.includes(query);
+      
+      if (matches) {
+        // Highlight matching nodes
+        node.color = '#ffe082'; // Bright yellow
+        node.displaySize = (node.baseSize || 10) * 1.5;
+        
+        // Highlight connections from matching nodes
+        filteredLinks.forEach(link => {
+          if ((link.source.id || link.source) === node.id || 
+              (link.target.id || link.target) === node.id) {
+            link.highlight = true;
+            link.color = 'rgba(255, 224, 130, 0.6)';
+            link.width = (link.weight || 0.5) * 2;
+          }
+        });
+      } else {
+        // Dim non-matching nodes
+        node.color = node.sourceNeuron?.region?.color || node.regionColor || '#888888';
+        node.displaySize = (node.baseSize || 10) * 0.7;
+      }
+    });
+    
+    // Reset non-highlighted links
+    filteredLinks.forEach(link => {
+      if (!link.highlight) {
+        link.color = 'rgba(140, 162, 255, 0.15)';
+        link.width = (link.weight || 0.5) * 0.5;
+      }
+    });
+  } else {
+    // Reset all styling when no search
+    filteredNodes.forEach(node => {
+      const region = neuralState?.regions?.find(r => r.regionId === node.regionId);
+      node.color = region?.color || '#888888';
+      node.displaySize = node.baseSize || 10;
+    });
+    
+    filteredLinks.forEach(link => {
+      link.highlight = false;
+      link.color = 'rgba(140, 162, 255, 0.32)';
+      link.width = Math.max(0.35, (link.weight || 0.5) * 0.9);
+    });
+  }
+  
+  // Update graph with filtered data
+  neuralGraph3D.graphData({ nodes: filteredNodes, links: filteredLinks });
+  
+  // Update summary
+  const summary = $('#neural-summary');
+  if (summary) {
+    const totalFirings = neuralState?.regions?.reduce((sum, r) => 
+      sum + (r.neurons?.reduce((s, n) => s + (n.firingCount || 0), 0) || 0), 0) || 0;
+    summary.textContent = `Neurons: ${filteredNodes.length} · Regions: ${neuralState?.regions?.length || 0} · Firings: ${totalFirings}`;
+  }
+}
+
+// Wire up brain graph search and filter controls
+function setupBrainSearchAndFilters() {
+  const searchInput = $('#brain-search-input');
+  const clearBtn = $('#brain-search-clear');
+  const minFreqSlider = $('#filter-min-freq');
+  const freqValueDisplay = $('#filter-freq-value');
+  const showIsolatedCheckbox = $('#filter-show-isolated');
+  const categoryFilter = $('#concept-category-filter');
+  
+  // Update frequency value display
+  if (minFreqSlider && freqValueDisplay) {
+    minFreqSlider.addEventListener('input', (e) => {
+      freqValueDisplay.textContent = e.target.value;
+      applyBrainFilters();
+    });
+  }
+  
+  // Search input
+  if (searchInput) {
+    searchInput.addEventListener('input', applyBrainFilters);
+  }
+  
+  // Clear search
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (searchInput) {
+        searchInput.value = '';
+        applyBrainFilters();
+        searchInput.focus();
+      }
+    });
+  }
+  
+  // Show isolated nodes checkbox
+  if (showIsolatedCheckbox) {
+    showIsolatedCheckbox.addEventListener('change', applyBrainFilters);
+  }
+  
+  // Category filter
+  if (categoryFilter) {
+    categoryFilter.addEventListener('change', applyBrainFilters);
+  }
+}
+
+function applyBrainFilters() {
+  if (!brainGraph3D || !brainGraphData) return;
+  
+  const searchInput = $('#brain-search-input');
+  const minFreqSlider = $('#filter-min-freq');
+  const showIsolatedCheckbox = $('#filter-show-isolated');
+  const categoryFilter = $('#concept-category-filter');
+  
+  const query = searchInput?.value.toLowerCase().trim() || '';
+  const minFreq = parseInt(minFreqSlider?.value || '1', 10);
+  const showIsolated = showIsolatedCheckbox?.checked ?? true;
+  const category = categoryFilter?.value || 'all';
+  
+  // Calculate node connection counts
+  const connectionCounts = new Map();
+  brainGraphData.links.forEach(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    connectionCounts.set(sourceId, (connectionCounts.get(sourceId) || 0) + 1);
+    connectionCounts.set(targetId, (connectionCounts.get(targetId) || 0) + 1);
+  });
+  
+  // Filter nodes
+  const filteredNodes = brainGraphData.nodes.filter(node => {
+    // Frequency filter
+    if (node.value < minFreq) return false;
+    
+    // Isolated nodes filter
+    const connectionCount = connectionCounts.get(node.id) || 0;
+    if (!showIsolated && connectionCount === 0) return false;
+    
+    // Category filter
+    if (category === 'high-freq' && node.value < 10) return false;
+    if (category === 'recent' && node.concept && !node.concept.lastMentionedAt) return false;
+    if (category === 'connected' && connectionCount < 5) return false;
+    
+    return true;
+  });
+  
+  // Create Set of visible node IDs
+  const visibleNodeIds = new Set(filteredNodes.map(n => n.id));
+  
+  // Filter links to only show connections between visible nodes
+  const filteredLinks = brainGraphData.links.filter(link => {
+    const sourceId = link.source.id || link.source;
+    const targetId = link.target.id || link.target;
+    return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId);
+  });
+  
+  // Apply search highlighting
+  if (query) {
+    filteredNodes.forEach(node => {
+      const label = node.label?.toLowerCase() || '';
+      const category = node.concept?.category?.toLowerCase() || '';
+      const matches = label.includes(query) || category.includes(query);
+      
+      if (matches) {
+        // Highlight matching nodes
+        node.color = '#ffe082';
+        node.displaySize = (node.displaySize || 5) * 1.8;
+        
+        // Highlight connections from matching nodes
+        filteredLinks.forEach(link => {
+          const sourceId = link.source.id || link.source;
+          const targetId = link.target.id || link.target;
+          if (sourceId === node.id || targetId === node.id) {
+            link.color = 'rgba(255, 224, 130, 0.7)';
+            link.width = (link.width || 1) * 2;
+          }
+        });
+      } else {
+        // Dim non-matching nodes
+        const originalColor = node.group === 'concept' 
+          ? (node.concept?.sentiment?.label === 'positive' ? '#66bb6a' 
+            : node.concept?.sentiment?.label === 'negative' ? '#ef5350' 
+            : '#ffb74d')
+          : '#6f86ff';
+        node.color = originalColor;
+        node.displaySize = (node.displaySize || 5) * 0.6;
+      }
+    });
+    
+    // Reset non-highlighted links
+    filteredLinks.forEach(link => {
+      if (link.color !== 'rgba(255, 224, 130, 0.7)') {
+        link.color = link.weight >= 4 ? 'rgba(142, 166, 255, 0.3)' : 'rgba(57, 69, 128, 0.25)';
+      }
+    });
+  } else {
+    // Reset all styling when no search
+    filteredNodes.forEach(node => {
+      const originalColor = node.group === 'concept'
+        ? (node.concept?.sentiment?.label === 'positive' ? '#66bb6a'
+          : node.concept?.sentiment?.label === 'negative' ? '#ef5350'
+          : '#ffb74d')
+        : '#6f86ff';
+      node.color = originalColor;
+      node.displaySize = Math.max(3.5, Math.log((node.value || 1) + 1) * 4.5);
+    });
+    
+    filteredLinks.forEach(link => {
+      link.color = link.weight >= 4 ? '#8ea6ff' : '#394580';
+      link.width = Math.max(0.4, Math.log((link.weight || 1) + 1));
+    });
+  }
+  
+  // Update graph with filtered data
+  brainGraph3D.graphData({ nodes: filteredNodes, links: filteredLinks });
+  
+  // Update summary
+  const summary = $('#brain-summary');
+  if (summary) {
+    const totalMemories = brainGraphData.nodes.filter(n => n.concept).length;
+    summary.textContent = `Nodes: ${filteredNodes.length} · Links: ${filteredLinks.length} · Memories: ${totalMemories}`;
   }
 }
 
