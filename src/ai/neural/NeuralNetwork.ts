@@ -284,8 +284,9 @@ export class NeuralNetwork {
    * Execute a neuron firing: record the event, propagate signal, then decay.
    * @param neuron The neuron that is firing.
    * @param regionId Region that owns the neuron.
+   * @param depth Current propagation depth to prevent infinite recursion.
    */
-  fireNeuron(neuron: Neuron, regionId: string): void {
+  fireNeuron(neuron: Neuron, regionId: string, depth: number = 0): void {
     const now = Date.now();
     neuron.firingHistory.push(now);
     if (neuron.firingHistory.length > this.MAX_HISTORY) {
@@ -301,7 +302,7 @@ export class NeuralNetwork {
       metadata: { neuronType: neuron.type },
     });
 
-    this.propagateSignal(neuron, 0);
+    this.propagateSignal(neuron, depth + 1);
 
     // Post-fire decay: reset toward resting potential
     neuron.currentActivation = neuron.restingPotential;
@@ -328,7 +329,7 @@ export class NeuralNetwork {
       target.currentActivation = clamp(target.currentActivation + signal, 0, 1);
 
       if (target.currentActivation >= target.activationThreshold) {
-        this.fireNeuron(target, targetEntry.regionId);
+        this.fireNeuron(target, targetEntry.regionId, depth);
       }
     }
   }
