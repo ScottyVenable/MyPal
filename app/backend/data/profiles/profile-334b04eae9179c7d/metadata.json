@@ -1,6 +1,13 @@
 {
+  "id": "334b04eae9179c7d",
+  "name": "DevPal",
+  "createdAt": 1776697992745,
+  "lastPlayedAt": 1776698002819,
   "level": 0,
   "xp": 0,
+  "messageCount": 0,
+  "memoryCount": 0,
+  "version": "1.0.0",
   "cp": 0,
   "settings": {
     "xpMultiplier": 1,

@@ -1,0 +1,6 @@
+{
+  "xpMultiplier": 1,
+  "apiProvider": "local",
+  "telemetry": false,
+  "authRequired": false
+}
