@@ -1,0 +1,2 @@
+- Error handling so that if a port is already in use, the server will not crash but will instead log an error message and find a new port. Include testing in playwright to ensure that this functionality works as expected.
+- 

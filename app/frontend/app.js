@@ -23,16 +23,16 @@ const LOG_LEVELS = {
 };
 
 const LOG_CATEGORIES = {
-  CHAT: { text: 'CHAT', emoji: '💬' },
-  TYPING: { text: 'TYPING', emoji: '⌨️' },
-  UI: { text: 'UI', emoji: '🖥️' },
-  API: { text: 'API', emoji: '🌐' },
-  WEBSOCKET: { text: 'WEBSOCKET', emoji: '🔌' },
-  PROFILE: { text: 'PROFILE', emoji: '👤' },
-  NEURAL: { text: 'NEURAL', emoji: '🧠' },
-  PERFORMANCE: { text: 'PERFORMANCE', emoji: '⚡' },
-  STATE: { text: 'STATE', emoji: '📊' },
-  ERROR: { text: 'ERROR', emoji: '❌' }
+  CHAT:        { text: 'CHAT' },
+  TYPING:      { text: 'TYPING' },
+  UI:          { text: 'UI' },
+  API:         { text: 'API' },
+  WEBSOCKET:   { text: 'WEBSOCKET' },
+  PROFILE:     { text: 'PROFILE' },
+  NEURAL:      { text: 'NEURAL' },
+  PERFORMANCE: { text: 'PERFORMANCE' },
+  STATE:       { text: 'STATE' },
+  ERROR:       { text: 'ERROR' }
 };
 
 let logLevel = LOG_LEVELS.DEBUG; // Set to INFO for production
@@ -55,7 +55,7 @@ function log(level, category, message, data = null) {
   
   const timestamp = getLogTimestamp();
   const seq = String(++logSequence).padStart(4, '0');
-  const categoryInfo = LOG_CATEGORIES[category] || { text: 'UNKNOWN', emoji: '📝' };
+  const categoryInfo = LOG_CATEGORIES[category] || { text: 'UNKNOWN' };
   const levelName = Object.keys(LOG_LEVELS)[level];
   
   // Clean text-only prefix for file logs and telemetry
@@ -150,7 +150,7 @@ logInfo('STATE', 'Frontend logging system initialized', {
   cleanLogging: true
 });
 
-console.log('%c🎯 MyPal Logging Initialized!', 'color: #66bb6a; font-weight: bold; font-size: 14px;');
+console.log('%cMyPal Logging Initialized', 'color: #66bb6a; font-weight: bold; font-size: 14px;');
 console.log('%cLogs use clean text for files/telemetry, emojis for console only', 'color: #9ab4ff;');
 console.log('%cUse MyPalLogging.setLevel("DEBUG") to see all logs', 'color: #9ab4ff;');
 console.log('%cAvailable commands: setLevel, getLevel, forceEnableInputs, clearTyping', 'color: #9ab4ff;');
@@ -318,7 +318,7 @@ function renderProfileCards(profiles) {
     card.innerHTML = `
       <div class="profile-card-header">
         <h3 class="profile-card-name">${profile.name}</h3>
-        <button class="profile-card-delete" data-profile-id="${profile.id}" title="Delete profile">🗑️</button>
+        <button class="profile-card-delete" data-profile-id="${profile.id}" title="Delete profile"><i class="ph ph-trash"></i></button>
       </div>
       <div class="profile-card-stats">
         <div class="profile-stat">Level: <span class="profile-stat-value">${profile.level || 0}</span></div>
@@ -596,6 +596,26 @@ function formatTimestamp(ts) {
   return `${day} | ${time}`;
 }
 
+const MOOD_ICONS = {
+  happy:     'ph-smiley',
+  calm:      'ph-smiley',
+  curious:   'ph-question',
+  caring:    'ph-heart',
+  concerned: 'ph-warning-circle',
+  friendly:  'ph-hand-waving',
+  focused:   'ph-eye',
+  excited:   'ph-star',
+  sad:       'ph-smiley-sad',
+  angry:     'ph-smiley-angry',
+  default:   'ph-smiley'
+};
+
+function setEmotionIcon(el, mood) {
+  if (!el) return;
+  const iconClass = MOOD_ICONS[mood] || MOOD_ICONS.default;
+  el.innerHTML = `<i class="ph ${iconClass}"></i>`;
+}
+
 function updateEmotionDisplay(emotion) {
   if (!emotion) return;
   
@@ -608,7 +628,7 @@ function updateEmotionDisplay(emotion) {
   // Update icon with animation
   icon.style.animation = 'none';
   setTimeout(() => {
-    icon.textContent = emotion.expression || '😊';
+    setEmotionIcon(icon, emotion.mood);
     icon.style.animation = 'emotionPulse 2s ease-in-out infinite';
   }, 10);
   
@@ -724,13 +744,13 @@ function addMessage(role, text, metaText) {
   const thumbsUp = document.createElement('button');
   thumbsUp.className = 'feedback-btn thumbs-up';
   thumbsUp.title = 'Good response';
-  thumbsUp.innerHTML = '👍';
+  thumbsUp.innerHTML = '<i class="ph ph-thumbs-up"></i>';
   thumbsUp.addEventListener('click', () => feedbackClick(thumbsUp, 'positive', text, role));
   
   const thumbsDown = document.createElement('button');
   thumbsDown.className = 'feedback-btn thumbs-down';
   thumbsDown.title = 'Needs improvement';
-  thumbsDown.innerHTML = '👎';
+  thumbsDown.innerHTML = '<i class="ph ph-thumbs-down"></i>';
   thumbsDown.addEventListener('click', () => feedbackClick(thumbsDown, 'negative', text, role));
   
   feedbackContainer.appendChild(thumbsUp);
@@ -1151,7 +1171,7 @@ function showNeuralGrowthAnimation(growthEvent) {
   const celebration = document.createElement('div');
   celebration.className = 'neural-growth-celebration';
   celebration.innerHTML = `
-    <div class="growth-icon">🧠✨</div>
+    <div class="growth-icon"><i class="ph ph-brain"></i></div>
     <div class="growth-text">
       <div class="growth-title">Neural Growth!</div>
       <div class="growth-details">Level ${level} • +${newNeurons} neurons in ${formatRegionName(regionId)}</div>
@@ -1294,7 +1314,7 @@ function renderStats(s) {
     const statMood = $('#stat-emotion-mood');
     const statFill = $('#stat-emotion-fill');
     
-    if (statIcon) statIcon.textContent = s.currentEmotion.expression || '😊';
+    if (statIcon) setEmotionIcon(statIcon, s.currentEmotion.mood);
     if (statMood) statMood.textContent = s.currentEmotion.description || 'Calm';
     if (statFill) {
       const intensity = (s.currentEmotion.intensity || 0.5) * 100;
@@ -2326,6 +2346,26 @@ async function init() {
   });
 }
 
+// Mobile hamburger nav toggle
+document.addEventListener('DOMContentLoaded', () => {
+  const toggle = document.getElementById('mobile-menu-toggle');
+  const nav = document.querySelector('header nav');
+  if (toggle && nav) {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      nav.classList.toggle('open');
+    });
+    // Close nav when a nav button is clicked
+    nav.addEventListener('click', (e) => {
+      if (e.target.closest('button')) nav.classList.remove('open');
+    });
+    // Close nav when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('header')) nav.classList.remove('open');
+    });
+  }
+});
+
 window.addEventListener('DOMContentLoaded', init);
 
 async function checkHealth() {
@@ -2946,7 +2986,7 @@ function showNeuronDetails(neuron) {
         </div>
         <div class="neuron-actions">
           <button class="neuron-trigger-btn" data-neuron-id="${neuron.id}">
-            ⚡ Trigger (Cost: 2 CP)
+            <i class="ph ph-lightning"></i> Trigger (Cost: 2 CP)
           </button>
         </div>
       </div>
@@ -3014,7 +3054,7 @@ function showRegionDetails(region) {
       </div>
       <div class="region-actions">
         <button class="region-trigger-btn" data-region-id="${region.regionId}">
-          🧠 Activate Region (Cost: 5 CP)
+          <i class="ph ph-brain"></i> Activate Region (Cost: 5 CP)
         </button>
       </div>
     </div>
@@ -3565,7 +3605,7 @@ function syncEmotionToFloating() {
   const floatingMood = $('#emotion-mood-floating');
   
   if (mainIcon && floatingIcon) {
-    floatingIcon.textContent = mainIcon.textContent;
+    floatingIcon.innerHTML = mainIcon.innerHTML;
   }
   
   if (mainMood && floatingMood) {
@@ -3584,7 +3624,7 @@ function updateFloatingEmotion(emotion) {
   // Update icon
   icon.style.animation = 'none';
   setTimeout(() => {
-    icon.textContent = emotion.expression || '😊';
+    setEmotionIcon(icon, emotion.mood);
     icon.style.animation = 'emotionPulse 2s ease-in-out infinite';
   }, 10);
   
@@ -3626,13 +3666,13 @@ function addFloatingMessage(role, text, metaText) {
   const thumbsUp = document.createElement('button');
   thumbsUp.className = 'feedback-btn thumbs-up';
   thumbsUp.title = 'Good response';
-  thumbsUp.innerHTML = '👍';
+  thumbsUp.innerHTML = '<i class="ph ph-thumbs-up"></i>';
   thumbsUp.addEventListener('click', () => feedbackClick(thumbsUp, 'positive', text, role));
   
   const thumbsDown = document.createElement('button');
   thumbsDown.className = 'feedback-btn thumbs-down';
   thumbsDown.title = 'Needs improvement';
-  thumbsDown.innerHTML = '👎';
+  thumbsDown.innerHTML = '<i class="ph ph-thumbs-down"></i>';
   thumbsDown.addEventListener('click', () => feedbackClick(thumbsDown, 'negative', text, role));
   
   feedbackContainer.appendChild(thumbsUp);

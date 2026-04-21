@@ -59,6 +59,23 @@ function writeLine(stream, level, line) {
   } catch {}
 }
 
+// ANSI colors for clean, pretty terminal output
+const TTY_COLORS = !process.env.NO_COLOR && !!process.stdout.isTTY;
+const ANSI_C = TTY_COLORS
+  ? { reset: '\x1b[0m', dim: '\x1b[2m', LOG: '\x1b[36m', INFO: '\x1b[36m', WARN: '\x1b[33m', ERROR: '\x1b[31m' }
+  : { reset: '', dim: '', LOG: '', INFO: '', WARN: '', ERROR: '' };
+
+function formatForTerminal(level, args) {
+  const now = new Date();
+  const ts  = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  const msg = args.map(a => typeof a === 'string' ? a : util.inspect(a, { depth: null })).join(' ');
+  const pad = level.padEnd(5);
+  if (TTY_COLORS) {
+    return `${ANSI_C.dim}[${ts}]${ANSI_C.reset} ${ANSI_C[level]}[${pad}]${ANSI_C.reset} ${msg}`;
+  }
+  return `[${ts}] [${pad}] ${msg}`;
+}
+
 const originalLog = console.log.bind(console);
 const originalInfo = console.info ? console.info.bind(console) : originalLog;
 const originalWarn = console.warn.bind(console);
@@ -68,7 +85,7 @@ console.log = (...args) => {
   try {
     const line = formatArgs(args);
     writeLine(consoleStream, 'LOG', line);
-    originalLog(...args);
+    originalLog(formatForTerminal('LOG', args));
   } catch (err) {
     // Ignore EPIPE errors when console output fails
   }
@@ -78,7 +95,7 @@ console.info = (...args) => {
   try {
     const line = formatArgs(args);
     writeLine(consoleStream, 'INFO', line);
-    originalInfo(...args);
+    originalInfo(formatForTerminal('INFO', args));
   } catch (err) {
     // Ignore EPIPE errors
   }
@@ -88,7 +105,7 @@ console.warn = (...args) => {
   try {
     const line = formatArgs(args);
     writeLine(consoleStream, 'WARN', line);
-    originalWarn(...args);
+    originalWarn(formatForTerminal('WARN', args));
   } catch (err) {
     // Ignore EPIPE errors
   }
@@ -99,7 +116,7 @@ console.error = (...args) => {
     const line = formatArgs(args);
     writeLine(consoleStream, 'ERROR', line);
     writeLine(errorStream, 'ERROR', line);
-    originalError(...args);
+    originalError(formatForTerminal('ERROR', args));
   } catch (err) {
     // Ignore EPIPE errors
   }
@@ -5270,46 +5287,81 @@ function migrateToMultiProfile() {
 // Run migration before starting server
 migrateToMultiProfile();
 
-server = app.listen(PORT, () => {
-  console.log(`MyPal backend listening on http://localhost:${PORT}`);
-  
+// --- Server startup with automatic port-conflict retry ---
+
+function scheduleMemoryDecay() {
+  const now = new Date();
+  const next2AM = new Date(now);
+  next2AM.setHours(2, 0, 0, 0);
+
+  // If 2 AM already passed today, schedule for tomorrow
+  if (now.getHours() >= 2) {
+    next2AM.setDate(next2AM.getDate() + 1);
+  }
+
+  const msUntil2AM = next2AM.getTime() - now.getTime();
+
+  setTimeout(() => {
+    console.log('Running scheduled memory decay...');
+    const c = getCollections();
+    const removed = applyMemoryDecay(c.vocabulary);
+    if (removed.length > 0) saveCollections(c);
+    scheduleMemoryDecay();
+  }, msUntil2AM);
+
+  console.log(`Memory decay scheduled for ${next2AM.toISOString()}`);
+}
+
+function onServerReady(boundPort) {
+  console.log(`MyPal backend listening on http://localhost:${boundPort}`);
+
+  // Write actual port so tests and other tools can discover it
+  try {
+    fs.writeFileSync(path.join(LOGS_DIR, 'server.port'), String(boundPort), 'utf8');
+  } catch {}
+
   // Apply memory decay on startup
   const collections = getCollections();
   const removed = applyMemoryDecay(collections.vocabulary);
-  if (removed.length > 0) {
-    saveCollections(collections);
-  }
-  
-  // Schedule memory decay to run daily at 2 AM
-  const scheduleMemoryDecay = () => {
-    const now = new Date();
-    const next2AM = new Date(now);
-    next2AM.setHours(2, 0, 0, 0);
-    
-    // If 2 AM already passed today, schedule for tomorrow
-    if (now.getHours() >= 2) {
-      next2AM.setDate(next2AM.getDate() + 1);
-    }
-    
-    const msUntil2AM = next2AM.getTime() - now.getTime();
-    
-    setTimeout(() => {
-      console.log('Running scheduled memory decay...');
-      const collections = getCollections();
-      const removed = applyMemoryDecay(collections.vocabulary);
-      if (removed.length > 0) {
-        saveCollections(collections);
-      }
-      
-      // Schedule next day's decay
-      scheduleMemoryDecay();
-    }, msUntil2AM);
-    
-    console.log(`Memory decay scheduled for ${next2AM.toISOString()}`);
-  };
-  
+  if (removed.length > 0) saveCollections(collections);
+
   scheduleMemoryDecay();
-});
+  setupWebSocketServer();
+}
+
+const MAX_PORT_RETRIES = 10;
+
+function startServer(preferredPort, attempt = 0) {
+  if (attempt >= MAX_PORT_RETRIES) {
+    console.error(
+      `[SERVER] Cannot bind: no available port in range ` +
+      `${preferredPort}–${preferredPort + MAX_PORT_RETRIES - 1}`
+    );
+    process.exit(1);
+    return;
+  }
+
+  const port = preferredPort + attempt;
+  const s = app.listen(port);
+
+  s.once('listening', () => {
+    server = s;
+    onServerReady(port);
+  });
+
+  s.once('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[SERVER] Port ${port} in use, trying ${port + 1}...`);
+      s.close();
+      startServer(preferredPort, attempt + 1);
+    } else {
+      console.error(`[SERVER] Cannot start on port ${port}:`, err.message);
+      process.exit(1);
+    }
+  });
+}
+
+startServer(PORT);
 
 // --- WebSocket server for neural events ---
 // Global variables for neural broadcaster management
@@ -5361,6 +5413,7 @@ function setupNeuralBroadcaster() {
   console.log('Neural broadcaster initialized for profile:', currentProfileId || 'none');
 }
 
+function setupWebSocketServer() {
 try {
   wss = new WebSocketServer({ noServer: true });
   server.on('upgrade', (request, socket, head) => {
@@ -5482,3 +5535,4 @@ try {
 } catch (err) {
   console.warn('WebSocket server not available:', err.message || err);
 }
+} // end setupWebSocketServer

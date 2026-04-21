@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MyPal Test Harness</title>
+  <style>
+    :root {
+      --bg-primary: #08081A;
+      --bg-secondary: #12122A;
+      --bg-surface: #1A1A3E;
+      --text-primary: #F0F0F8;
+      --text-secondary: #A0A0C0;
+      --accent: #8B5CF6;
+      --accent-light: #A78BFA;
+      --success: #34D399;
+      --warning: #FBBF24;
+      --error: #F87171;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .app-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 480px;
+      margin: 0 auto;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg-secondary);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--bg-surface);
+    }
+    .header .avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .header .info h1 { font-size: 16px; font-weight: 600; }
+    .header .info .status {
+      font-size: 12px;
+      color: var(--success);
+    }
+
+    /* Screen container */
+    .screen {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* ---- Chat Screen ---- */
+    #chat-screen .messages { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    .message {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .message.user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .message.ai {
+      align-self: flex-start;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border-bottom-left-radius: 4px;
+    }
+    .message .timestamp {
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+    .chat-input-bar {
+      display: flex;
+      gap: 8px;
+      padding: 12px 0 0;
+      border-top: 1px solid var(--bg-surface);
+      margin-top: auto;
+    }
+    .chat-input-bar input {
+      flex: 1;
+      background: var(--bg-surface);
+      border: 1px solid var(--accent);
+      border-radius: 20px;
+      padding: 10px 16px;
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-input-bar button {
+      background: var(--accent);
+      border: none;
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    /* ---- Brain Screen ---- */
+    #brain-screen { align-items: center; gap: 16px; }
+    .brain-viz {
+      width: 100%;
+      aspect-ratio: 1;
+      max-width: 360px;
+      background: var(--bg-secondary);
+      border-radius: 16px;
+      border: 1px solid var(--bg-surface);
+      position: relative;
+      overflow: hidden;
+    }
+    .brain-viz .region {
+      position: absolute;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      text-align: center;
+      color: var(--text-primary);
+      border: 2px solid rgba(139, 92, 246, 0.4);
+      transition: all 0.3s;
+    }
+    .brain-viz .region.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+    }
+    .region-list { width: 100%; }
+    .region-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .region-item .bar {
+      width: 80px; height: 6px;
+      background: var(--bg-surface);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .region-item .bar .fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+    }
+
+    /* ---- Stats Screen ---- */
+    #stats-screen { gap: 12px; }
+    .stat-card {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid var(--bg-surface);
+    }
+    .stat-card h3 {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent-light);
+    }
+    .stat-card .subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+    .stat-row { display: flex; gap: 12px; }
+    .stat-row .stat-card { flex: 1; }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: var(--bg-surface);
+      border-radius: 4px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .progress-bar .fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-light));
+      border-radius: 4px;
+    }
+    .trait-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .trait-item {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 13px;
+    }
+    .trait-item .trait-bar {
+      width: 120px; height: 6px;
+      background: var(--bg-surface); border-radius: 3px; overflow: hidden;
+    }
+    .trait-item .trait-bar .fill { height: 100%; border-radius: 3px; }
+
+    /* ---- Settings Screen ---- */
+    #settings-screen { gap: 12px; }
+    .settings-group {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--bg-surface);
+    }
+    .settings-group h3 {
+      font-size: 13px;
+      color: var(--text-secondary);
+      padding: 12px 16px 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .setting-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px;
+      border-top: 1px solid var(--bg-surface);
+      font-size: 14px;
+    }
+    .setting-item:first-of-type { border-top: none; }
+    .toggle {
+      width: 44px; height: 24px;
+      background: var(--bg-surface);
+      border-radius: 12px;
+      position: relative;
+      cursor: pointer;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: '';
+      width: 20px; height: 20px;
+      background: white;
+      border-radius: 50%;
+      position: absolute;
+      top: 2px; left: 2px;
+      transition: transform 0.2s;
+    }
+    .toggle.on::after { transform: translateX(20px); }
+    .setting-value { color: var(--text-secondary); font-size: 13px; }
+
+    /* Bottom Navigation */
+    .bottom-nav {
+      display: flex;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--bg-surface);
+      padding: 8px 0;
+    }
+    .nav-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 11px;
+      border: none;
+      background: none;
+    }
+    .nav-item.active { color: var(--accent); }
+    .nav-item .icon { font-size: 20px; }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <div class="header" data-testid="header">
+      <div class="avatar">🤖</div>
+      <div class="info">
+        <h1>MyPal</h1>
+        <div class="status">● Online — Level 3 Infant</div>
+      </div>
+    </div>
+
+    <!-- Chat Screen -->
+    <div id="chat-screen" class="screen active" data-testid="chat-screen">
+      <div class="messages">
+        <div class="message ai" data-testid="ai-message">
+          <div>Hi there! I'm MyPal. I'm still learning, but I'm excited to chat with you! 😊</div>
+          <div class="timestamp">10:30 AM</div>
+        </div>
+        <div class="message user" data-testid="user-message">
+          <div>Hey MyPal! I love learning about science. Can you tell me something cool?</div>
+          <div class="timestamp">10:31 AM</div>
+        </div>
+        <div class="message ai">
+          <div>Ooh, science is amazing! Did you know that octopuses have three hearts? Two pump blood to the gills and one pumps it to the body! 🐙</div>
+          <div class="timestamp">10:31 AM</div>
+        </div>
+        <div class="message user">
+          <div>That's so cool! What else do you know?</div>
+          <div class="timestamp">10:32 AM</div>
+        </div>
+        <div class="message ai">
+          <div>Honey never spoils! Archaeologists have found 3000-year-old honey in Egyptian tombs that was still perfectly edible. Nature is full of surprises! 🍯</div>
+          <div class="timestamp">10:32 AM</div>
+        </div>
+      </div>
+      <div class="chat-input-bar">
+        <input type="text" placeholder="Type a message..." data-testid="chat-input" />
+        <button data-testid="send-button">➤</button>
+      </div>
+    </div>
+
+    <!-- Brain Screen -->
+    <div id="brain-screen" class="screen" data-testid="brain-screen">
+      <h2 style="font-size: 18px; margin-bottom: 4px;">Neural Network</h2>
+      <p style="font-size: 12px; color: var(--text-secondary);">Real-time brain activity visualization</p>
+      <div class="brain-viz" data-testid="brain-visualization">
+        <div class="region active" style="width:60px;height:60px;top:20%;left:15%;background:rgba(139,92,246,0.2);">Sensory</div>
+        <div class="region active" style="width:70px;height:70px;top:15%;left:45%;background:rgba(139,92,246,0.3);">Language</div>
+        <div class="region" style="width:80px;height:80px;top:35%;left:30%;background:rgba(139,92,246,0.15);">Assoc.</div>
+        <div class="region active" style="width:70px;height:70px;top:25%;right:15%;background:rgba(139,92,246,0.25);">Frontal</div>
+        <div class="region" style="width:50px;height:50px;bottom:30%;left:15%;background:rgba(248,113,113,0.2);">Amygdala</div>
+        <div class="region" style="width:65px;height:65px;bottom:25%;left:40%;background:rgba(52,211,153,0.2);">Memory</div>
+        <div class="region" style="width:55px;height:55px;bottom:20%;right:15%;background:rgba(251,191,36,0.2);">Motor</div>
+      </div>
+      <div class="region-list" data-testid="region-list">
+        <div class="region-item"><span>Sensory Input</span><span>12 neurons</span><div class="bar"><div class="fill" style="width:65%"></div></div></div>
+        <div class="region-item"><span>Language Center</span><span>15 neurons</span><div class="bar"><div class="fill" style="width:78%"></div></div></div>
+        <div class="region-item"><span>Association Cortex</span><span>20 neurons</span><div class="bar"><div class="fill" style="width:42%"></div></div></div>
+        <div class="region-item"><span>Frontal Lobe</span><span>18 neurons</span><div class="bar"><div class="fill" style="width:55%"></div></div></div>
+        <div class="region-item"><span>Amygdala</span><span>10 neurons</span><div class="bar"><div class="fill" style="width:30%"></div></div></div>
+        <div class="region-item"><span>Memory Systems</span><span>15 neurons</span><div class="bar"><div class="fill" style="width:48%"></div></div></div>
+        <div class="region-item"><span>Motor Output</span><span>10 neurons</span><div class="bar"><div class="fill" style="width:60%"></div></div></div>
+      </div>
+    </div>
+
+    <!-- Stats Screen -->
+    <div id="stats-screen" class="screen" data-testid="stats-screen">
+      <h2 style="font-size: 18px; margin-bottom: 12px;">Development Stats</h2>
+      <div class="stat-card">
+        <h3>Evolution Stage</h3>
+        <div class="value">Infant</div>
+        <div class="subtitle">Level 3 — 245 / 337 XP</div>
+        <div class="progress-bar"><div class="fill" style="width:72%"></div></div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-card">
+          <h3>Total XP</h3>
+          <div class="value" style="font-size:22px;">1,245</div>
+        </div>
+        <div class="stat-card">
+          <h3>Memories</h3>
+          <div class="value" style="font-size:22px;">47</div>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-card">
+          <h3>Messages</h3>
+          <div class="value" style="font-size:22px;">156</div>
+        </div>
+        <div class="stat-card">
+          <h3>Neurons</h3>
+          <div class="value" style="font-size:22px;">100</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Cognitive Traits</h3>
+        <div class="trait-list">
+          <div class="trait-item"><span>Curiosity</span><div class="trait-bar"><div class="fill" style="width:80%;background:var(--accent)"></div></div><span>80%</span></div>
+          <div class="trait-item"><span>Vocabulary</span><div class="trait-bar"><div class="fill" style="width:30%;background:var(--success)"></div></div><span>30%</span></div>
+          <div class="trait-item"><span>Empathy</span><div class="trait-bar"><div class="fill" style="width:25%;background:var(--warning)"></div></div><span>25%</span></div>
+          <div class="trait-item"><span>Logic</span><div class="trait-bar"><div class="fill" style="width:15%;background:var(--error)"></div></div><span>15%</span></div>
+          <div class="trait-item"><span>Creativity</span><div class="trait-bar"><div class="fill" style="width:35%;background:var(--accent-light)"></div></div><span>35%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Screen -->
+    <div id="settings-screen" class="screen" data-testid="settings-screen">
+      <h2 style="font-size: 18px; margin-bottom: 12px;">Settings</h2>
+      <div class="settings-group">
+        <h3>AI Model</h3>
+        <div class="setting-item"><span>Model</span><span class="setting-value">Llama 3 (Local)</span></div>
+        <div class="setting-item"><span>Temperature</span><span class="setting-value">0.7</span></div>
+        <div class="setting-item"><span>Max Tokens</span><span class="setting-value">512</span></div>
+        <div class="setting-item"><span>Server Status</span><span class="setting-value" style="color:var(--success);">● Connected</span></div>
+      </div>
+      <div class="settings-group">
+        <h3>Appearance</h3>
+        <div class="setting-item"><span>Dark Mode</span><div class="toggle on"></div></div>
+        <div class="setting-item"><span>Animations</span><div class="toggle on"></div></div>
+        <div class="setting-item"><span>Font Size</span><span class="setting-value">Medium</span></div>
+      </div>
+      <div class="settings-group">
+        <h3>Data &amp; Privacy</h3>
+        <div class="setting-item"><span>Local Storage Only</span><div class="toggle on"></div></div>
+        <div class="setting-item"><span>Export Data</span><span class="setting-value">→</span></div>
+        <div class="setting-item"><span>Clear Conversation</span><span class="setting-value" style="color:var(--error);">→</span></div>
+      </div>
+      <div class="settings-group">
+        <h3>About</h3>
+        <div class="setting-item"><span>Version</span><span class="setting-value">0.2.0-alpha</span></div>
+        <div class="setting-item"><span>Build</span><span class="setting-value">2024.03.15</span></div>
+      </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav" data-testid="bottom-nav">
+      <button class="nav-item active" data-screen="chat-screen" data-testid="nav-chat">
+        <span class="icon">💬</span><span>Chat</span>
+      </button>
+      <button class="nav-item" data-screen="brain-screen" data-testid="nav-brain">
+        <span class="icon">🧠</span><span>Brain</span>
+      </button>
+      <button class="nav-item" data-screen="stats-screen" data-testid="nav-stats">
+        <span class="icon">📊</span><span>Stats</span>
+      </button>
+      <button class="nav-item" data-screen="settings-screen" data-testid="nav-settings">
+        <span class="icon">⚙️</span><span>Settings</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Tab navigation
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        const targetId = btn.getAttribute('data-screen');
+        if (targetId) {
+          document.getElementById(targetId)?.classList.add('active');
+        }
+        btn.classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

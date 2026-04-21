@@ -1,6 +1,6 @@
 {
   "level": 0,
-  "xp": 10,
+  "xp": 0,
   "cp": 0,
   "settings": {
     "xpMultiplier": 1,
@@ -8,18 +8,11 @@
     "apiKeyMask": null
   },
   "personality": {
-    "curious": 11,
+    "curious": 10,
     "logical": 10,
-    "social": 11,
+    "social": 10,
     "agreeable": 10,
     "cautious": 10
   },
-  "vocabulary": [
-    "mm",
-    "hello",
-    "pal",
-    "how",
-    "are",
-    "you"
-  ]
+  "vocabulary": []
 }
