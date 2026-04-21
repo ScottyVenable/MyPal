@@ -596,6 +596,26 @@ function formatTimestamp(ts) {
   return `${day} | ${time}`;
 }
 
+const MOOD_ICONS = {
+  happy:     'ph-smiley',
+  calm:      'ph-smiley',
+  curious:   'ph-question',
+  caring:    'ph-heart',
+  concerned: 'ph-warning-circle',
+  friendly:  'ph-hand-waving',
+  focused:   'ph-eye',
+  excited:   'ph-star',
+  sad:       'ph-smiley-sad',
+  angry:     'ph-smiley-angry',
+  default:   'ph-smiley'
+};
+
+function setEmotionIcon(el, mood) {
+  if (!el) return;
+  const iconClass = MOOD_ICONS[mood] || MOOD_ICONS.default;
+  el.innerHTML = `<i class="ph ${iconClass}"></i>`;
+}
+
 function updateEmotionDisplay(emotion) {
   if (!emotion) return;
   
@@ -608,7 +628,7 @@ function updateEmotionDisplay(emotion) {
   // Update icon with animation
   icon.style.animation = 'none';
   setTimeout(() => {
-    icon.textContent = emotion.expression || '😊';
+    setEmotionIcon(icon, emotion.mood);
     icon.style.animation = 'emotionPulse 2s ease-in-out infinite';
   }, 10);
   
@@ -1294,7 +1314,7 @@ function renderStats(s) {
     const statMood = $('#stat-emotion-mood');
     const statFill = $('#stat-emotion-fill');
     
-    if (statIcon) statIcon.textContent = s.currentEmotion.expression || '😊';
+    if (statIcon) setEmotionIcon(statIcon, s.currentEmotion.mood);
     if (statMood) statMood.textContent = s.currentEmotion.description || 'Calm';
     if (statFill) {
       const intensity = (s.currentEmotion.intensity || 0.5) * 100;
@@ -2325,6 +2345,26 @@ async function init() {
     authToken = null; localStorage.removeItem('mypal_token'); setAuthStatus();
   });
 }
+
+// Mobile hamburger nav toggle
+document.addEventListener('DOMContentLoaded', () => {
+  const toggle = document.getElementById('mobile-menu-toggle');
+  const nav = document.querySelector('header nav');
+  if (toggle && nav) {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      nav.classList.toggle('open');
+    });
+    // Close nav when a nav button is clicked
+    nav.addEventListener('click', (e) => {
+      if (e.target.closest('button')) nav.classList.remove('open');
+    });
+    // Close nav when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('header')) nav.classList.remove('open');
+    });
+  }
+});
 
 window.addEventListener('DOMContentLoaded', init);
 
@@ -3565,7 +3605,7 @@ function syncEmotionToFloating() {
   const floatingMood = $('#emotion-mood-floating');
   
   if (mainIcon && floatingIcon) {
-    floatingIcon.textContent = mainIcon.textContent;
+    floatingIcon.innerHTML = mainIcon.innerHTML;
   }
   
   if (mainMood && floatingMood) {
@@ -3584,7 +3624,7 @@ function updateFloatingEmotion(emotion) {
   // Update icon
   icon.style.animation = 'none';
   setTimeout(() => {
-    icon.textContent = emotion.expression || '😊';
+    setEmotionIcon(icon, emotion.mood);
     icon.style.animation = 'emotionPulse 2s ease-in-out infinite';
   }, 10);
   
