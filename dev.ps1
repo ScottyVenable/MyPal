@@ -1,6 +1,11 @@
 #!/usr/bin/env pwsh
 # MyPal Developer Console
-# Usage: .\dev.ps1
+# Usage: .\dev.ps1 [-Action <backend|electron|full|tests|android-usb>] [-Help]
+
+param(
+    [string]$Action = '',
+    [switch]$Help
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -68,6 +73,34 @@ function Require-ADB {
         return $false
     }
     return $true
+}
+
+function Setup-AndroidUSB {
+    if (-not (Require-ADB)) { return }
+
+    Write-Host ""
+    Write-Host "  Checking connected devices..." -ForegroundColor Cyan
+    $adbOut    = & adb devices 2>&1
+    $connected = @($adbOut | Select-Object -Skip 1 | Where-Object { $_ -match '\s+device$' })
+
+    if ($connected.Count -eq 0) {
+        Write-Host "  No Android devices connected via USB." -ForegroundColor Red
+        Write-Host "  Connect a device with USB debugging enabled." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "  Found $($connected.Count) device(s)." -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Setting up reverse tunnels (device -> desktop)..." -ForegroundColor Cyan
+
+    & adb reverse tcp:3001 tcp:3001 2>&1 | Out-Null
+    Write-Host "  [OK] Backend port   tcp:3001 <-> tcp:3001" -ForegroundColor Green
+
+    & adb reverse tcp:3099 tcp:3099 2>&1 | Out-Null
+    Write-Host "  [OK] Test harness   tcp:3099 <-> tcp:3099" -ForegroundColor Green
+
+    Write-Host ""
+    Write-Host "  Android device can now reach the desktop backend over USB." -ForegroundColor Cyan
 }
 
 function Require-Java {
@@ -188,6 +221,7 @@ function Menu-Mobile {
         'Open Logcat (Android logs)'
         'Clear Metro cache and restart'
         'Clean Android build'
+        'Setup Android USB reverse tunnel'
     )
     while ($true) {
         Write-Menu 'MyPal Mobile' $items
@@ -263,6 +297,7 @@ function Menu-Mobile {
                 Start-Process-NW 'npx react-native start --reset-cache' $MOBILE 'Metro (cache cleared)'
             }
             13 { Clean-Android }
+            17 { Setup-AndroidUSB; Wait-Press }
         }
     }
 }
@@ -576,6 +611,68 @@ function Main {
             3 { Menu-Tests }
             4 { Menu-Git }
             5 { Menu-Utils }
+        }
+    }
+}
+
+# ── CLI action dispatch (non-interactive) ─────────────────────────────────────
+if ($Help) {
+    Write-Host ""
+    Write-Host "  MyPal Dev Console" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Usage:" -ForegroundColor White
+    Write-Host "    .\dev.ps1 [-Action <action>] [-Help]" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  Actions:" -ForegroundColor White
+    Write-Host "    backend       Start backend dev server in a new window" -ForegroundColor Gray
+    Write-Host "    electron      Start Electron desktop app in a new window" -ForegroundColor Gray
+    Write-Host "    full          Start backend + Electron together" -ForegroundColor Gray
+    Write-Host "    tests         Run Playwright E2E tests" -ForegroundColor Gray
+    Write-Host "    android-usb   Setup Android USB reverse tunnel (adb reverse)" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  Examples:" -ForegroundColor White
+    Write-Host "    .\dev.ps1 -Action backend" -ForegroundColor DarkGray
+    Write-Host "    .\dev.ps1 -Action full" -ForegroundColor DarkGray
+    Write-Host "    .\dev.ps1 -Action android-usb" -ForegroundColor DarkGray
+    Write-Host "    .\dev.ps1 -Help" -ForegroundColor DarkGray
+    Write-Host ""
+    exit 0
+}
+
+if ($Action) {
+    switch ($Action.ToLower()) {
+        'backend' {
+            Ensure-NpmInstalled $BACKEND 'backend'
+            Start-Process-NW 'npm start' $BACKEND 'Backend Server'
+            exit 0
+        }
+        'electron' {
+            Ensure-NpmInstalled $LAUNCHER 'launcher'
+            Start-Process-NW 'npm start' $LAUNCHER 'Electron App'
+            exit 0
+        }
+        'full' {
+            Ensure-NpmInstalled $BACKEND 'backend'
+            Ensure-NpmInstalled $LAUNCHER 'launcher'
+            Start-Process-NW 'npm start' $BACKEND 'Backend Server'
+            Start-Sleep -Seconds 2
+            Start-Process-NW 'npm start' $LAUNCHER 'Electron App'
+            exit 0
+        }
+        'tests' {
+            Ensure-NpmInstalled $TESTS 'e2e tests'
+            Push-Location $TESTS
+            npx playwright test
+            Pop-Location
+            exit 0
+        }
+        'android-usb' {
+            Setup-AndroidUSB
+            exit 0
+        }
+        default {
+            Write-Host "  Unknown action: '$Action'. Use -Help for options." -ForegroundColor Red
+            exit 1
         }
     }
 }

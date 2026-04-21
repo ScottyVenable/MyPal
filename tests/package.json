@@ -9,6 +9,8 @@
     "test:neural": "npx playwright test --grep @neural",
     "test:evolution": "npx playwright test --grep @evolution",
     "test:ui": "npx playwright test --grep @ui",
+    "test:port": "npx playwright test --grep @port",
+    "test:lmstudio": "npx playwright test --grep @lmstudio",
     "test:report": "npx playwright show-report"
   },
   "devDependencies": {
